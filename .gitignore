@@ -1,0 +1,25 @@
+# Excel数据文件（示例数据）
+*.xlsx
+*.xls
+
+# 分析结果文件夹
+舆情数据示例/
+舆情数据示例_10000/
+
+# 临时文件
+~$*
+*.tmp
+
+# 结果文件
+分类结果.json
+*_result.json
+*_result_report.html
+
+# Python缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE配置
+.vscode/
+./classify.md
