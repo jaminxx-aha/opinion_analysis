@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>舆情分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; overflow-anchor: none; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.5; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.header { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header h1 { font-size: 20px; font-weight: 600; color: #0f172a; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.header .time { font-size: 13px; color: #64748b; }
+.excel-link { font-size: 13px; color: #3b82f6; text-decoration: none; padding: 4px 8px; background: #eff6ff; border-radius: 4px; }
+.excel-link:hover { background: #dbeafe; }
+.stats-row { display: flex; gap: 12px; }
+.stat-card { flex: 1; background: #f1f5f9; border-radius: 8px; padding: 16px; text-align: center; }
+.stat-card .num { font-size: 28px; font-weight: 700; color: #0f172a; }
+.stat-card .label { font-size: 12px; color: #64748b; margin-top: 4px; }
+.stat-card.success .num { color: #16a34a; }
+.stat-card.warning .num { color: #ca8a04; }
+.stat-card.error .num { color: #dc2626; }
+.toolbar { background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.filter-select { display: flex; align-items: center; gap: 8px; }
+.filter-select label { font-size: 13px; color: #64748b; font-weight: 500; }
+.filter-select select { padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: white; font-size: 13px; color: #1e293b; cursor: pointer; min-width: 140px; }
+.filter-select select:focus { outline: none; border-color: #3b82f6; }
+.filter-select select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+.search-box { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.search-box input { padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px; width: 200px; }
+.search-box input:focus { outline: none; border-color: #3b82f6; }
+.filter-path { font-size: 14px; color: #64748b; margin-left: 8px; }
+.filter-path .item { color: #3b82f6; cursor: pointer; }
+.filter-path .item:hover { text-decoration: underline; }
+.filter-path .sep { color: #94a3b8; margin: 0 4px; }
+.charts-section { background: white; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #e2e8f0; }
+.section-header h2 { font-size: 15px; font-weight: 600; color: #0f172a; }
+.section-header .toggle { font-size: 13px; color: #3b82f6; cursor: pointer; }
+.charts-content { padding: 24px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+.charts-content.collapsed { display: none; }
+.chart-box h3 { font-size: 13px; font-weight: 500; color: #475569; margin-bottom: 12px; }
+.chart-wrap { height: 280px; position: relative; }
+.table-section { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-anchor: none; }
+.table-header { padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+.table-header h2 { font-size: 15px; font-weight: 600; color: #0f172a; }
+.table-header .count { font-size: 13px; color: #64748b; }
+.table-container { overflow-x: auto; overflow-anchor: none; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #f8fafc; padding: 12px 16px; text-align: left; font-weight: 500; color: #475569; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; }
+tr:hover { background: #f8fafc; }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.status-badge.success { background: #dcfce7; color: #16a34a; }
+.status-badge.error { background: #fee2e2; color: #dc2626; }
+.status-badge.warning { background: #fef3c7; color: #ca8a04; }
+.app-tag { display: inline-block; padding: 3px 10px; border-radius: 6px; background: #3b82f6; color: white; font-size: 12px; font-weight: 500; }
+.cls-path { font-size: 12px; color: #64748b; }
+.cls-path .item { cursor: pointer; color: #3b82f6; }
+.cls-path .item:hover { text-decoration: underline; }
+.cls-path .sep { color: #94a3b8; margin: 0 2px; }
+.empty-state { padding: 48px 24px; text-align: center; color: #64748b; }
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state p { font-size: 14px; }
+.hidden { display: none; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.hidden { display: none; }
+.modal { background: white; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+.modal-header { padding: 16px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+.modal-header h3 { font-size: 16px; font-weight: 600; color: #0f172a; }
+.modal-close { font-size: 20px; color: #64748b; cursor: pointer; line-height: 1; }
+.modal-close:hover { color: #1e293b; }
+.modal-body { padding: 24px; overflow-x: auto; }
+.modal-body table { width: 100%; border-collapse: collapse; }
+.modal-body th { background: #f1f5f9; padding: 12px 16px; text-align: left; font-weight: 500; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
+.modal-body td { padding: 12px 16px; border: 1px solid #e2e8f0; word-break: break-all; }
+.pagination { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 16px; border-top: 1px solid #e2e8f0; }
+.pagination button { padding: 8px 16px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; color: #475569; cursor: pointer; font-size: 13px; }
+.pagination button:hover:not(:disabled) { background: #f1f5f9; }
+.pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+.pagination button.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+.pagination .page-info { font-size: 13px; color: #64748b; }
+.problem-text { cursor: pointer; color: #3b82f6; display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.problem-text:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<div class="header-top">
+<h1>舆情分析报告</h1>
+<div class="header-right">
+<span class="time">2026-05-22 11:38:05</span>
+</div>
+</div>
+<div class="stats-row">
+<div class="stat-card"><div class="num">100</div><div class="label">总数据</div></div>
+<div class="stat-card success"><div class="num">100</div><div class="label">已分类</div></div>
+<div class="stat-card warning"><div class="num">0</div><div class="label">无描述</div></div>
+<div class="stat-card error"><div class="num">0</div><div class="label">未识别</div></div>
+</div>
+</div>
+<div class="toolbar">
+<div class="filter-select"><label>应用</label><select id="filter-app" onchange="onFilterChange('app')"><option value="">全部</option></select></div>
+<div class="filter-select"><label>模块</label><select id="filter-module" onchange="onFilterChange('module')" disabled><option value="">全部</option></select></div>
+<div class="filter-select"><label>页面</label><select id="filter-page" onchange="onFilterChange('page')" disabled><option value="">全部</option></select></div>
+<div class="filter-select"><label>问题类型</label><select id="filter-type" onchange="onFilterChange('type')" disabled><option value="">全部</option></select></div>
+<div class="search-box"><input type="text" id="search-input" placeholder="搜索问题描述..." onkeyup="onSearch()"></input></div>
+</div>
+<div class="charts-section">
+<div class="section-header">
+<h2>数据分布 <span id="filter-path" class="filter-path"></span></h2>
+<span class="toggle" onclick="toggleCharts()">收起</span>
+</div>
+<div class="charts-content" id="charts-content">
+<div class="chart-box"><h3>应用分布</h3><div class="chart-wrap"><canvas id="appChart"></canvas></div></div>
+<div class="chart-box"><h3 id="pie-title">模块分布</h3><div class="chart-wrap"><canvas id="pieChart"></canvas></div></div>
+</div>
+</div>
+<div class="table-section">
+<div class="table-header">
+<h2>详细数据</h2>
+<span class="count" id="table-count">0 条</span>
+</div>
+<div class="table-container">
+<table>
+<thead><tr>
+<th style="width:60px">序号</th>
+<th style="width:250px">问题描述</th>
+<th style="width:100px">应用</th>
+<th>分类路径（点击可筛选）</th>
+</tr></thead>
+<tbody id="table-body"></tbody>
+</table>
+</div>
+<div class="pagination" id="pagination"></div>
+<div class="empty-state hidden" id="empty-state"><div class="icon">🔍</div><p>没有找到匹配的数据</p></div>
+</div>
+<div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">
+<div class="modal" onclick="event.stopPropagation()">
+<div class="modal-header">
+<h3>数据详情</h3>
+<span class="modal-close" onclick="closeModal()">×</span>
+</div>
+<div class="modal-body" id="modal-body"></div>
+</div>
+</div>
+</div>
+<script>
+const allData = [{"input": "抖音刷视频卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频一直卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频卡住不动", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频时画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放过程中卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷短视频卡顿很厉害", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频时总是卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频加载卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频卡顿掉帧", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看短视频卡顿明显", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放时有卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频卡顿延迟", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频卡顿厉害", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看短视频卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放过程中卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频卡顿很明显", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放卡顿延迟高", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看短视频画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频时播放卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放卡顿厉害", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频时卡顿明显", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷短视频卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频加载卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看短视频卡顿厉害", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频卡顿延迟", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音视频播放卡顿掉帧严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷视频卡顿画面不动", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音短视频播放卡顿延迟", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看视频卡顿播放不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音刷短视频时卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音看直播卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播时卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放过程中卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播卡顿厉害", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播时画面卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播卡顿延迟高", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播播放卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播卡顿明显", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "最近抖音直播卡顿严重掉帧", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播时卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放卡顿厉害", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "经常抖音看直播画面卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播卡顿延迟", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播播放不流畅", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播播放时卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播卡顿掉帧", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "最近抖音直播播放卡顿明显", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播时播放卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音直播卡顿画面不动", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音看直播播放卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音滑动切换视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "总是抖音上下滑动卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音切换视频时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音滑动浏览视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音视频切换卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音滑动切换卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "老是抖音上下滑切换卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音切换短视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "总是抖音滑动时卡顿明显", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音视频切换时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音滑动浏览卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音切换视频卡顿不流畅", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "今天抖音上下滑动切换卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音滑动浏览视频时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "抖音切换短视频时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "滑动卡顿"}, "raw_data": {}}, {"input": "手机抖音首页加载卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "首页推荐页", "issue_type": "性能问题", "issue_detail": "推荐刷新卡顿"}, "raw_data": {}}, {"input": "最近抖音打开APP卡顿", "status": "success", "classification": {"app": "抖音", "module": "通用问题", "page": "通用页面", "issue_type": "性能问题", "issue_detail": "启动慢"}, "raw_data": {}}, {"input": "老是抖音启动卡顿严重", "status": "success", "classification": {"app": "抖音", "module": "通用问题", "page": "通用页面", "issue_type": "性能问题", "issue_detail": "启动慢"}, "raw_data": {}}, {"input": "抖音发布视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频发布页", "issue_type": "性能问题", "issue_detail": "上传慢"}, "raw_data": {}}, {"input": "抖音视频编辑卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频发布页", "issue_type": "性能问题", "issue_detail": "编辑卡顿"}, "raw_data": {}}, {"input": "抖音评论时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频详情页", "issue_type": "性能问题", "issue_detail": "加载慢"}, "raw_data": {}}, {"input": "抖音点赞时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音搜索卡顿", "status": "success", "classification": {"app": "抖音", "module": "商城", "page": "搜索结果页", "issue_type": "性能问题", "issue_detail": "搜索加载慢"}, "raw_data": {}}, {"input": "抖音打开评论区卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频详情页", "issue_type": "性能问题", "issue_detail": "加载慢"}, "raw_data": {}}, {"input": "抖音进入直播间卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "抖音首页刷新卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音APP启动卡顿", "status": "success", "classification": {"app": "抖音", "module": "通用问题", "page": "通用页面", "issue_type": "性能问题", "issue_detail": "启动慢"}, "raw_data": {}}, {"input": "抖音发布短视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频发布页", "issue_type": "性能问题", "issue_detail": "上传慢"}, "raw_data": {}}, {"input": "抖音编辑视频时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频发布页", "issue_type": "性能问题", "issue_detail": "编辑卡顿"}, "raw_data": {}}, {"input": "抖音评论加载卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频详情页", "issue_type": "性能问题", "issue_detail": "加载慢"}, "raw_data": {}}, {"input": "抖音点赞操作卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}, {"input": "抖音搜索视频卡顿", "status": "success", "classification": {"app": "抖音", "module": "商城", "page": "搜索结果页", "issue_type": "性能问题", "issue_detail": "搜索加载慢"}, "raw_data": {}}, {"input": "抖音打开评论卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频详情页", "issue_type": "性能问题", "issue_detail": "加载慢"}, "raw_data": {}}, {"input": "经常抖音进入直播卡顿", "status": "success", "classification": {"app": "抖音", "module": "直播", "page": "直播播放页", "issue_type": "性能问题", "issue_detail": "直播卡顿"}, "raw_data": {}}, {"input": "今天抖音首页刷新时卡顿", "status": "success", "classification": {"app": "抖音", "module": "短视频", "page": "视频播放页", "issue_type": "性能问题", "issue_detail": "播放卡顿"}, "raw_data": {}}];
+let filters = { app: "", module: "", type: "", page: "" };
+let searchText = "";
+let charts = {};
+let chartsVisible = true;
+let currentPage = 1;
+const pageSize = 50;
+function getAllOptions() {
+const apps = {}, modules = {}, pages = {}, types = {};
+allData.forEach(item => {
+if (item.status === "success") {
+const cls = item.classification;
+apps[cls.app] = true;
+modules[cls.module] = true;
+pages[cls.page] = true;
+types[cls.issue_type] = true;
+}});
+return { apps: Object.keys(apps).sort(), modules: Object.keys(modules).sort(), pages: Object.keys(pages).sort(), types: Object.keys(types).sort() };
+}
+function getAvailableModules(app) {
+const modules = {};
+allData.forEach(item => {
+if (item.status === "success") {
+const cls = item.classification;
+if (!app || cls.app === app) {
+modules[cls.module] = true;
+}}});
+return Object.keys(modules).sort();
+}
+function getAvailablePages(app, module) {
+const pages = {};
+allData.forEach(item => {
+if (item.status === "success") {
+const cls = item.classification;
+if (!app || cls.app === app) {
+if (!module || cls.module === module) {
+pages[cls.page] = true;
+}}}});
+return Object.keys(pages).sort();
+}
+function getAvailableTypes(app, module, page) {
+const types = {};
+allData.forEach(item => {
+if (item.status === "success") {
+const cls = item.classification;
+if (!app || cls.app === app) {
+if (!module || cls.module === module) {
+if (!page || cls.page === page) {
+types[cls.issue_type] = true;
+}}}}});
+return Object.keys(types).sort();
+}
+function initSelectOptions() {
+const opts = getAllOptions();
+fillSelect("filter-app", opts.apps, "全部");
+}
+function fillSelect(id, options, placeholder = "全部") {
+const sel = document.getElementById(id);
+const currentValue = sel.value;
+sel.innerHTML = "<option value=\"\">" + placeholder + "</option>";
+options.forEach(opt => {
+const optEl = document.createElement("option");
+optEl.value = opt;
+optEl.textContent = opt;
+sel.appendChild(optEl);
+});
+if (options.includes(currentValue)) {
+sel.value = currentValue;
+} else {
+sel.value = "";
+}
+}
+function getFilteredData() {
+return allData.filter(item => {
+if (item.status !== "success") return false;
+const cls = item.classification;
+if (filters.app && cls.app !== filters.app) return false;
+if (filters.module && cls.module !== filters.module) return false;
+if (filters.type && cls.issue_type !== filters.type) return false;
+if (filters.page && cls.page !== filters.page) return false;
+if (searchText) {
+const text = (item.input || "").toLowerCase();
+if (!text.includes(searchText.toLowerCase())) return false;
+}
+return true;
+});
+}
+function calcStats(data) {
+const stats = { app: {}, module: {}, page: {}, type: {} };
+data.forEach(item => {
+if (item.status !== "success") return;
+const cls = item.classification;
+stats.app[cls.app] = (stats.app[cls.app] || 0) + 1;
+stats.module[cls.module] = (stats.module[cls.module] || 0) + 1;
+stats.page[cls.page] = (stats.page[cls.page] || 0) + 1;
+stats.type[cls.issue_type] = (stats.type[cls.issue_type] || 0) + 1;
+});
+return stats;
+}
+function onFilterChange(source) {
+const appSel = document.getElementById("filter-app");
+const moduleSel = document.getElementById("filter-module");
+const pageSel = document.getElementById("filter-page");
+const typeSel = document.getElementById("filter-type");
+if (source === "app") {
+filters.app = appSel.value;
+if (filters.app) {
+const availableModules = getAvailableModules(filters.app);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+} else {
+moduleSel.disabled = true;
+moduleSel.innerHTML = "<option value=\"\">全部</option>";
+pageSel.disabled = true;
+pageSel.innerHTML = "<option value=\"\">全部</option>";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+}
+filters.module = "";
+filters.page = "";
+filters.type = "";
+}
+if (source === "module") {
+filters.module = moduleSel.value;
+if (filters.module) {
+const availablePages = getAvailablePages(filters.app, filters.module);
+fillSelect("filter-page", availablePages, "全部");
+pageSel.disabled = false;
+} else {
+pageSel.disabled = true;
+pageSel.innerHTML = "<option value=\"\">全部</option>";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+}
+filters.page = "";
+filters.type = "";
+}
+if (source === "page") {
+filters.page = pageSel.value;
+if (filters.page) {
+const availableTypes = getAvailableTypes(filters.app, filters.module, filters.page);
+fillSelect("filter-type", availableTypes, "全部");
+typeSel.disabled = false;
+} else {
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+}
+filters.type = "";
+}
+if (source === "type") {
+filters.type = typeSel.value;
+}
+currentPage = 1;
+updateAll();
+}
+function onSearch() {
+searchText = document.getElementById("search-input").value;
+currentPage = 1;
+updateAll();
+}
+function clearFilters() {
+filters = { app: "", module: "", page: "", type: "" };
+searchText = "";
+const opts = getAllOptions();
+fillSelect("filter-app", opts.apps, "全部");
+document.getElementById("filter-app").value = "";
+const moduleSel = document.getElementById("filter-module");
+moduleSel.disabled = true;
+moduleSel.innerHTML = "<option value=\"\">全部</option>";
+const pageSel = document.getElementById("filter-page");
+pageSel.disabled = true;
+pageSel.innerHTML = "<option value=\"\">全部</option>";
+const typeSel = document.getElementById("filter-type");
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+document.getElementById("search-input").value = "";
+currentPage = 1;
+updateAll();
+}
+function toggleCharts() {
+chartsVisible = !chartsVisible;
+const content = document.getElementById("charts-content");
+const toggle = document.querySelector(".section-header .toggle");
+if (chartsVisible) {
+content.classList.remove("collapsed");
+toggle.textContent = "收起";
+} else {
+content.classList.add("collapsed");
+toggle.textContent = "展开";
+}
+}
+function updateBreadcrumb() {
+const pathEl = document.getElementById("filter-path");
+if (!filters.app && !filters.module && !filters.page && !filters.type && !searchText) {
+pathEl.innerHTML = "";
+return;
+}
+const parts = ["全部"];
+if (filters.app) parts.push(filters.app);
+if (filters.module) parts.push(filters.module);
+if (filters.page) parts.push(filters.page);
+if (filters.type) parts.push(filters.type);
+if (searchText) parts.push("搜索:" + searchText);
+pathEl.innerHTML = parts.map((p, i) => {
+if (i === 0) return `<span class="item" onclick="clearFilters()">${p}</span>`;
+return `<span class="item" onclick="clearLevel(${i})">${p}</span>`;
+}).join("<span class='sep'>›</span>");
+}
+function clearLevel(level) {
+if (level === 1) {
+filters.module = ""; filters.page = ""; filters.type = "";
+const availableModules = getAvailableModules(filters.app);
+fillSelect("filter-module", availableModules, "全部");
+document.getElementById("filter-module").disabled = false;
+document.getElementById("filter-module").value = "";
+document.getElementById("filter-page").disabled = true;
+document.getElementById("filter-page").innerHTML = "<option value=\"\">全部</option>";
+document.getElementById("filter-type").disabled = true;
+document.getElementById("filter-type").innerHTML = "<option value=\"\">全部</option>";
+} else if (level === 2) {
+filters.page = ""; filters.type = "";
+const availablePages = getAvailablePages(filters.app, filters.module);
+fillSelect("filter-page", availablePages, "全部");
+document.getElementById("filter-page").disabled = false;
+document.getElementById("filter-page").value = "";
+document.getElementById("filter-type").disabled = true;
+document.getElementById("filter-type").innerHTML = "<option value=\"\">全部</option>";
+} else if (level === 3) {
+filters.type = "";
+const availableTypes = getAvailableTypes(filters.app, filters.module, filters.page);
+fillSelect("filter-type", availableTypes, "全部");
+document.getElementById("filter-type").disabled = false;
+document.getElementById("filter-type").value = "";
+}
+searchText = ""; document.getElementById("search-input").value = "";
+currentPage = 1;
+updateAll();
+}
+function updateTable() {
+const tbody = document.getElementById("table-body");
+const empty = document.getElementById("empty-state");
+const countEl = document.getElementById("table-count");
+const paginationEl = document.getElementById("pagination");
+const filtered = getFilteredData();
+countEl.textContent = filtered.length + " 条";
+const totalPages = Math.ceil(filtered.length / pageSize);
+if (currentPage > totalPages) currentPage = totalPages || 1;
+const start = (currentPage - 1) * pageSize;
+const end = start + pageSize;
+const pageData = filtered.slice(start, end);
+tbody.innerHTML = "";
+if (filtered.length === 0) {
+empty.classList.remove("hidden");
+paginationEl.innerHTML = "";
+return;
+}
+empty.classList.add("hidden");
+pageData.forEach((item, i) => {
+const cls = item.classification;
+const globalIndex = start + i;
+const row = document.createElement("tr");
+row.dataset.index = globalIndex;
+row.innerHTML = `
+<td>${globalIndex + 1}</td>
+<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>
+<td><span class="app-tag">${cls.app}</span></td>
+<td><span class="cls-path">
+<span class="item" onclick="setFilterWithPath('${cls.app}','','','','app','${cls.app}')">${cls.app}</span>
+<span class="sep">›</span>
+<span class="item" onclick="setFilterWithPath('${cls.app}','${cls.module}','','','module','${cls.module}')">${cls.module}</span>
+<span class="sep">›</span>
+<span class="item" onclick="setFilterWithPath('${cls.app}','${cls.module}','${cls.page}','','page','${cls.page}')">${cls.page}</span>
+<span class="sep">›</span>
+<span class="item" onclick="setFilterWithPath('${cls.app}','${cls.module}','${cls.page}','${cls.issue_type}','type','${cls.issue_type}')">${cls.issue_type}</span>
+<span class="sep">›</span>
+<span class="item">${cls.issue_detail}</span>
+</span></td>
+`;
+tbody.appendChild(row);
+});
+updatePagination(filtered.length, totalPages);
+}
+function setFilter(field, value) {
+const appSel = document.getElementById("filter-app");
+const moduleSel = document.getElementById("filter-module");
+const pageSel = document.getElementById("filter-page");
+const typeSel = document.getElementById("filter-type");
+if (field === "app") {
+filters.app = value;
+appSel.value = value;
+const availableModules = getAvailableModules(value);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+moduleSel.value = "";
+filters.module = "";
+pageSel.disabled = true;
+pageSel.innerHTML = "<option value=\"\">全部</option>";
+filters.page = "";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (field === "module") {
+filters.module = value;
+moduleSel.value = value;
+const availablePages = getAvailablePages(filters.app, value);
+fillSelect("filter-page", availablePages, "全部");
+pageSel.disabled = false;
+pageSel.value = "";
+filters.page = "";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (field === "page") {
+filters.page = value;
+pageSel.value = value;
+const availableTypes = getAvailableTypes(filters.app, filters.module, value);
+fillSelect("filter-type", availableTypes, "全部");
+typeSel.disabled = false;
+typeSel.value = "";
+filters.type = "";
+} else if (field === "type") {
+filters.type = value;
+typeSel.value = value;
+}
+currentPage = 1;
+updateAll();
+}
+function setFilterWithPath(app, module, page, type, targetField, targetValue) {
+const appSel = document.getElementById("filter-app");
+const moduleSel = document.getElementById("filter-module");
+const pageSel = document.getElementById("filter-page");
+const typeSel = document.getElementById("filter-type");
+if (targetField === "app") {
+filters.app = targetValue;
+appSel.value = targetValue;
+const availableModules = getAvailableModules(targetValue);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+moduleSel.value = "";
+filters.module = "";
+pageSel.disabled = true;
+pageSel.innerHTML = "<option value=\"\">全部</option>";
+filters.page = "";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (targetField === "module") {
+filters.app = app;
+appSel.value = app;
+const availableModules = getAvailableModules(app);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+filters.module = targetValue;
+moduleSel.value = targetValue;
+const availablePages = getAvailablePages(app, targetValue);
+fillSelect("filter-page", availablePages, "全部");
+pageSel.disabled = false;
+pageSel.value = "";
+filters.page = "";
+typeSel.disabled = true;
+typeSel.innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (targetField === "page") {
+filters.app = app;
+appSel.value = app;
+const availableModules = getAvailableModules(app);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+filters.module = module;
+moduleSel.value = module;
+const availablePages = getAvailablePages(app, module);
+fillSelect("filter-page", availablePages, "全部");
+pageSel.disabled = false;
+filters.page = targetValue;
+pageSel.value = targetValue;
+const availableTypes = getAvailableTypes(app, module, targetValue);
+fillSelect("filter-type", availableTypes, "全部");
+typeSel.disabled = false;
+typeSel.value = "";
+filters.type = "";
+} else if (targetField === "type") {
+filters.app = app;
+appSel.value = app;
+const availableModules = getAvailableModules(app);
+fillSelect("filter-module", availableModules, "全部");
+moduleSel.disabled = false;
+filters.module = module;
+moduleSel.value = module;
+const availablePages = getAvailablePages(app, module);
+fillSelect("filter-page", availablePages, "全部");
+pageSel.disabled = false;
+filters.page = page;
+pageSel.value = page;
+const availableTypes = getAvailableTypes(app, module, page);
+fillSelect("filter-type", availableTypes, "全部");
+typeSel.disabled = false;
+filters.type = targetValue;
+typeSel.value = targetValue;
+}
+currentPage = 1;
+updateAll();
+}
+function updateCharts() {
+const filtered = getFilteredData();
+const stats = calcStats(filtered);
+charts.app.data.labels = Object.keys(stats.app);
+charts.app.data.datasets[0].data = Object.values(stats.app);
+charts.app.update();
+const pieTitle = document.getElementById("pie-title");
+if (filters.page) {
+pieTitle.textContent = "问题类型分布";
+charts.pie.data.labels = Object.keys(stats.type);
+charts.pie.data.datasets[0].data = Object.values(stats.type);
+} else if (filters.module) {
+pieTitle.textContent = "页面分布";
+charts.pie.data.labels = Object.keys(stats.page);
+charts.pie.data.datasets[0].data = Object.values(stats.page);
+} else if (filters.app) {
+pieTitle.textContent = "模块分布";
+charts.pie.data.labels = Object.keys(stats.module);
+charts.pie.data.datasets[0].data = Object.values(stats.module);
+} else {
+pieTitle.textContent = "应用分布";
+charts.pie.data.labels = Object.keys(stats.app);
+charts.pie.data.datasets[0].data = Object.values(stats.app);
+}
+charts.pie.update();
+}
+function initCharts() {
+const stats = calcStats(allData);
+charts.app = new Chart(document.getElementById("appChart"), {
+type: "bar",
+data: { labels: Object.keys(stats.app), datasets: [{ data: Object.values(stats.app), backgroundColor: ["#3b82f6","#8b5cf6","#ec4899","#f43f5e","#06b6d4","#14b8a6"] }] },
+options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (e,els) => { if(els.length>0) setFilter("app", charts.app.data.labels[els[0].index]); } }
+});
+charts.pie = new Chart(document.getElementById("pieChart"), {
+type: "doughnut",
+data: { labels: [], datasets: [{ data: [], backgroundColor: ["#3b82f6","#8b5cf6","#ec4899","#f43f5e","#06b6d4","#14b8a6","#16a34a","#ca8a04"] }] },
+options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" }, tooltip: { callbacks: { label: function(ctx) { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); const pct = Math.round(ctx.raw/total*100); return ctx.label + ": " + ctx.raw + " 条 (" + pct + "%)"; } } } }, onClick: (e,els) => { if(els.length>0) onPieClick(charts.pie.data.labels[els[0].index]); } }
+});
+}
+function onPieClick(value) {
+if (filters.page) {
+setFilter("type", value);
+} else if (filters.module) {
+setFilter("page", value);
+} else if (filters.app) {
+setFilter("module", value);
+} else {
+setFilter("app", value);
+}
+}
+function clearFilter(level) {
+const sel = document.getElementById("filter-" + level);
+filters[level] = "";
+if (sel) sel.value = "";
+if (level === "app") {
+document.getElementById("filter-module").disabled = true;
+document.getElementById("filter-module").innerHTML = "<option value=\"\">全部</option>";
+filters.module = "";
+document.getElementById("filter-page").disabled = true;
+document.getElementById("filter-page").innerHTML = "<option value=\"\">全部</option>";
+filters.page = "";
+document.getElementById("filter-type").disabled = true;
+document.getElementById("filter-type").innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (level === "module") {
+document.getElementById("filter-page").disabled = true;
+document.getElementById("filter-page").innerHTML = "<option value=\"\">全部</option>";
+filters.page = "";
+document.getElementById("filter-type").disabled = true;
+document.getElementById("filter-type").innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+} else if (level === "page") {
+document.getElementById("filter-type").disabled = true;
+document.getElementById("filter-type").innerHTML = "<option value=\"\">全部</option>";
+filters.type = "";
+}
+updateAll();
+}
+function updateAll() {
+updateCharts();
+updateBreadcrumb();
+updateTable();
+}
+function updatePagination(total, totalPages) {
+const paginationEl = document.getElementById("pagination");
+if (totalPages <= 1) {
+paginationEl.innerHTML = "";
+return;
+}
+let html = "";
+html += `<button onclick="goToPage(1)" ${currentPage === 1 ? "disabled" : ""}>首页</button>`;
+html += `<button onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? "disabled" : ""}>上一页</button>`;
+const startPage = Math.max(1, currentPage - 2);
+const endPage = Math.min(totalPages, startPage + 4);
+for (let p = startPage; p <= endPage; p++) {
+html += `<button onclick="goToPage(${p})" class="${p === currentPage ? "active" : ""}">${p}</button>`;
+}
+html += `<button onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? "disabled" : ""}>下一页</button>`;
+html += `<button onclick="goToPage(${totalPages})" ${currentPage === totalPages ? "disabled" : ""}>末页</button>`;
+html += `<span class="page-info">第 ${currentPage}/${totalPages} 页，共 ${total} 条</span>`;
+paginationEl.innerHTML = html;
+}
+function goToPage(page) {
+const filtered = getFilteredData();
+const totalPages = Math.ceil(filtered.length / pageSize);
+if (page < 1) page = 1;
+if (page > totalPages) page = totalPages;
+currentPage = page;
+updateTable();
+}
+function showDetail(index) {
+const filtered = getFilteredData();
+const item = filtered[index];
+const raw = item.raw_data || {};
+const body = document.getElementById("modal-body");
+let html = "<table><thead><tr>";
+for (const key in raw) {
+html += `<th>${key}</th>`;
+}
+html += "</tr></thead><tbody><tr>";
+for (const key in raw) {
+html += `<td>${raw[key]}</td>`;
+}
+html += "</tr></tbody></table>";
+body.innerHTML = html;
+document.getElementById("modal-overlay").classList.remove("hidden");
+}
+function closeModal() {
+document.getElementById("modal-overlay").classList.add("hidden");
+}
+document.addEventListener("DOMContentLoaded", () => {
+initSelectOptions();
+initCharts();
+updateAll();
+});
+</script>
+</body>
+</html>
