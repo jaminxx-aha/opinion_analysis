@@ -164,6 +164,29 @@ def prepare_excel_data(excel_path: str, app_column: str, problem_column: str) ->
     }
 
 
+def get_base_filename(filename: str) -> str:
+    """
+    从文件名中移除所有处理阶段后缀，获取基础文件名
+    移除的后缀: _prepared, _classified, _report
+    移除的扩展名: .json, .xlsx, .xls, .html
+    """
+    basename = os.path.basename(filename)
+    # 移除所有可能的扩展名
+    for ext in ['.json', '.xlsx', '.xls', '.html']:
+        if basename.endswith(ext):
+            basename = basename[:-len(ext)]
+    # 循环移除后缀，直到没有变化（处理多重后缀情况）
+    suffixes = ['_classified', '_prepared', '_report']
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if basename.endswith(suffix):
+                basename = basename[:-len(suffix)]
+                changed = True
+    return basename
+
+
 def generate_report_from_result(result_path: str, output_dir: str = None) -> dict:
     """
     从分类结果JSON生成可视化报告
@@ -241,15 +264,15 @@ def generate_report_from_result(result_path: str, output_dir: str = None) -> dic
         "excel_source": data.get("excel_source", "")
     }
 
-    # 确定输出文件名
-    json_basename = os.path.basename(result_path).replace('.json', '').replace('_prepared', '')
-    output_path = os.path.join(output_dir, f"{json_basename}_classified.json")
+    # 确定输出文件名 - 使用基础文件名避免重复后缀
+    base_filename = get_base_filename(result_path)
+    output_path = os.path.join(output_dir, f"{base_filename}_classified.json")
 
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
     # 生成可视化报告
-    report_path = os.path.join(output_dir, f"{json_basename}_report.html")
+    report_path = os.path.join(output_dir, f"{base_filename}_report.html")
     try:
         subprocess.run([
             sys.executable,
@@ -335,15 +358,15 @@ def main():
 
             # 确定输出目录（按SKILL.md步骤0的逻辑）
             # 获取Excel文件基础名（用于创建子目录）
-            excel_basename = os.path.basename(input_path).replace('.xlsx', '').replace('.xls', '')
+            excel_basename = get_base_filename(input_path)
 
             if args.output_dir:
-                # 用户指定了输出路径
+                # 用户指定了输出路径，直接使用该目录作为最终输出目录
                 user_output = args.output_dir
                 if os.path.exists(user_output):
                     if os.path.isdir(user_output):
-                        # 存在且是文件夹
-                        output_base = user_output
+                        # 存在且是文件夹，直接作为output_dir
+                        output_dir = user_output
                     else:
                         # 存在但不是文件夹，报错
                         print(f"错误: 输出路径 '{user_output}' 不是文件夹")
@@ -351,16 +374,14 @@ def main():
                 else:
                     # 不存在，创建该文件夹
                     os.makedirs(user_output, exist_ok=True)
-                    output_base = user_output
+                    output_dir = user_output
             else:
-                # 用户未指定输出路径，使用 ./output
+                # 用户未指定输出路径，使用 ./output，并在其下创建excel_basename子目录
                 output_base = os.path.join(os.getcwd(), 'output')
                 if not os.path.exists(output_base):
                     os.makedirs(output_base, exist_ok=True)
-
-            # 在output_base下创建以Excel文件名命名的子目录
-            output_dir = os.path.join(output_base, excel_basename)
-            os.makedirs(output_dir, exist_ok=True)
+                output_dir = os.path.join(output_base, excel_basename)
+                os.makedirs(output_dir, exist_ok=True)
 
             # 复制原始Excel文件到output_dir（用于HTML报告下载）
             excel_copy_path = os.path.join(output_dir, os.path.basename(input_path))
