@@ -20,11 +20,29 @@ def generate_report(json_path: str, output_path: str = None) -> str:
 
     summary = data.get('summary', {})
 
+    # 检查是否需要从prepared.json补充raw_data
+    raw_details = data.get('details', [])
+    need_raw_data = False
+    if raw_details:
+        # 检查第一条是否有raw_data
+        first_item = raw_details[0]
+        if not first_item.get('raw_data') or first_item.get('raw_data') == {}:
+            need_raw_data = True
+
+    # 如果需要补充raw_data，尝试读取prepared.json
+    prepared_data = None
+    if need_raw_data:
+        json_dir = os.path.dirname(os.path.abspath(json_path))
+        json_basename = os.path.basename(json_path).replace('_classified.json', '_prepared.json')
+        prepared_path = os.path.join(json_dir, json_basename)
+        if os.path.exists(prepared_path):
+            with open(prepared_path, 'r', encoding='utf-8') as f:
+                prepared_data = json.load(f)
+
     # 兼容多种格式：
     # 1. details + input + 嵌套classification 格式
     # 2. items + problem 格式
     # 3. details + 扁平格式（classification字段直接在顶层）
-    raw_details = data.get('details', [])
     if not raw_details:
         # 如果没有 details，尝试读取 items 格式并转换
         items = data.get('items', [])
@@ -42,7 +60,13 @@ def generate_report(json_path: str, output_path: str = None) -> str:
 
     # 处理扁平格式：如果details中的项没有嵌套的classification，但有app/module等字段
     details = []
-    for item in raw_details:
+    for i, item in enumerate(raw_details):
+        # 补充raw_data（如果有prepared_data）
+        if prepared_data and prepared_data.get('items'):
+            prepared_items = prepared_data.get('items', [])
+            if i < len(prepared_items):
+                item['raw_data'] = prepared_items[i].get('raw_data', {})
+
         if 'classification' not in item and 'app' in item:
             # 扁平格式，转换为嵌套格式
             classification = {
@@ -80,9 +104,24 @@ def generate_report(json_path: str, output_path: str = None) -> str:
         no_description = summary.get('no_description', 0)
         unrecognized = summary.get('unrecognized_app', 0)
 
-    # Excel来源文件名
+    # Excel来源文件名 - 优先从output_dir查找实际Excel文件
     excel_source = data.get('excel_source', '')
-    excel_filename = os.path.basename(excel_source) if excel_source else ''
+
+    # 尝试从prepared.json获取原始Excel路径
+    if prepared_data:
+        excel_source = prepared_data.get('excel_source', excel_source)
+
+    # 尝试从output_dir直接查找Excel文件
+    json_dir = os.path.dirname(os.path.abspath(json_path))
+    excel_filename = ''
+    for f in os.listdir(json_dir):
+        if f.endswith('.xlsx') or f.endswith('.xls'):
+            excel_filename = f
+            break
+
+    # 如果没找到，使用excel_source的basename
+    if not excel_filename and excel_source:
+        excel_filename = os.path.basename(excel_source)
 
     details_json = json.dumps(details, ensure_ascii=False)
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -113,8 +152,9 @@ def generate_report(json_path: str, output_path: str = None) -> str:
     parts.append('.header-right { display: flex; align-items: center; gap: 16px; }')
     parts.append('.header .time { font-size: 13px; color: #64748b; }')
     # Excel文件链接样式
-    parts.append('.excel-link { font-size: 13px; color: #3b82f6; text-decoration: none; padding: 4px 8px; background: #eff6ff; border-radius: 4px; }')
-    parts.append('.excel-link:hover { background: #dbeafe; }')
+    parts.append('.excel-link { font-size: 13px; color: white; text-decoration: none; padding: 6px 12px; background: #3b82f6; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; transition: background 0.2s; }')
+    parts.append('.excel-link:hover { background: #2563eb; }')
+    parts.append('.excel-link::before { content: "⬇"; font-size: 14px; }')
 
     # 统计卡片（横向排列）
     parts.append('.stats-row { display: flex; gap: 12px; }')
@@ -224,7 +264,7 @@ def generate_report(json_path: str, output_path: str = None) -> str:
     parts.append('<h1>舆情分析报告</h1>')
     parts.append('<div class="header-right">')
     if excel_filename:
-        parts.append(f'<a href="{excel_filename}" class="excel-link" download>{excel_filename}</a>')
+        parts.append(f'<a href="{excel_filename}" class="excel-link" download title="下载原始Excel数据">下载原始数据</a>')
     parts.append(f'<span class="time">{generated_time}</span>')
     parts.append('</div>')
     parts.append('</div>')

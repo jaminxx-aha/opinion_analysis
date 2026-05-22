@@ -3,17 +3,21 @@
 批量舆情分析脚本
 
 用法:
-  准备数据模式: python analyze_excel.py <Excel文件路径> --prepare-only
+  查看Excel信息: python analyze_excel.py <Excel文件路径> --info
+  准备数据模式: python analyze_excel.py <Excel文件路径> --prepare-only --app-column <列名> --problem-column <列名>
   生成报告模式: python analyze_excel.py <分类结果JSON路径>
 
-新增参数:
-  --app-column      指定应用名列名（默认自动识别）
-  --problem-column  指定问题描述列名（默认自动识别）
+参数:
+  --info            只显示Excel字段信息和样本数据（用于判断列名）
+  --prepare-only    准备数据供分类使用
+  --app-column      指定应用名列名（必需）
+  --problem-column  指定问题描述列名（必需）
   --output-dir      指定输出目录（默认在Excel文件所在目录）
 
 输出:
-  准备模式: JSON格式的原始数据（供子Agent分类）
-  报告模式: 可视化HTML报告
+  --info: 显示列名和前10行样本数据
+  --prepare-only: JSON格式的原始数据（供子Agent分类）
+  JSON输入: 可视化HTML报告
 """
 
 import sys
@@ -22,6 +26,7 @@ import os
 import pandas as pd
 import subprocess
 import argparse
+import shutil  # 添加shutil用于复制文件
 
 # 获取脚本目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,40 +35,38 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 from config import apps_in_folder, app_alias_map
 
 
-# 应用名列的关键词（用于自动识别）
-APP_COLUMN_KEYWORDS = ['应用', 'app', '应用名', 'app名', '软件', '平台', '产品']
-
-# 问题描述列的关键词（用于自动识别）
-PROBLEM_COLUMN_KEYWORDS = ['问题', '描述', '问题描述', '反馈', '内容', '投诉', '问题描述']
-
-
-def identify_column(columns: list, keywords: list, column_type: str) -> str:
+def get_excel_info(excel_path: str) -> dict:
     """
-    自动识别列名
+    读取Excel文件，获取字段信息和样本数据
+    用于判断哪个列是应用名列、哪个是问题描述列
 
     Args:
-        columns: Excel列名列表
-        keywords: 匹配关键词列表
-        column_type: 列类型描述（用于错误提示）
+        excel_path: Excel文件路径
 
     Returns:
-        匹配的列名，如果未找到则返回空字符串
+        包含字段信息和样本数据的字典
     """
-    # 优先精确匹配
-    for col in columns:
-        col_lower = col.lower().strip()
-        for keyword in keywords:
-            if col_lower == keyword.lower():
-                return col
+    df = pd.read_excel(excel_path)
+    columns = df.columns.tolist()
+    sample_size = min(10, len(df))
 
-    # 其次包含匹配
-    for col in columns:
-        col_lower = col.lower().strip()
-        for keyword in keywords:
-            if keyword.lower() in col_lower:
-                return col
+    # 获取每列的前几行样本数据，带索引号
+    columns_with_index = {i+1: col for i, col in enumerate(columns)}
+    column_samples = {}
+    for i, col in enumerate(columns):
+        samples = df[col].head(sample_size).astype(str).tolist()
+        column_samples[f"{i+1}:{col}"] = samples
 
-    return ""
+    return {
+        'excel_source': excel_path,
+        'columns': columns,
+        'columns_with_index': columns_with_index,
+        'column_samples': column_samples,
+        'total_rows': len(df),
+        'sample_size': sample_size,
+        'apps_available': apps_in_folder,  # 已知的应用列表
+        'app_aliases': app_alias_map  # 应用别名映射
+    }
 
 
 def resolve_app_name(app: str) -> str:
@@ -73,14 +76,15 @@ def resolve_app_name(app: str) -> str:
     return app
 
 
-def prepare_excel_data(excel_path: str, app_column: str = None, problem_column: str = None) -> dict:
+def prepare_excel_data(excel_path: str, app_column: str, problem_column: str) -> dict:
     """
     读取Excel数据，准备供子Agent分类
+    支持列名或列索引（数字，从1开始）
 
     Args:
         excel_path: Excel文件路径
-        app_column: 应用名列名（可选，默认自动识别）
-        problem_column: 问题描述列名（可选，默认自动识别）
+        app_column: 应用名列名或列索引（可选）
+        problem_column: 问题描述列名或列索引（必需）
 
     Returns:
         包含原始数据的字典
@@ -90,33 +94,46 @@ def prepare_excel_data(excel_path: str, app_column: str = None, problem_column: 
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
 
-    # 自动识别或使用指定的列名
-    if not app_column:
-        app_column = identify_column(columns, APP_COLUMN_KEYWORDS, "应用名")
+    # 解析列名/列索引
+    def resolve_column(col_spec, columns):
+        """将列名或列索引转换为实际列名"""
+        if col_spec is None:
+            return None
+        # 如果是数字，当作列索引处理（从1开始）
+        try:
+            idx = int(col_spec)
+            if 1 <= idx <= len(columns):
+                return columns[idx - 1]
+            else:
+                return None
+        except ValueError:
+            # 不是数字，当作列名处理
+            return col_spec
 
-    if not problem_column:
-        problem_column = identify_column(columns, PROBLEM_COLUMN_KEYWORDS, "问题描述")
+    problem_col_name = resolve_column(problem_column, columns)
+    app_col_name = resolve_column(app_column, columns) if app_column else None
 
     # 检查必要列是否存在
-    if not problem_column:
+    if problem_col_name not in columns:
         return {
-            "error": f"Excel 文件无法识别'问题描述'列",
+            "error": f"指定的'问题描述'列 '{problem_column}' 不存在",
             "columns": columns,
-            "hint": "请使用 --problem-column 参数指定列名，或在Excel中添加包含'问题'或'描述'关键词的列"
+            "columns_with_index": {i+1: col for i, col in enumerate(columns)},
+            "hint": "请先使用 --info 查看Excel列名，然后指定正确的列名或列索引（数字，从1开始）"
         }
 
-    # 检查是否有应用名列（可选）
-    has_app_column = bool(app_column) and app_column in columns
+    # 检查应用名列是否存在（可选）
+    has_app_column = app_col_name and app_col_name in columns
 
     # 提取数据
     items = []
     for idx, row in df.iterrows():
-        problem = str(row[problem_column])
+        problem = str(row[problem_col_name])
 
         # 获取应用名（如果有）
         app = ""
         if has_app_column:
-            app = str(row[app_column])
+            app = str(row[app_col_name])
             app = resolve_app_name(app)
 
         # 保存原始数据
@@ -137,13 +154,13 @@ def prepare_excel_data(excel_path: str, app_column: str = None, problem_column: 
 
     return {
         "excel_source": excel_path,
-        "columns_detected": {
-            "app_column": app_column or "未识别",
-            "problem_column": problem_column
+        "columns_used": {
+            "app_column": app_col_name or "未指定",
+            "problem_column": problem_col_name
         },
         "total": len(items),
         "items": items,
-        "apps_available": apps_in_folder  # 可用的应用描述列表
+        "apps_available": apps_in_folder
     }
 
 
@@ -254,11 +271,13 @@ def generate_report_from_result(result_path: str, output_dir: str = None) -> dic
 def main():
     parser = argparse.ArgumentParser(description='舆情数据分析脚本')
     parser.add_argument('input', help='输入文件路径（Excel或JSON）')
+    parser.add_argument('--info', action='store_true',
+                        help='只显示Excel字段信息和样本数据（用于判断列名）')
     parser.add_argument('--prepare-only', action='store_true',
-                        help='只准备数据，不进行分类（用于Excel输入）')
+                        help='准备数据供分类使用（需配合 --app-column 和 --problem-column）')
+    parser.add_argument('--app-column', help='应用名列名')
+    parser.add_argument('--problem-column', help='问题描述列名')
     parser.add_argument('--output-dir', help='输出目录路径')
-    parser.add_argument('--app-column', help='应用名列名（默认自动识别）')
-    parser.add_argument('--problem-column', help='问题描述列名（默认自动识别）')
 
     args = parser.parse_args()
 
@@ -267,9 +286,45 @@ def main():
     # 判断输入类型
     if input_path.endswith('.xlsx') or input_path.endswith('.xls'):
         # Excel输入
-        if args.prepare_only:
-            # 只准备数据
-            result = prepare_excel_data(input_path, args.app_column, args.problem_column)
+
+        if args.info:
+            # 只显示Excel信息
+            result = get_excel_info(input_path)
+            print("=== Excel 文件信息 ===")
+            print(f"文件路径: {result['excel_source']}")
+            print(f"总行数: {result['total_rows']}")
+            print()
+            print("=== 列名（带索引号）===")
+            for idx, col in result['columns_with_index'].items():
+                print(f"  [{idx}] {col}")
+            print()
+            print("=== 各列样本数据（前10行）===")
+            for col, samples in result['column_samples'].items():
+                print(f"\n【{col}】")
+                for i, s in enumerate(samples):
+                    print(f"  {i+1}. {s}")
+            print()
+            print("=== 已知的应用名和别名 ===")
+            print(f"应用列表: {result['apps_available']}")
+            print(f"别名映射: {result['app_aliases']}")
+            print()
+            print("请根据以上信息判断哪个列是应用名列、哪个是问题描述列")
+            print("然后使用以下命令准备数据（可用列索引号代替列名）：")
+            print(f"  python analyze_excel.py {input_path} --prepare-only --app-column <列索引或列名> --problem-column <列索引或列名>")
+            print("示例（用索引号）：")
+            print(f"  python analyze_excel.py {input_path} --prepare-only --app-column 1 --problem-column 2")
+
+        elif args.prepare_only:
+            # 准备数据 - 必须手动指定参数（支持列索引号）
+            if not args.problem_column:
+                print("错误: 必须指定 --problem-column 参数")
+                print("请先使用 --info 查看Excel列名和索引号，然后指定问题描述列")
+                sys.exit(1)
+
+            app_column = args.app_column
+            problem_column = args.problem_column
+
+            result = prepare_excel_data(input_path, app_column, problem_column)
 
             # 检查是否有错误
             if "error" in result:
@@ -278,39 +333,58 @@ def main():
                 print(f"提示: {result.get('hint', '')}")
                 sys.exit(1)
 
-            # 确定输出目录
+            # 确定输出目录（按SKILL.md步骤0的逻辑）
+            # 获取Excel文件基础名（用于创建子目录）
+            excel_basename = os.path.basename(input_path).replace('.xlsx', '').replace('.xls', '')
+
             if args.output_dir:
-                output_dir = args.output_dir
-                os.makedirs(output_dir, exist_ok=True)
+                # 用户指定了输出路径
+                user_output = args.output_dir
+                if os.path.exists(user_output):
+                    if os.path.isdir(user_output):
+                        # 存在且是文件夹
+                        output_base = user_output
+                    else:
+                        # 存在但不是文件夹，报错
+                        print(f"错误: 输出路径 '{user_output}' 不是文件夹")
+                        sys.exit(1)
+                else:
+                    # 不存在，创建该文件夹
+                    os.makedirs(user_output, exist_ok=True)
+                    output_base = user_output
             else:
-                # 默认在Excel文件所在目录
-                output_dir = os.path.dirname(os.path.abspath(input_path))
-                if not output_dir:
-                    output_dir = os.getcwd()
+                # 用户未指定输出路径，使用 ./output
+                output_base = os.path.join(os.getcwd(), 'output')
+                if not os.path.exists(output_base):
+                    os.makedirs(output_base, exist_ok=True)
+
+            # 在output_base下创建以Excel文件名命名的子目录
+            output_dir = os.path.join(output_base, excel_basename)
+            os.makedirs(output_dir, exist_ok=True)
+
+            # 复制原始Excel文件到output_dir（用于HTML报告下载）
+            excel_copy_path = os.path.join(output_dir, os.path.basename(input_path))
+            if os.path.abspath(input_path) != os.path.abspath(excel_copy_path):
+                shutil.copy2(input_path, excel_copy_path)
 
             # 确定输出文件名
-            excel_basename = os.path.basename(input_path).replace('.xlsx', '').replace('.xls', '')
             output_path = os.path.join(output_dir, f"{excel_basename}_prepared.json")
 
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
 
             print(f"数据已准备: {output_path}")
-            print(f"识别的列: 应用名={result['columns_detected']['app_column']}, 问题描述={result['columns_detected']['problem_column']}")
+            print(f"使用的列: 应用名={result['columns_used']['app_column']}, 问题描述={result['columns_used']['problem_column']}")
             print(f"总条数: {result['total']}")
             print("请使用子Agent对每条数据进行分类，分类完成后运行：")
             print(f"  python analyze_excel.py {output_path}")
+
         else:
-            # 直接处理Excel（需要配合分类）
-            print("请先使用 --prepare-only 准备数据，然后由子Agent分类后再生成报告")
-            result = prepare_excel_data(input_path, args.app_column, args.problem_column)
-
-            if "error" in result:
-                print(f"错误: {result['error']}")
-                print(f"现有列名: {result['columns']}")
-                sys.exit(1)
-
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            # 未指定模式
+            print("请指定操作模式:")
+            print("  --info          查看Excel字段信息和样本数据")
+            print("  --prepare-only  准备数据供分类使用")
+            sys.exit(1)
 
     elif input_path.endswith('.json'):
         # JSON输入（已分类的数据）

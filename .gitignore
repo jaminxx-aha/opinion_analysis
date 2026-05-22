@@ -10,3 +10,4 @@ __pycache__/
 # IDE配置
 .vscode/
 ./classify.md
+output/
