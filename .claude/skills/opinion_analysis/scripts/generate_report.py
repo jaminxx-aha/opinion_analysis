@@ -19,13 +19,66 @@ def generate_report(json_path: str, output_path: str = None) -> str:
         data = json.load(f)
 
     summary = data.get('summary', {})
-    details = data.get('details', [])
 
-    # 统计数据
-    total = summary.get('total', 0)
-    classified = summary.get('classified', 0)
-    no_description = summary.get('no_description', 0)
-    unrecognized = summary.get('unrecognized_app', 0)
+    # 兼容多种格式：
+    # 1. details + input + 嵌套classification 格式
+    # 2. items + problem 格式
+    # 3. details + 扁平格式（classification字段直接在顶层）
+    raw_details = data.get('details', [])
+    if not raw_details:
+        # 如果没有 details，尝试读取 items 格式并转换
+        items = data.get('items', [])
+        raw_details = []
+        for item in items:
+            detail = {
+                'input': item.get('problem', item.get('input', '')),
+                'status': item.get('status', 'pending'),
+                'classification': item.get('classification'),
+                'raw_data': item.get('raw_data', {})
+            }
+            if not detail.get('classification') and detail['status'] == 'pending':
+                detail['output'] = '待分类'
+            raw_details.append(detail)
+
+    # 处理扁平格式：如果details中的项没有嵌套的classification，但有app/module等字段
+    details = []
+    for item in raw_details:
+        if 'classification' not in item and 'app' in item:
+            # 扁平格式，转换为嵌套格式
+            classification = {
+                'app': item.get('app', ''),
+                'module': item.get('module', ''),
+                'page': item.get('page', ''),
+                'issue_type': item.get('issue_type', ''),
+                'issue_detail': item.get('issue_detail', '')
+            }
+            detail = {
+                'input': item.get('input', item.get('problem', '')),
+                'status': item.get('status', 'success'),
+                'classification': classification,
+                'raw_data': item.get('raw_data', {})
+            }
+            details.append(detail)
+        else:
+            details.append(item)
+
+    # 统计数据 - 如果 summary 不完整，重新计算
+    total = summary.get('total', len(details))
+    if not summary.get('classified'):
+        # 重新计算统计
+        classified = sum(1 for d in details if d.get('status') == 'success')
+        no_description = sum(1 for d in details if d.get('status') == 'no_description')
+        unrecognized = sum(1 for d in details if d.get('status') == 'unrecognized')
+        summary = {
+            'total': total,
+            'classified': classified,
+            'no_description': no_description,
+            'unrecognized_app': unrecognized
+        }
+    else:
+        classified = summary.get('classified', 0)
+        no_description = summary.get('no_description', 0)
+        unrecognized = summary.get('unrecognized_app', 0)
 
     # Excel来源文件名
     excel_source = data.get('excel_source', '')
