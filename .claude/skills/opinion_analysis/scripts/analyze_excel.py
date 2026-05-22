@@ -216,8 +216,10 @@ def generate_report_from_result(result_path: str, output_dir: str = None) -> dic
         "unrecognized_app": 0,
         "no_description": 0,
         "by_app": {},
-        "by_module": {},
-        "by_issue_type": {}
+        "by_level1": {},
+        "by_level2": {},
+        "by_level3": {},
+        "tree_view": {}
     }
 
     details = []
@@ -228,8 +230,27 @@ def generate_report_from_result(result_path: str, output_dir: str = None) -> dic
             summary["classified"] += 1
             cls = classification
             summary["by_app"][cls["app"]] = summary["by_app"].get(cls["app"], 0) + 1
-            summary["by_module"][cls["module"]] = summary["by_module"].get(cls["module"], 0) + 1
-            summary["by_issue_type"][cls["issue_type"]] = summary["by_issue_type"].get(cls["issue_type"], 0) + 1
+
+            # 支持新的三层分类格式
+            if "level1" in cls:
+                summary["by_level1"][cls["level1"]] = summary["by_level1"].get(cls["level1"], 0) + 1
+                summary["by_level2"][cls["level2"]] = summary["by_level2"].get(cls["level2"], 0) + 1
+                summary["by_level3"][cls["level3"]] = summary["by_level3"].get(cls["level3"], 0) + 1
+
+                # 构建树形结构
+                if cls["level1"] not in summary["tree_view"]:
+                    summary["tree_view"][cls["level1"]] = {}
+                if cls["level2"] not in summary["tree_view"][cls["level1"]]:
+                    summary["tree_view"][cls["level1"]][cls["level2"]] = {}
+                if cls["level3"] not in summary["tree_view"][cls["level1"]][cls["level2"]]:
+                    summary["tree_view"][cls["level1"]][cls["level2"]][cls["level3"]] = 0
+                summary["tree_view"][cls["level1"]][cls["level2"]][cls["level3"]] += 1
+
+            # 支持旧格式（兼容）
+            elif "module" in cls:
+                summary["by_module"][cls["module"]] = summary["by_module"].get(cls["module"], 0) + 1
+                summary["by_issue_type"][cls["issue_type"]] = summary["by_issue_type"].get(cls["issue_type"], 0) + 1
+
             details.append({
                 "input": item["problem"],
                 "status": "success",
