@@ -219,7 +219,9 @@ def generate_report_from_result(result_path: str, output_dir: str = None) -> dic
         "by_level1": {},
         "by_level2": {},
         "by_level3": {},
-        "tree_view": {}
+        "tree_view": {},
+        "by_module": {},       # old format compat
+        "by_issue_type": {},   # old format compat
     }
 
     details = []
@@ -382,25 +384,23 @@ def main():
             excel_basename = get_base_filename(input_path)
 
             if args.output_dir:
-                # 用户指定了输出路径，直接使用该目录作为最终输出目录
+                # 用户指定了输出路径
                 user_output = args.output_dir
                 if os.path.exists(user_output):
-                    if os.path.isdir(user_output):
-                        # 存在且是文件夹，直接作为output_dir
-                        output_dir = user_output
-                    else:
+                    if not os.path.isdir(user_output):
                         # 存在但不是文件夹，报错
                         print(f"错误: 输出路径 '{user_output}' 不是文件夹")
                         sys.exit(1)
                 else:
                     # 不存在，创建该文件夹
                     os.makedirs(user_output, exist_ok=True)
-                    output_dir = user_output
+                # 在用户指定路径下创建excel_basename子目录
+                output_dir = os.path.join(user_output, excel_basename)
+                os.makedirs(output_dir, exist_ok=True)
             else:
                 # 用户未指定输出路径，使用 ./output，并在其下创建excel_basename子目录
                 output_base = os.path.join(os.getcwd(), 'output')
-                if not os.path.exists(output_base):
-                    os.makedirs(output_base, exist_ok=True)
+                os.makedirs(output_base, exist_ok=True)
                 output_dir = os.path.join(output_base, excel_basename)
                 os.makedirs(output_dir, exist_ok=True)
 
