@@ -47,7 +47,7 @@ def resolve_column(col_spec, columns):
         return col_spec
 
 
-def fetch_data(excel_path, app_column, problem_column, start_row=1, end_row=None, json_output=False):
+def fetch_data(excel_path, app_column, problem_column, start_row=1, end_row=None, json_output=False, app_filter=None):
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
 
@@ -80,6 +80,16 @@ def fetch_data(excel_path, app_column, problem_column, start_row=1, end_row=None
 
     # 提取指定行范围的数据
     sliced = df.iloc[start_row - 1:end_row]
+
+    # 如果指定了app_filter，只保留该应用的数据行
+    if app_filter and app_col_name:
+        sliced = sliced[
+            sliced[app_col_name].apply(lambda x: resolve_app_name(str(x).strip()) if not pd.isna(x) else "")
+            == app_filter
+        ]
+        if len(sliced) == 0:
+            print(f"读取文件错误：应用名 '{app_filter}' 在指定行范围内无数据")
+            sys.exit(1)
 
     if json_output:
         # JSON输出格式：包含所有列数据
@@ -137,11 +147,12 @@ def main():
     parser.add_argument('--start', type=int, default=1, help='起始数据行号（从1开始，不含表头）')
     parser.add_argument('--end', type=int, default=None, help='结束数据行号（含）')
     parser.add_argument('--json', action='store_true', help='输出JSON格式（包含所有列数据）')
+    parser.add_argument('--app-filter', default=None, help='只输出指定应用名的数据行（标准应用名，如"抖音"）')
 
     args = parser.parse_args()
 
     try:
-        fetch_data(args.input, args.app_column, args.problem_column, args.start, args.end, args.json)
+        fetch_data(args.input, args.app_column, args.problem_column, args.start, args.end, args.json, args.app_filter)
     except FileNotFoundError:
         print(f"读取文件错误：文件不存在 '{args.input}'")
         sys.exit(1)

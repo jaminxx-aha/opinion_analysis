@@ -81,11 +81,49 @@ def generate_report(input_path: str, output_dir: str = None) -> str:
     return report_path
 
 
+def resolve_column(col_spec, columns):
+    """将列索引或列名转换为实际列名"""
+    if col_spec is None:
+        return None
+    try:
+        idx = int(col_spec)
+        if 1 <= idx <= len(columns):
+            return columns[idx - 1]
+        return None
+    except ValueError:
+        return col_spec
+
+
+def get_app_distribution(df, app_col_name):
+    """获取应用名列的分布信息"""
+    if not app_col_name:
+        return None
+
+    raw_values = df[app_col_name].dropna().astype(str).tolist()
+    resolved = {}
+    for v in raw_values:
+        app = v.strip()
+        if app in app_alias_map:
+            app = app_alias_map[app]
+        resolved[app] = resolved.get(app, 0) + 1
+
+    sorted_apps = sorted(resolved.items(), key=lambda x: -x[1])
+    is_single = len(sorted_apps) == 1
+    single_app = sorted_apps[0][0] if is_single else None
+
+    return {
+        'distribution': sorted_apps,
+        'is_single_app': is_single,
+        'single_app': single_app,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description='舆情数据分析脚本')
     parser.add_argument('input', help='输入文件路径（Excel、JSON或DB）')
     parser.add_argument('--info', action='store_true',
                         help='只显示Excel字段信息和样本数据（用于判断列名）')
+    parser.add_argument('--app-column', help='应用名列索引（从1开始）或列名，用于显示应用名分布')
     parser.add_argument('--output-dir', help='输出目录路径')
 
     args = parser.parse_args()
@@ -112,6 +150,21 @@ def main():
             print(f"应用列表: {result['apps_available']}")
             print(f"别名映射: {result['app_aliases']}")
             print()
+
+            # 如果指定了应用名列，显示应用名分布
+            if args.app_column:
+                df = pd.read_excel(input_path)
+                columns = df.columns.tolist()
+                app_col_name = resolve_column(args.app_column, columns)
+                if app_col_name and app_col_name in columns:
+                    app_dist = get_app_distribution(df, app_col_name)
+                    print("=== 应用名分布 ===")
+                    dist_str = ", ".join(f"{app}({cnt})" for app, cnt in app_dist['distribution'])
+                    print(f"{dist_str} — 单一应用")
+                    if app_dist['single_app']:
+                        print(f"所有数据均属于【{app_dist['single_app']}】，子Agent无需读取应用描述，只需在提示词中嵌入该应用描述即可")
+                    print()
+
             print("请根据以上信息判断应用名列和问题描述列的索引号")
             print("然后使用 fetch_data.py 分批读取数据并分类：")
             print(f"  python scripts/fetch_data.py {input_path} --app-column <索引> --problem-column <索引> --start 1 --end 5")
