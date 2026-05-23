@@ -1,47 +1,108 @@
 #!/usr/bin/env python3
 """
-可视化报告生成脚本（支持新分类格式）
+可视化报告生成脚本（支持JSON和SQLite输入）
 
 分类格式：一级分类.二级分类.三级分类
 例如：卡顿.滑动卡顿.首页推荐视频流上下滑动卡顿
 
-用法: python generate_report.py <分析结果JSON路径> [输出HTML路径]
+用法: python generate_report.py <分析结果JSON或DB路径> [输出HTML路径]
 输出: HTML 可视化报告（简洁界面，适合用户查看）
 """
 
 import sys
 import json
 import os
+import sqlite3
 from datetime import datetime
 
 
-def generate_report(json_path: str, output_path: str = None) -> str:
-    """根据分析结果 JSON 生成可视化 HTML 报告"""
+def read_data_from_db(db_path: str) -> dict:
+    """从SQLite数据库读取分类结果"""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
 
+    # 读取元数据
+    cursor.execute("SELECT value FROM metadata WHERE key = 'excel_source'")
+    row = cursor.fetchone()
+    excel_source = row['value'] if row else ""
+
+    # 读取所有原始数据行
+    cursor.execute("SELECT row_index, raw_data FROM raw_rows")
+    raw_rows_map = {}
+    for r in cursor.fetchall():
+        raw_rows_map[r['row_index']] = json.loads(r['raw_data'])
+
+    # 读取所有分类结果
+    cursor.execute("SELECT * FROM items ORDER BY row_index")
+    rows = cursor.fetchall()
+    conn.close()
+
+    summary = {
+        "total": len(rows),
+        "classified": 0,
+        "unrecognized_app": 0,
+        "no_description": 0,
+    }
+
+    details = []
+    for r in rows:
+        status = r['status']
+        raw_data = raw_rows_map.get(r['row_index'], {})
+        if status == 'success' and r['level1']:
+            summary["classified"] += 1
+            details.append({
+                'input': r['problem'],
+                'status': 'success',
+                'classification': {
+                    'app': r['cls_app'] or r['app'],
+                    'level1': r['level1'],
+                    'level2': r['level2'],
+                    'level3': r['level3'],
+                    'full_path': r['full_path'],
+                },
+                'raw_data': raw_data,
+            })
+        elif status == 'unrecognized':
+            summary["unrecognized_app"] += 1
+            details.append({
+                'input': r['problem'],
+                'status': 'unrecognized',
+                'output': '无法识别应用',
+                'raw_data': raw_data,
+            })
+        elif status == 'no_description':
+            summary["no_description"] += 1
+            details.append({
+                'input': r['problem'],
+                'status': 'no_description',
+                'output': f"{r['app']}没有描述",
+                'raw_data': raw_data,
+            })
+        else:
+            details.append({
+                'input': r['problem'],
+                'status': 'pending',
+                'output': '待分类',
+                'raw_data': raw_data,
+            })
+
+    return {
+        'summary': summary,
+        'details': details,
+        'excel_source': excel_source,
+    }
+
+
+def read_data_from_json(json_path: str) -> dict:
+    """从JSON文件读取分类结果"""
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     summary = data.get('summary', {})
-
-    # 检查是否需要从prepared.json补充raw_data
     raw_details = data.get('details', [])
-    need_raw_data = False
-    if raw_details:
-        first_item = raw_details[0]
-        if not first_item.get('raw_data') or first_item.get('raw_data') == {}:
-            need_raw_data = True
 
-    # 如果需要补充raw_data，尝试读取prepared.json
-    prepared_data = None
-    if need_raw_data:
-        json_dir = os.path.dirname(os.path.abspath(json_path))
-        json_basename = os.path.basename(json_path).replace('_classified.json', '_prepared.json')
-        prepared_path = os.path.join(json_dir, json_basename)
-        if os.path.exists(prepared_path):
-            with open(prepared_path, 'r', encoding='utf-8') as f:
-                prepared_data = json.load(f)
-
-    # 兼容多种格式
+    # 兼容items格式（旧prepared.json）
     if not raw_details:
         items = data.get('items', [])
         raw_details = []
@@ -50,7 +111,6 @@ def generate_report(json_path: str, output_path: str = None) -> str:
                 'input': item.get('problem', item.get('input', '')),
                 'status': item.get('status', 'pending'),
                 'classification': item.get('classification'),
-                'raw_data': item.get('raw_data', {})
             }
             if not detail.get('classification') and detail['status'] == 'pending':
                 detail['output'] = '待分类'
@@ -58,31 +118,21 @@ def generate_report(json_path: str, output_path: str = None) -> str:
 
     # 处理数据，支持新旧两种分类格式
     details = []
-    for i, item in enumerate(raw_details):
-        # 补充raw_data
-        if prepared_data and prepared_data.get('items'):
-            prepared_items = prepared_data.get('items', [])
-            if i < len(prepared_items):
-                item['raw_data'] = prepared_items[i].get('raw_data', {})
-
-        # 检查分类格式
+    for item in raw_details:
         cls = item.get('classification', {})
 
-        # 新格式：level1, level2, level3, full_path
+        # 新格式
         if cls.get('level1') and cls.get('level2') and cls.get('level3'):
             detail = {
                 'input': item.get('input', item.get('problem', '')),
                 'status': item.get('status', 'success'),
                 'classification': cls,
-                'raw_data': item.get('raw_data', {})
             }
-        # 旧格式转换为新格式（兼容）
+        # 旧格式转换
         elif cls.get('module') and cls.get('issue_type'):
-            # 将旧格式转换为新格式
             level1 = cls.get('issue_type', '')
             level2 = cls.get('module', '')
             level3 = cls.get('issue_detail', '')
-            # 对于性能问题，特殊处理
             if level1 == '性能问题':
                 level1 = '卡顿'
             detail = {
@@ -93,16 +143,14 @@ def generate_report(json_path: str, output_path: str = None) -> str:
                     'level1': level1,
                     'level2': level2,
                     'level3': level3,
-                    'full_path': f'{level1}.{level2}.{level3}'
+                    'full_path': f'{level1}.{level2}.{level3}',
                 },
-                'raw_data': item.get('raw_data', {})
             }
         else:
             detail = item
 
         details.append(detail)
 
-    # 统计数据
     total = summary.get('total', len(details))
     if not summary.get('classified'):
         classified = sum(1 for d in details if d.get('status') == 'success')
@@ -112,21 +160,38 @@ def generate_report(json_path: str, output_path: str = None) -> str:
             'total': total,
             'classified': classified,
             'no_description': no_description,
-            'unrecognized_app': unrecognized
+            'unrecognized_app': unrecognized,
         }
+
+    return {
+        'summary': summary,
+        'details': details,
+        'excel_source': data.get('excel_source', ''),
+    }
+
+
+def generate_report(input_path: str, output_path: str = None) -> str:
+    """根据分析结果生成可视化 HTML 报告"""
+
+    # 根据输入类型选择读取方式
+    if input_path.endswith('.db'):
+        report_data = read_data_from_db(input_path)
     else:
-        classified = summary.get('classified', 0)
-        no_description = summary.get('no_description', 0)
-        unrecognized = summary.get('unrecognized_app', 0)
+        report_data = read_data_from_json(input_path)
+
+    summary = report_data['summary']
+    details = report_data['details']
+    excel_source = report_data['excel_source']
+
+    total = summary.get('total', len(details))
+    classified = summary.get('classified', 0)
+    no_description = summary.get('no_description', 0)
+    unrecognized = summary.get('unrecognized_app', 0)
 
     # Excel来源文件名
-    excel_source = data.get('excel_source', '')
-    if prepared_data:
-        excel_source = prepared_data.get('excel_source', excel_source)
-
-    json_dir = os.path.dirname(os.path.abspath(json_path))
+    input_dir = os.path.dirname(os.path.abspath(input_path))
     excel_filename = ''
-    for f in os.listdir(json_dir):
+    for f in os.listdir(input_dir):
         if f.endswith('.xlsx') or f.endswith('.xls'):
             excel_filename = f
             break
@@ -218,7 +283,7 @@ def generate_report(json_path: str, output_path: str = None) -> str:
     # 应用标签
     parts.append('.app-tag { display: inline-block; padding: 3px 10px; border-radius: 6px; background: #3b82f6; color: white; font-size: 12px; font-weight: 500; }')
 
-    # 分类路径（新格式）
+    # 分类路径
     parts.append('.cls-path { font-size: 12px; color: #64748b; }')
     parts.append('.cls-path .item { cursor: pointer; color: #3b82f6; }')
     parts.append('.cls-path .item:hover { text-decoration: underline; }')
@@ -278,7 +343,7 @@ def generate_report(json_path: str, output_path: str = None) -> str:
     parts.append('</div>')
     parts.append('</div>')
 
-    # 过滤工具栏（新分类格式）
+    # 过滤工具栏
     parts.append('<div class="toolbar">')
     parts.append('<div class="filter-select"><label>一级分类</label><select id="filter-level1" onchange="onFilterChange(\'level1\')"><option value="">全部</option></select></div>')
     parts.append('<div class="filter-select"><label>二级分类</label><select id="filter-level2" onchange="onFilterChange(\'level2\')" disabled><option value="">全部</option></select></div>')
@@ -766,7 +831,7 @@ def generate_report(json_path: str, output_path: str = None) -> str:
     parts.append('updateTable();')
     parts.append('}')
 
-    # 显示详情弹窗
+    # 显示详情弹窗（显示原始数据行）
     parts.append('function showDetail(index) {')
     parts.append('const filtered = getFilteredData();')
     parts.append('const item = filtered[index];')
@@ -804,9 +869,17 @@ def generate_report(json_path: str, output_path: str = None) -> str:
 
     # 确定输出路径
     if not output_path:
-        json_dir = os.path.dirname(os.path.abspath(json_path))
-        json_basename = os.path.basename(json_path).replace('.json', '')
-        output_path = os.path.join(json_dir, f"{json_basename}_report.html")
+        input_dir = os.path.dirname(os.path.abspath(input_path))
+        input_basename = os.path.basename(input_path)
+        # 去掉扩展名
+        for ext in ['.json', '.db']:
+            if input_basename.endswith(ext):
+                input_basename = input_basename[:-len(ext)]
+        # 去掉后缀
+        for suffix in ['_classified', '_prepared']:
+            if input_basename.endswith(suffix):
+                input_basename = input_basename[:-len(suffix)]
+        output_path = os.path.join(input_dir, f"{input_basename}_report.html")
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
@@ -816,14 +889,14 @@ def generate_report(json_path: str, output_path: str = None) -> str:
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python generate_report.py <分析结果JSON路径> [输出HTML路径]")
-        print("      未指定输出路径时，结果将保存在JSON文件所在目录")
+        print("用法: python generate_report.py <分析结果JSON或DB路径> [输出HTML路径]")
+        print("      未指定输出路径时，结果将保存在输入文件所在目录")
         sys.exit(1)
 
-    json_path = sys.argv[1]
+    input_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else None
 
-    result_path = generate_report(json_path, output_path)
+    result_path = generate_report(input_path, output_path)
     print(f"报告已生成: {result_path}")
 
 

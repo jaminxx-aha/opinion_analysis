@@ -1,6 +1,6 @@
 ---
 name: opinion-analysis
-description: 用于对舆情数据进行智能分类和分析。当用户提供 Excel 文件（.xlsx/.xls）并要求分析舆情、分类问题反馈时触发此技能。根据用户问题描述和应用背景知识，自动推断问题发生的场景和类别，最终输出层级化的分类结果和统计汇总。适用于用户反馈分析、问题投诉处理、舆情监测等场景。
+description: 分析excel表格中的舆情数据，生成可视化界面。当用户提供excel舆情数据，需要进行舆情分析时触发。
 ---
 
 # 舆情分析技能
@@ -9,7 +9,7 @@ description: 用于对舆情数据进行智能分类和分析。当用户提供 
 
 **必须严格按照本SKILL定义的流程执行，禁止绕过流程：**
 
-1. **严格按步骤执行**：必须按照"步骤0→步骤1→步骤2→步骤3→步骤4"的顺序执行，不可跳过任何步骤。
+1. **严格按步骤执行**：必须按照"步骤0→步骤1→步骤2→步骤3"的顺序执行，不可跳过任何步骤。
 
 2. **遇到错误立即终止**：
    - 如果任何步骤执行失败（脚本报错、参数错误、文件不存在等），必须**立即停止执行**
@@ -92,25 +92,9 @@ description: 用于对舆情数据进行智能分类和分析。当用户提供 
 
    **如果无法识别：**
    - 如果找不到包含应用名的列，应用名列可以不指定（后续从问题描述中推断）
-   - 如果找不到包含问题描述的列，返回 **"Excel格式错误：无法识别问题描述列"**
+   - 如果找不到包含问题描述列，返回 **"Excel格式错误：无法识别问题描述列"**
 
-3. **使用识别出的列名准备数据**（支持列索引号，避免中文编码问题）：
-   ```bash
-   # 使用列索引号（推荐，从1开始）
-   python scripts/analyze_excel.py <Excel文件路径> --prepare-only \
-     --app-column 1 \
-     --problem-column 2
-
-   # 或使用列名（可能有编码问题）
-   python scripts/analyze_excel.py <Excel文件路径> --prepare-only \
-     --app-column "<应用名列名>" \
-     --problem-column "<问题描述列名>"
-   ```
-
-   **列索引号说明：**
-   - `--info` 输出会显示每个列的索引号，如 `[1] 应用名`、`[2] 问题描述`
-   - 使用数字索引可避免Windows环境下中文参数编码问题
-   - 索引从1开始
+   识别完成后，记录应用名列索引号和问题描述列索引号（从1开始），后续步骤使用 `fetch_data.py` 通过这两个索引号分批读取数据。
 
 **Excel 示例结构：**
 
@@ -130,44 +114,57 @@ description: 用于对舆情数据进行智能分类和分析。当用户提供 
 
 ### 核心分类步骤
 
-**分类判断由子Agent完成：**
+**分类判断由子Agent分批完成：**
 
-对于每条舆情数据，分类步骤如下：
+每批5行数据，子Agent通过脚本读取数据、分类体系和应用描述，避免主会话上下文膨胀。
 
-1. **推断应用名**：从问题描述或表格中推断应用名称
-2. **读取应用描述**：如果应用在 `apps/` 目录中有描述文件，读取该文件内容
-3. **读取分类体系**：读取 `taxonomy.md` 获取完整分类树和歧义说明
-4. **创建子Agent判断分类**：将"问题描述"、"应用描述"、"分类体系"发送给子Agent
-5. **返回分类结果**：子Agent返回三层分类路径
+**子Agent任务流程：**
+
+1. 调用 `fetch_data.py --json` 读取当前批次的数据（包含所有列的原始数据）
+2. 读取 `taxonomy.md` 获取完整分类树和歧义说明
+3. 读取 `apps/<应用名>.md` 获取应用描述
+4. 对每条数据分类，合并raw_data输出固定格式JSON
+5. 调用 `save_classification.py` 将分类结果和原始数据追加到 prepared.db
 
 **子Agent分类提示词格式：**
 
 ```
-请根据以下信息对用户反馈的问题进行分类：
+请对以下舆情数据进行分类：
 
-## 应用信息
-应用名称：{app_name}
-应用描述：
-{app_description}
+## 读取数据
+调用脚本读取当前批次数据（JSON格式，包含所有列原始数据）：
+python scripts/fetch_data.py <Excel文件路径> --app-column <app列索引> --problem-column <problem列索引> --start <起始行> --end <结束行> --json
 
 ## 分类体系
-请读取以下文件获取完整分类信息：
-- 读取 taxonomy.md 获取完整分类体系（8个一级分类的全部二级、三级分类）和歧义说明
-- 如有该应用的分类适配表，参照适配表中的二级/三级分类
+读取 taxonomy.md 获取完整分类体系（8个一级分类的全部二级、三级分类）和歧义说明
+
+## 应用描述
+根据数据中的应用名，读取 apps/<应用名>.md 获取应用描述
 
 分类格式：{一级分类}.{二级分类}.{三级分类}
 
-## 用户问题描述
-{problem_description}
+请返回分类结果，格式为JSON数组（保留fetch_data.py返回的raw_data字段）：
+[
+  {
+    "row_index": 行号,
+    "app": "应用名",
+    "problem": "问题描述",
+    "raw_data": { ... },  // 保留fetch_data.py返回的原始数据，不要修改
+    "classification": {
+      "app": "应用名",
+      "level1": "一级分类",
+      "level2": "二级分类",
+      "level3": "三级分类",
+      "full_path": "一级分类.二级分类.三级分类"
+    }
+  }
+]
 
-请返回最合适的分类结果，格式为JSON：
-{
-  "level1": "一级分类",
-  "level2": "二级分类",
-  "level3": "三级分类",
-  "full_path": "一级分类.二级分类.三级分类",
-  "reasoning": "分类理由"
-}
+## 保存分类结果
+分类完成后，调用脚本将结果保存到数据库：
+python scripts/save_classification.py '<JSON结果>' --output-dir <output_dir> --excel-source <Excel文件路径>
+
+注意：--excel-source 仅在首次调用时需要提供（用于创建数据库并读取原始数据行），后续批次无需提供。
 ```
 
 ---
@@ -206,8 +203,7 @@ description: 用于对舆情数据进行智能分类和分析。当用户提供 
 │ 输出目录结构:                                                 │
 │   output_dir/                                                │
 │   ├── 原始Excel文件.xlsx        (复制，用于下载)              │
-│   ├── xxx_prepared.json         (准备数据)                   │
-│   ├── xxx_classified.json        (分类结果)                   │
+│   ├── xxx_prepared.db           (分类累积数据库)              │
 │   └── xxx_report.html            (可视化报告)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -231,20 +227,23 @@ description: 用于对舆情数据进行智能分类和分析。当用户提供 
 ```
 scripts/
 ├── config.py           # 分类配置（应用列表、别名映射、分类规则）
-├── analyze_excel.py    # 数据准备和报告生成脚本
+├── analyze_excel.py    # Excel信息查看和报告生成脚本
+├── fetch_data.py       # 分批提取Excel应用名和问题描述列数据
+├── save_classification.py # 追加分类结果到prepared.db
 ├── generate_report.py  # 可视化报告生成脚本
-└── read_excel.py       # Excel表格数据读取脚本
+└── read_excel.py       # Excel表格数据通用读取脚本
 ```
 
 **脚本参数说明：**
 
-| 参数 | 说明 |
-|------|------|
-| `--info` | 显示Excel列名（带索引号）和前10行样本数据 |
-| `--prepare-only` | 准备数据供分类使用（需指定列） |
-| `--app-column` | 应用名列索引或列名（如 `1` 或 `应用名`） |
-| `--problem-column` | 问题描述列索引或列名（必需，如 `2` 或 `问题描述`） |
-| `--output-dir` | 指定输出目录（**使用步骤0确定的output_dir**） |
+| 脚本 | 参数 | 说明 |
+|------|------|------|
+| analyze_excel.py | `--info` | 显示Excel列名（带索引号）和前10行样本数据 |
+| fetch_data.py | `--app-column` | 应用名列索引（从1开始）或列名 |
+| fetch_data.py | `--problem-column` | 问题描述列索引（从1开始）或列名 |
+| fetch_data.py | `--start / --end` | 数据行范围（从1开始，不含表头） |
+| save_classification.py | `<json_input>` | 分类结果JSON字符串或文件路径 |
+| save_classification.py | `--output-dir` | 输出目录（prepared.db所在目录） |
 
 **批量分析流程：**
 
@@ -258,61 +257,48 @@ scripts/
 ┌─────────────────────────────────────────────────────────────┐
 │ python scripts/analyze_excel.py <Excel文件路径> --info      │
 │                                                             │
-│ 返回: 列名列表 + 各列前10行样本数据                           │
+│ 返回: 列名列表 + 各列前10行样本数据 + 总行数                  │
 │                                                             │
 │ 根据样本数据判断:                                            │
-│ - 应用名列: 内容包含"抖音"、"微信"等应用名                    │
-│ - 问题描述列: 内容包含具体问题描述文本                        │
+│ - 应用名列索引号（如 [2]）                                   │
+│ - 问题描述列索引号（如 [5]）                                  │
 │                                                             │
 │ 如果无法识别问题描述列，返回: Excel格式错误                   │
 └─────────────────────────────────────────────────────────────┘
 
-步骤2: 使用识别出的列名准备数据
+步骤2: 分批读取数据并分类（每批5行）
 ┌─────────────────────────────────────────────────────────────┐
-│ python scripts/analyze_excel.py <Excel文件路径> \           │
-│   --prepare-only \                                          │
-│   --app-column "<应用名列名>" \                             │
-│   --problem-column "<问题描述列名>" \                        │
-│   --output-dir <output_dir>                                 │
+│ 计算批次: 从 --info 获取总行数，每批5行                      │
 │                                                             │
-│ 输出: <output_dir>/xxx_prepared.json                         │
+│ 对每个批次（如行1-5, 行6-10, ...）:                          │
+│                                                             │
+│ 1. 创建子Agent，指示其:                                      │
+│    a. 调用 fetch_data.py 读取该批次数据                      │
+│    b. 读取 taxonomy.md 获取分类体系                           │
+│    c. 读取 apps/<应用名>.md 获取应用描述                      │
+│    d. 对每行数据分类，输出固定格式JSON数组                     │
+│    e. 调用 save_classification.py 保存结果到数据库            │
+│                                                             │
+│    首次批次需传 --excel-source 参数:                          │
+│    python scripts/save_classification.py '<JSON>'            │
+│      --output-dir <output_dir>                               │
+│      --excel-source <Excel文件路径>                           │
+│                                                             │
+│    后续批次无需 --excel-source:                               │
+│    python scripts/save_classification.py '<JSON>'            │
+│      --output-dir <output_dir>                               │
+│                                                             │
+│ 2. 子Agent返回保存确认结果                                   │
+│                                                             │
+│ 重复直至所有批次完成                                         │
 └─────────────────────────────────────────────────────────────┘
 
-步骤3: 子Agent对每条数据进行分类
+步骤3: 生成可视化报告
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. 读取 <output_dir>/xxx_prepared.json 文件                  │
-│                                                             │
-│ 2. 对每条数据调用子Agent进行分类（见核心分类步骤）              │
-│                                                             │
-│ 3. 将分类结果写入每条数据的 classification 字段：            │
-│    {                                                        │
-│      "row_index": 1,                                        │
-│      "app": "抖音",                                          │
-│      "problem": "问题描述",                                  │
-│      "classification": {  // ← 新的三层分类格式              │
-│        "app": "抖音",                                        │
-│        "level1": "卡顿",                                     │
-│        "level2": "滑动卡顿",                                 │
-│        "level3": "首页推荐视频流上下滑动卡顿",                │
-│        "full_path": "卡顿.滑动卡顿.首页推荐视频流上下滑动卡顿" │
-│      }                                                      │
-│    }                                                        │
-│                                                             │
-│ 4. 保存更新后的 xxx_prepared.json 文件                       │
-│                                                             │
-│ 注意: 不要直接创建 xxx_classified.json 文件！                 │
-│       分类结果应写入 _prepared.json 的 items 数组中           │
-│       脚本会自动生成 _classified.json 和 _report.html         │
-└─────────────────────────────────────────────────────────────┘
-
-步骤4: 生成可视化报告
-┌─────────────────────────────────────────────────────────────┐
-│ python scripts/analyze_excel.py <prepared.json路径> \       │
+│ python scripts/analyze_excel.py <prepared.db路径> \         │
 │   --output-dir <output_dir>                                 │
 │                                                             │
-│ 输出: <output_dir>/xxx_classified.json                       │
-│       <output_dir>/xxx_report.html                          │
-└─────────────────────────────────────────────────────────────┘
+│ 输出: <output_dir>/xxx_report.html                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -322,7 +308,7 @@ scripts/
 
 **用户输入：** "请分析这个舆情数据表格：舆情数据.xlsx"
 
-**处理流程：** 读取Excel → 识别列名 → 准备数据 → 子Agent逐条分类 → 生成报告
+**处理流程：** 读取Excel信息 → 识别列名 → 分批分类 → 生成报告
 
 **示例分类结果：**
 - "手机刷抖音出现卡顿" → `卡顿.滑动卡顿.首页推荐视频流上下滑动卡顿`
