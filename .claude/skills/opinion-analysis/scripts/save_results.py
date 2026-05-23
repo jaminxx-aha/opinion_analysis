@@ -51,22 +51,14 @@ def resolve_column(col_spec, columns):
         return col_spec
 
 
-def init_db(db_path: str, excel_source: str = "", app: str = ""):
-    """初始化数据库，创建表结构"""
+def init_db(db_path: str, app: str = ""):
+    """初始化数据库，创建单表结构"""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            row_index INTEGER,
+        CREATE TABLE IF NOT EXISTS report (
+            id INTEGER PRIMARY KEY,
             app TEXT,
             problem TEXT,
             status TEXT DEFAULT 'success',
@@ -74,23 +66,10 @@ def init_db(db_path: str, excel_source: str = "", app: str = ""):
             level1 TEXT,
             level2 TEXT,
             level3 TEXT,
-            full_path TEXT
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS raw_rows (
-            row_index INTEGER PRIMARY KEY,
+            full_path TEXT,
             raw_data TEXT
         )
     """)
-
-    if excel_source:
-        cursor.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('excel_source', ?)",
-                        (excel_source,))
-    if app:
-        cursor.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('app', ?)",
-                        (app,))
 
     conn.commit()
     return conn
@@ -125,13 +104,8 @@ def save_results(json_input, output_dir):
     db_path = os.path.join(output_dir, DB_FILENAME)
 
     # 初始化数据库
-    conn = init_db(db_path, excel_path, app)
+    conn = init_db(db_path, app)
     cursor = conn.cursor()
-
-    # 构建row_index到num的映射
-    num_map = {}
-    for item in data:
-        num_map[item["num"]] = item["desc"]
 
     inserted = 0
     for item in data:
@@ -144,23 +118,18 @@ def save_results(json_input, output_dir):
             row = df.iloc[row_idx]
             problem = str(row[problem_col_name]) if problem_col_name and not pd.isna(row[problem_col_name]) else ""
             raw_data = {col: str(row[col]) if not pd.isna(row[col]) else "" for col in columns}
-            # 保存原始数据为JSON
-            cursor.execute(
-                "INSERT OR REPLACE INTO raw_rows (row_index, raw_data) VALUES (?, ?)",
-                (num, json.dumps(raw_data, ensure_ascii=False))
-            )
+            raw_data_json = json.dumps(raw_data, ensure_ascii=False)
         else:
             problem = ""
-            raw_data = {}
+            raw_data_json = "{}"
 
-        # 解析分类结果
+        # 解析分类结果并写入单表
         if desc == "unrecognized":
             cursor.execute("""
-                INSERT INTO items (row_index, app, problem, status)
-                VALUES (?, ?, ?, ?)
-            """, (num, app, problem, "unrecognized"))
+                INSERT OR REPLACE INTO report (id, app, problem, status, raw_data)
+                VALUES (?, ?, ?, ?, ?)
+            """, (num, app, problem, "unrecognized", raw_data_json))
         else:
-            # 解析分类结果：desc为列表 ["一级","二级","三级"]
             parts = desc
             level1 = parts[0] if len(parts) >= 1 else ""
             level2 = parts[1] if len(parts) >= 2 else ""
@@ -168,23 +137,21 @@ def save_results(json_input, output_dir):
             full_path = ".".join(parts)
 
             cursor.execute("""
-                INSERT INTO items (row_index, app, problem, status, cls_app, level1, level2, level3, full_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (num, app, problem, "success", app, level1, level2, level3, full_path))
+                INSERT OR REPLACE INTO report (id, app, problem, status, cls_app, level1, level2, level3, full_path, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (num, app, problem, "success", app, level1, level2, level3, full_path, raw_data_json))
 
         inserted += 1
 
     conn.commit()
 
     # 获取总数
-    cursor.execute("SELECT COUNT(*) FROM items")
+    cursor.execute("SELECT COUNT(*) FROM report")
     total = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM raw_rows")
-    raw_total = cursor.fetchone()[0]
     conn.close()
 
     print(f"已写入 {inserted} 条分类结果到 {db_path}")
-    print(f"原始数据: {raw_total} 条，分类累计: {total} 条")
+    print(f"累计: {total} 条")
 
 
 def main():

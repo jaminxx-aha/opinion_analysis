@@ -22,19 +22,7 @@ def read_data_from_db(db_path: str) -> dict:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # 读取元数据
-    cursor.execute("SELECT value FROM metadata WHERE key = 'excel_source'")
-    row = cursor.fetchone()
-    excel_source = row['value'] if row else ""
-
-    # 读取所有原始数据行
-    cursor.execute("SELECT row_index, raw_data FROM raw_rows")
-    raw_rows_map = {}
-    for r in cursor.fetchall():
-        raw_rows_map[r['row_index']] = json.loads(r['raw_data'])
-
-    # 读取所有分类结果
-    cursor.execute("SELECT * FROM items ORDER BY row_index")
+    cursor.execute("SELECT * FROM report ORDER BY id")
     rows = cursor.fetchall()
     conn.close()
 
@@ -47,8 +35,8 @@ def read_data_from_db(db_path: str) -> dict:
 
     details = []
     for r in rows:
+        raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
         status = r['status']
-        raw_data = raw_rows_map.get(r['row_index'], {})
         if status == 'success' and r['level1']:
             summary["classified"] += 1
             details.append({
@@ -90,7 +78,6 @@ def read_data_from_db(db_path: str) -> dict:
     return {
         'summary': summary,
         'details': details,
-        'excel_source': excel_source,
     }
 
 
@@ -166,7 +153,6 @@ def read_data_from_json(json_path: str) -> dict:
     return {
         'summary': summary,
         'details': details,
-        'excel_source': data.get('excel_source', ''),
     }
 
 
@@ -181,7 +167,6 @@ def generate_report(input_path: str, output_path: str = None) -> str:
 
     summary = report_data['summary']
     details = report_data['details']
-    excel_source = report_data['excel_source']
 
     total = summary.get('total', len(details))
     classified = summary.get('classified', 0)
@@ -196,8 +181,8 @@ def generate_report(input_path: str, output_path: str = None) -> str:
             excel_filename = f
             break
 
-    if not excel_filename and excel_source:
-        excel_filename = os.path.basename(excel_source)
+    if not excel_filename:
+        excel_filename = ''
 
     details_json = json.dumps(details, ensure_ascii=False)
     generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -345,6 +330,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
 
     # 过滤工具栏
     parts.append('<div class="toolbar">')
+    parts.append('<div class="filter-select"><label>状态</label><select id="filter-status" onchange="onStatusFilterChange()"><option value="">全部</option><option value="success">已分类</option><option value="unrecognized">未识别</option></select></div>')
     parts.append('<div class="filter-select"><label>一级分类</label><select id="filter-level1" onchange="onFilterChange(\'level1\')"><option value="">全部</option></select></div>')
     parts.append('<div class="filter-select"><label>二级分类</label><select id="filter-level2" onchange="onFilterChange(\'level2\')" disabled><option value="">全部</option></select></div>')
     parts.append('<div class="filter-select"><label>三级分类</label><select id="filter-level3" onchange="onFilterChange(\'level3\')" disabled><option value="">全部</option></select></div>')
@@ -401,6 +387,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<script>')
     parts.append(f'const allData = {details_json};')
     parts.append('let filters = { level1: "", level2: "", level3: "" };')
+    parts.append('let statusFilter = "";')
     parts.append('let searchText = "";')
     parts.append('let charts = {};')
     parts.append('let chartsVisible = true;')
@@ -471,11 +458,16 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     # 获取过滤后的数据
     parts.append('function getFilteredData() {')
     parts.append('return allData.filter(item => {')
-    parts.append('if (item.status !== "success") return false;')
+    parts.append('if (statusFilter && item.status !== statusFilter) return false;')
+    parts.append('if (item.status !== "success") {')
+    parts.append('if (filters.level1 || filters.level2 || filters.level3) return false;')
+    parts.append('}')
+    parts.append('if (item.status === "success") {')
     parts.append('const cls = item.classification;')
     parts.append('if (filters.level1 && cls.level1 !== filters.level1) return false;')
     parts.append('if (filters.level2 && cls.level2 !== filters.level2) return false;')
     parts.append('if (filters.level3 && cls.level3 !== filters.level3) return false;')
+    parts.append('}')
     parts.append('if (searchText) {')
     parts.append('const text = (item.input || "").toLowerCase();')
     parts.append('if (!text.includes(searchText.toLowerCase())) return false;')
@@ -498,6 +490,12 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('}')
 
     # 过滤变更
+    parts.append('function onStatusFilterChange() {')
+    parts.append('statusFilter = document.getElementById("filter-status").value;')
+    parts.append('currentPage = 1;')
+    parts.append('updateAll();')
+    parts.append('}')
+    parts.append('')
     parts.append('function onFilterChange(source) {')
     parts.append('const level1Sel = document.getElementById("filter-level1");')
     parts.append('const level2Sel = document.getElementById("filter-level2");')
@@ -640,10 +638,11 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('}')
     parts.append('empty.classList.add("hidden");')
     parts.append('pageData.forEach((item, i) => {')
-    parts.append('const cls = item.classification;')
     parts.append('const globalIndex = start + i;')
     parts.append('const row = document.createElement("tr");')
     parts.append('row.dataset.index = globalIndex;')
+    parts.append('if (item.status === "success") {')
+    parts.append('const cls = item.classification;')
     parts.append('row.innerHTML = `')
     parts.append('<td>${globalIndex + 1}</td>')
     parts.append('<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>')
@@ -656,6 +655,14 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'${cls.level3}\',\'level3\',\'${cls.level3}\')">${cls.level3}</span>')
     parts.append('</span></td>')
     parts.append('`;')
+    parts.append('} else {')
+    parts.append('row.innerHTML = `')
+    parts.append('<td>${globalIndex + 1}</td>')
+    parts.append('<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>')
+    parts.append('<td><span class="app-tag">${item.raw_data && item.raw_data["应用名"] || ""}</span></td>')
+    parts.append('<td><span class="status-badge error">未识别</span></td>')
+    parts.append('`;')
+    parts.append('}')
     parts.append('tbody.appendChild(row);')
     parts.append('});')
     parts.append('updatePagination(filtered.length, totalPages);')
