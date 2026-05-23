@@ -3,13 +3,13 @@
 本文件定义子Agent分类舆情数据的完整流程。必须严格按照以下步骤顺序执行，禁止跳过、合并或绕过任何步骤，禁止编写新脚本进行分类。
 
 ---
-注意：每轮最多读取100条数据，如果超过100条，则轮询步骤1到步骤5，row_count=<beg_index> - <end_index>
+注意：每轮最多读取100条数据，如果超过100条，则轮询步骤1到步骤5，row_count=<beg_index> - <end_index>，**执行前确定技能的路径**，记`skill_path = 技能路径`，执行脚本不要切换工作目录
 ## 步骤1：读取数据
 
 调用脚本读取当前批次数据：
 
 ```
-python scripts/get_rows.py <Excel文件路径> --problem-column <problem_index> --app-name <app_name> --start <beg_index> --end <end_index>
+python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <problem_index> --app-name <app_name> --start <beg_index> --end <end_index>
 ```
 
 返回JSON格式：
@@ -30,11 +30,11 @@ python scripts/get_rows.py <Excel文件路径> --problem-column <problem_index> 
 
 ## 步骤2：读取应用描述
 
-读取 apps/<app_name>/ 目录下的3个文件获取分类依据：
+读取 <skill_path>/apps/<app_name>/ 目录下的3个文件获取分类依据：
 
-1. `apps/<app_name>/info.md` — 应用描述（模块、页面结构）
-2. `apps/<app_name>/classification.md` — 完整分类树（8个一级分类下的二级、三级分类）
-3. `apps/<app_name>/examples.md` — 分类推理示例（逐层推导参考）
+1. `<skill_path>/apps/<app_name>/info.md` — 应用描述（模块、页面结构）
+2. `<skill_path>/apps/<app_name>/classification.md` — 完整分类树（8个一级分类下的二级、三级分类）
+3. `<skill_path>/apps/<app_name>/examples.md` — 分类推理示例（逐层推导参考）
 
 ## 步骤3：逐层推导分类
 
@@ -79,7 +79,7 @@ python scripts/get_rows.py <Excel文件路径> --problem-column <problem_index> 
 分类完成后，调用脚本将结果和原始数据写入数据库，直接将JSON字符串作为命令行参数传入：
 
 ```
-python scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
+python <skill_path>/scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
 ```
 
 save_results.py 会自动读取Excel原始数据并一起写入数据库，在output_dir下生成report.db。
