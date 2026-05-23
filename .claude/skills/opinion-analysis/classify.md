@@ -3,7 +3,7 @@
 本文件定义子Agent分类舆情数据的完整流程。必须严格按照以下步骤顺序执行，禁止跳过、合并或绕过任何步骤，禁止编写新脚本进行分类。
 
 ---
-
+注意：每轮最多读取100条数据，如果超过100条，则轮询步骤1到步骤5，row_count=<beg_index> - <end_index>
 ## 步骤1：读取数据
 
 调用脚本读取当前批次数据：
@@ -84,4 +84,4 @@ python scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
 
 save_results.py 会自动读取Excel原始数据并一起写入数据库，在output_dir下生成report.db。
 
-## 步骤6：执行成功在<output_dir>/subagent.log中追加打印“<当前时间> <beg_index> - <end_index> 分类成功”，否则“<当前时间> <beg_index> - <end_index> 分类失败"
+## 步骤6：执行成功在<output_dir>/report.log中追加打印“<当前时间> <beg_index> - <end_index> 分类成功”，否则“<当前时间> <beg_index> - <end_index> 分类失败"
