@@ -49,6 +49,7 @@ def read_data_from_db(db_path: str) -> dict:
                     'level3': r['level3'],
                     'full_path': r['full_path'],
                 },
+                'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
         elif status == 'unrecognized':
@@ -362,6 +363,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<th style="width:250px">问题描述</th>')
     parts.append('<th style="width:100px">应用</th>')
     parts.append('<th>分类路径（点击可筛选）</th>')
+    parts.append('<th style="width:300px">推理说明</th>')
     parts.append('</tr></thead>')
     parts.append('<tbody id="table-body"></tbody>')
     parts.append('</table>')
@@ -654,6 +656,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<span class="sep">.</span>')
     parts.append('<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'${cls.level3}\',\'level3\',\'${cls.level3}\')">${cls.level3}</span>')
     parts.append('</span></td>')
+    parts.append('<td>${item.reasoning || ""}</td>')
     parts.append('`;')
     parts.append('} else {')
     parts.append('row.innerHTML = `')
@@ -661,6 +664,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>')
     parts.append('<td><span class="app-tag">${item.raw_data && item.raw_data["应用名"] || ""}</span></td>')
     parts.append('<td><span class="status-badge error">未识别</span></td>')
+    parts.append('<td>${item.reasoning || ""}</td>')
     parts.append('`;')
     parts.append('}')
     parts.append('tbody.appendChild(row);')

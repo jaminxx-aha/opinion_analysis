@@ -67,6 +67,7 @@ def init_db(db_path: str, app: str = ""):
             level2 TEXT,
             level3 TEXT,
             full_path TEXT,
+            reasoning TEXT,
             raw_data TEXT
         )
     """)
@@ -111,6 +112,7 @@ def save_results(json_input, output_dir):
     for item in data:
         num = item["num"]
         desc = item["desc"]
+        reasoning = item.get("reasoning", "")
 
         # 获取原始行数据
         row_idx = num - 1  # pandas行索引从0开始
@@ -126,9 +128,9 @@ def save_results(json_input, output_dir):
         # 解析分类结果并写入单表
         if desc == "unrecognized":
             cursor.execute("""
-                INSERT OR REPLACE INTO report (id, app, problem, status, raw_data)
-                VALUES (?, ?, ?, ?, ?)
-            """, (num, app, problem, "unrecognized", raw_data_json))
+                INSERT OR REPLACE INTO report (id, app, problem, status, reasoning, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (num, app, problem, "unrecognized", reasoning, raw_data_json))
         else:
             parts = desc
             level1 = parts[0] if len(parts) >= 1 else ""
@@ -137,9 +139,9 @@ def save_results(json_input, output_dir):
             full_path = ".".join(parts)
 
             cursor.execute("""
-                INSERT OR REPLACE INTO report (id, app, problem, status, cls_app, level1, level2, level3, full_path, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (num, app, problem, "success", app, level1, level2, level3, full_path, raw_data_json))
+                INSERT OR REPLACE INTO report (id, app, problem, status, cls_app, level1, level2, level3, full_path, reasoning, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (num, app, problem, "success", app, level1, level2, level3, full_path, reasoning, raw_data_json))
 
         inserted += 1
 

@@ -65,9 +65,9 @@ python scripts/get_rows.py <Excel文件路径> --problem-column <problem_index> 
   "problem_column": 5,
   "output_dir": "...",
   "data": [
-    {"num": 1, "desc": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"], "row_data": {原始行}},
-    {"num": 2, "desc": ["unrecognized"], "row_data": {原始行}},
-    {"num": 3, "desc": ["闪退","崩溃","使用过程闪退.视频播放过程闪退"], "row_data": {原始行}}
+    {"num": 1, "desc": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"], "reasoning": "用户描述含'刷视频卡顿'，关键词'刷视频'对应滑动操作，'卡顿'对应一级分类卡顿，推断为首页推荐视频流上下滑动卡顿"},
+    {"num": 2, "desc": ["unrecognized"], "reasoning": ""},
+    {"num": 3, "desc": ["闪退/崩溃","使用过程闪退","视频播放过程闪退"], "reasoning": "用户描述含'看视频突然闪退'，'闪退'对应一级分类闪退/崩溃，'看视频时'对应使用过程闪退场景"}
   ]
 }
 ```
