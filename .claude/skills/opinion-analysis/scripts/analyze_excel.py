@@ -56,16 +56,7 @@ def generate_report(input_path: str, output_dir: str = None) -> str:
     else:
         os.makedirs(output_dir, exist_ok=True)
 
-    # 确定输出HTML路径
-    basename = os.path.basename(input_path)
-    for ext in ['.json', '.db']:
-        if basename.endswith(ext):
-            basename = basename[:-len(ext)]
-    for suffix in ['_classified', '_prepared']:
-        if basename.endswith(suffix):
-            basename = basename[:-len(suffix)]
-
-    report_path = os.path.join(output_dir, f"{basename}_report.html")
+    report_path = os.path.join(output_dir, "report.html")
 
     try:
         subprocess.run([

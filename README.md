@@ -56,8 +56,7 @@ python3 .claude/skills/opinion_analysis/scripts/analyze_excel.py 舆情数据示
 ├── taxonomy.md           # 分类体系定义
 └── scripts/
     ├── analyze_excel.py  # 数据处理脚本
-    ├── generate_report.py # 报告生成脚本
-    └── config.py         # 配置文件
+    └──generate_report.py # 报告生成脚本
 
 test/                     # 测试数据
 ├── 舆情数据示例.xlsx
