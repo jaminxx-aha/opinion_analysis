@@ -155,6 +155,13 @@ def save_results(json_input, output_dir):
     print(f"已写入 {inserted} 条分类结果到 {db_path}")
     print(f"累计: {total} 条")
 
+    # 写入日志
+    log_path = os.path.join(output_dir, "report.log")
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as log_f:
+        log_f.write(f"{now} {start} - {end} 分类成功\n")
+
 
 def main():
     import argparse
@@ -165,13 +172,32 @@ def main():
 
     args = parser.parse_args()
 
+    # 在try前提取start/end，用于失败日志
+    start, end = "", ""
+    try:
+        parsed = json.loads(args.json_input) if not os.path.isfile(args.json_input) else {}
+        start = parsed.get("start", "")
+        end = parsed.get("end", "")
+    except Exception:
+        pass
+
     try:
         save_results(args.json_input, args.output_dir)
     except json.JSONDecodeError as e:
         print(f"JSON解析失败: {e}")
+        log_path = os.path.join(args.output_dir, "report.log")
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as log_f:
+            log_f.write(f"{now} {start} - {end} 分类失败: JSON解析失败\n")
         sys.exit(1)
     except Exception as e:
         print(f"错误: {e}")
+        log_path = os.path.join(args.output_dir, "report.log")
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as log_f:
+            log_f.write(f"{now} {start} - {end} 分类失败: {e}\n")
         sys.exit(1)
 
 

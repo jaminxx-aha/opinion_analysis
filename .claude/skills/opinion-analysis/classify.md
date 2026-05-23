@@ -83,5 +83,3 @@ python scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
 ```
 
 save_results.py 会自动读取Excel原始数据并一起写入数据库，在output_dir下生成report.db。
-
-## 步骤6：执行成功在<output_dir>/report.log中追加打印“<当前时间> <beg_index> - <end_index> 分类成功”，否则“<当前时间> <beg_index> - <end_index> 分类失败"
