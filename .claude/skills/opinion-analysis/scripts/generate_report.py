@@ -57,7 +57,14 @@ def read_data_from_db(db_path: str) -> dict:
             details.append({
                 'input': r['problem'],
                 'status': 'unrecognized',
-                'output': '无法识别应用',
+                'classification': {
+                    'app': r['app'] or '',
+                    'level1': '未知问题',
+                    'level2': '',
+                    'level3': '',
+                    'full_path': '未知问题',
+                },
+                'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
         elif status == 'no_description':
@@ -323,15 +330,12 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('</div>')
     parts.append('<div class="stats-row">')
     parts.append(f'<div class="stat-card"><div class="num">{total}</div><div class="label">总数据</div></div>')
-    parts.append(f'<div class="stat-card success"><div class="num">{classified}</div><div class="label">已分类</div></div>')
-    parts.append(f'<div class="stat-card warning"><div class="num">{no_description}</div><div class="label">无描述</div></div>')
-    parts.append(f'<div class="stat-card error"><div class="num">{unrecognized}</div><div class="label">未识别</div></div>')
+    parts.append(f'<div class="stat-card error"><div class="num">{unrecognized}</div><div class="label">未知问题</div></div>')
     parts.append('</div>')
     parts.append('</div>')
 
     # 过滤工具栏
     parts.append('<div class="toolbar">')
-    parts.append('<div class="filter-select"><label>状态</label><select id="filter-status" onchange="onStatusFilterChange()"><option value="">全部</option><option value="success">已分类</option><option value="unrecognized">未识别</option></select></div>')
     parts.append('<div class="filter-select"><label>一级分类</label><select id="filter-level1" onchange="onFilterChange(\'level1\')"><option value="">全部</option></select></div>')
     parts.append('<div class="filter-select"><label>二级分类</label><select id="filter-level2" onchange="onFilterChange(\'level2\')" disabled><option value="">全部</option></select></div>')
     parts.append('<div class="filter-select"><label>三级分类</label><select id="filter-level3" onchange="onFilterChange(\'level3\')" disabled><option value="">全部</option></select></div>')
@@ -362,7 +366,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<th style="width:60px">序号</th>')
     parts.append('<th style="width:250px">问题描述</th>')
     parts.append('<th style="width:100px">应用</th>')
-    parts.append('<th>分类路径（点击可筛选）</th>')
+    parts.append('<th>分类</th>')
     parts.append('<th style="width:300px">推理说明</th>')
     parts.append('</tr></thead>')
     parts.append('<tbody id="table-body"></tbody>')
@@ -389,7 +393,6 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('<script>')
     parts.append(f'const allData = {details_json};')
     parts.append('let filters = { level1: "", level2: "", level3: "" };')
-    parts.append('let statusFilter = "";')
     parts.append('let searchText = "";')
     parts.append('let charts = {};')
     parts.append('let chartsVisible = true;')
@@ -400,6 +403,10 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('function getAllOptions() {')
     parts.append('const level1s = {}, level2s = {}, level3s = {};')
     parts.append('allData.forEach(item => {')
+    parts.append('if (item.status === "unrecognized") {')
+    parts.append('level1s["未知问题"] = true;')
+    parts.append('return;')
+    parts.append('}')
     parts.append('if (item.status === "success") {')
     parts.append('const cls = item.classification;')
     parts.append('level1s[cls.level1] = true;')
@@ -460,9 +467,14 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     # 获取过滤后的数据
     parts.append('function getFilteredData() {')
     parts.append('return allData.filter(item => {')
-    parts.append('if (statusFilter && item.status !== statusFilter) return false;')
-    parts.append('if (item.status !== "success") {')
+    parts.append('if (item.status === "unrecognized") {')
+    parts.append('if (filters.level1 === "未知问题") return true;')
     parts.append('if (filters.level1 || filters.level2 || filters.level3) return false;')
+    parts.append('if (searchText) {')
+    parts.append('const text = (item.input || "").toLowerCase();')
+    parts.append('if (!text.includes(searchText.toLowerCase())) return false;')
+    parts.append('}')
+    parts.append('return true;')
     parts.append('}')
     parts.append('if (item.status === "success") {')
     parts.append('const cls = item.classification;')
@@ -482,6 +494,10 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('function calcStats(data) {')
     parts.append('const stats = { level1: {}, level2: {}, level3: {} };')
     parts.append('data.forEach(item => {')
+    parts.append('if (item.status === "unrecognized") {')
+    parts.append('stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1;')
+    parts.append('return;')
+    parts.append('}')
     parts.append('if (item.status !== "success") return;')
     parts.append('const cls = item.classification;')
     parts.append('stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;')
@@ -491,13 +507,7 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('return stats;')
     parts.append('}')
 
-    # 过滤变更
-    parts.append('function onStatusFilterChange() {')
-    parts.append('statusFilter = document.getElementById("filter-status").value;')
-    parts.append('currentPage = 1;')
-    parts.append('updateAll();')
-    parts.append('}')
-    parts.append('')
+    # 过滤变更（移除状态筛选）
     parts.append('function onFilterChange(source) {')
     parts.append('const level1Sel = document.getElementById("filter-level1");')
     parts.append('const level2Sel = document.getElementById("filter-level2");')
@@ -643,30 +653,24 @@ def generate_report(input_path: str, output_path: str = None) -> str:
     parts.append('const globalIndex = start + i;')
     parts.append('const row = document.createElement("tr");')
     parts.append('row.dataset.index = globalIndex;')
+    parts.append('const cls = item.classification || {};')
+    parts.append('let clsHtml = "";')
     parts.append('if (item.status === "success") {')
-    parts.append('const cls = item.classification;')
-    parts.append('row.innerHTML = `')
-    parts.append('<td>${globalIndex + 1}</td>')
-    parts.append('<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>')
-    parts.append('<td><span class="app-tag">${cls.app || ""}</span></td>')
-    parts.append('<td><span class="cls-path">')
-    parts.append('<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'\',\'\',\'level1\',\'${cls.level1}\')">${cls.level1}</span>')
-    parts.append('<span class="sep">.</span>')
-    parts.append('<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'\',\'level2\',\'${cls.level2}\')">${cls.level2}</span>')
-    parts.append('<span class="sep">.</span>')
-    parts.append('<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'${cls.level3}\',\'level3\',\'${cls.level3}\')">${cls.level3}</span>')
-    parts.append('</span></td>')
-    parts.append('<td>${item.reasoning || ""}</td>')
-    parts.append('`;')
+    parts.append('const parts = [];')
+    parts.append('if (cls.level1) parts.push(`<span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'\',\'\',\'level1\',\'${cls.level1}\')">${cls.level1}</span>`);')
+    parts.append('if (cls.level2) parts.push(`<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'\',\'level2\',\'${cls.level2}\')">${cls.level2}</span>`);')
+    parts.append('if (cls.level3) parts.push(`<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'${cls.level1}\',\'${cls.level2}\',\'${cls.level3}\',\'level3\',\'${cls.level3}\')">${cls.level3}</span>`);')
+    parts.append('clsHtml = `<span class="cls-path">${parts.join("")}</span>`;')
     parts.append('} else {')
+    parts.append('clsHtml = `<span class="cls-path"><span class="item" onclick="setFilterWithPath(\'未知问题\',\'\',\'\',\'level1\',\'未知问题\')" style="color:#dc2626">未知问题</span></span>`;')
+    parts.append('}')
     parts.append('row.innerHTML = `')
     parts.append('<td>${globalIndex + 1}</td>')
     parts.append('<td><span class="problem-text" title="${item.input}" onclick="showDetail(${globalIndex})">${item.input}</span></td>')
-    parts.append('<td><span class="app-tag">${item.raw_data && item.raw_data["应用名"] || ""}</span></td>')
-    parts.append('<td><span class="status-badge error">未识别</span></td>')
+    parts.append('<td><span class="app-tag">${cls.app || (item.raw_data && item.raw_data["应用名"]) || ""}</span></td>')
+    parts.append('<td>${clsHtml}</td>')
     parts.append('<td>${item.reasoning || ""}</td>')
     parts.append('`;')
-    parts.append('}')
     parts.append('tbody.appendChild(row);')
     parts.append('});')
     parts.append('updatePagination(filtered.length, totalPages);')
