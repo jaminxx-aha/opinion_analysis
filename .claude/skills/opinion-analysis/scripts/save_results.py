@@ -17,16 +17,16 @@
     "start": 1,
     "end": 100,
     "data": [
-      {"num": 1, "desc": "卡顿.滑动卡顿.首页推荐视频流上下滑动卡顿"},
-      {"num": 2, "desc": "unrecognized"},
-      {"num": 3, "desc": "闪退/崩溃.使用过程闪退.视频播放过程闪退"}
+      {"num": 1, "classification": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"], "reasoning": "..."},
+      {"num": 2, "classification": ["未知问题"], "reasoning": "..."},
+      {"num": 3, "classification": ["卡顿"], "reasoning": "..."}
     ]
   }
 
-  desc为三层分类路径（成功分类）或"unrecognized"（不属于8类性能问题）
+  classification为分类数组：三级推导为[一级,二级,三级]，二级推导为[一级,二级]，一级推导为[一级]，无法归类为["未知问题"]
 
 示例:
-  python save_results.py '{"excel_path":"data.xlsx","app":"抖音","problem_column":5,"start":1,"end":5,"data":[{"num":1,"desc":"卡顿.滑动卡顿.首页推荐视频流上下滑动卡顿"}]}' --output-dir ./output/data
+  python save_results.py '{"excel_path":"data.xlsx","app":"抖音","problem_column":5,"start":1,"end":5,"data":[{"num":1,"classification":["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"],"reasoning":"..."}]}' --output-dir ./output/data
 """
 
 import sys
@@ -111,7 +111,7 @@ def save_results(json_input, output_dir):
     inserted = 0
     for item in data:
         num = item["num"]
-        desc = item["desc"]
+        cls = item.get("classification", [])
         reasoning = item.get("reasoning", "")
 
         # 获取原始行数据
@@ -126,17 +126,16 @@ def save_results(json_input, output_dir):
             raw_data_json = "{}"
 
         # 解析分类结果并写入单表
-        if desc == "unrecognized":
+        if not cls or cls[0] == "未知问题":
             cursor.execute("""
                 INSERT OR REPLACE INTO report (id, app, problem, status, reasoning, raw_data)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (num, app, problem, "unrecognized", reasoning, raw_data_json))
         else:
-            parts = desc
-            level1 = parts[0] if len(parts) >= 1 else ""
-            level2 = parts[1] if len(parts) >= 2 else ""
-            level3 = parts[2] if len(parts) >= 3 else ""
-            full_path = ".".join(parts)
+            level1 = cls[0]
+            level2 = cls[1] if len(cls) >= 2 else ""
+            level3 = cls[2] if len(cls) >= 3 else ""
+            full_path = ".".join([l for l in [level1, level2, level3] if l])
 
             cursor.execute("""
                 INSERT OR REPLACE INTO report (id, app, problem, status, cls_app, level1, level2, level3, full_path, reasoning, raw_data)
