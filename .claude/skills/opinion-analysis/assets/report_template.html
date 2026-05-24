@@ -120,77 +120,78 @@ tr:hover { background: #f8fafc; }
 
 <!-- 头部 -->
 <div class="header">
-<div class="header-top">
-<h1>舆情分析报告</h1>
-<div class="header-right">
-{{IF_EXCEL_FILENAME}}<a href="{{EXCEL_FILENAME}}" class="excel-link" download title="下载原始Excel数据">下载原始数据</a>{{ENDIF_EXCEL_FILENAME}}
-<span class="time">{{GENERATED_TIME}}</span>
-</div>
-</div>
-<div class="stats-row">
-<div class="stat-card"><div class="num">{{TOTAL}}</div><div class="label">总数据</div></div>
-<div class="stat-card success"><div class="num">{{CLASSIFIED}}</div><div class="label">已分类</div></div>
-<div class="stat-card error"><div class="num">{{UNRECOGNIZED}}</div><div class="label">未知问题</div></div>
-</div>
+  <div class="header-top">
+    <h1>舆情分析报告</h1>
+    <div class="header-right">
+      {{IF_EXCEL_FILENAME}}<a href="{{EXCEL_FILENAME}}" class="excel-link" download title="下载原始Excel数据">下载原始数据</a>{{ENDIF_EXCEL_FILENAME}}
+      <span class="time">{{GENERATED_TIME}}</span>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="num">{{TOTAL}}</div><div class="label">总数据</div></div>
+    <div class="stat-card success"><div class="num">{{CLASSIFIED}}</div><div class="label">已分类</div></div>
+    <div class="stat-card error"><div class="num">{{UNRECOGNIZED}}</div><div class="label">未知问题</div></div>
+  </div>
 </div>
 
 <!-- 过滤工具栏 -->
 <div class="toolbar">
-<div class="filter-select"><label>一级分类</label><select id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select></div>
-<div class="filter-select"><label>二级分类</label><select id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select></div>
-<div class="filter-select"><label>三级分类</label><select id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select></div>
-<div class="search-box"><input type="text" id="search-input" placeholder="搜索问题描述..." onkeyup="onSearch()"></div>
+  <div class="filter-select"><label>一级分类</label><select id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select></div>
+  <div class="filter-select"><label>二级分类</label><select id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select></div>
+  <div class="filter-select"><label>三级分类</label><select id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select></div>
+  <div class="search-box"><input type="text" id="search-input" placeholder="搜索问题描述..." onkeyup="onSearch()"></div>
 </div>
 
 <!-- 图表区 -->
 <div class="charts-section">
-<div class="section-header">
-<h2>数据分布 <span id="filter-path" class="filter-path"></span></h2>
-<span class="toggle" onclick="toggleCharts()">收起</span>
-</div>
-<div class="charts-content" id="charts-content">
-<div class="chart-box"><h3 id="bar-title">一级分类分布</h3><div class="chart-wrap"><canvas id="level1Chart"></canvas></div></div>
-<div class="chart-box"><h3 id="pie-title">一级分类分布</h3><div class="chart-wrap"><canvas id="pieChart"></canvas></div></div>
-</div>
+  <div class="section-header">
+    <h2>数据分布 <span id="filter-path" class="filter-path"></span></h2>
+    <span class="toggle" onclick="toggleCharts()">收起</span>
+  </div>
+  <div class="charts-content" id="charts-content">
+    <div class="chart-box"><h3 id="bar-title">一级分类分布</h3><div class="chart-wrap"><canvas id="level1Chart"></canvas></div></div>
+    <div class="chart-box"><h3 id="pie-title">一级分类分布</h3><div class="chart-wrap"><canvas id="pieChart"></canvas></div></div>
+  </div>
 </div>
 
 <!-- 数据表格 -->
 <div class="table-section">
-<div class="table-header">
-<h2>详细数据</h2>
-<span class="count" id="table-count">0 条</span>
-</div>
-<div class="table-container">
-<table>
-<thead><tr>
-<th style="width:60px">序号</th>
-<th style="width:250px">问题描述</th>
-<th style="width:100px">应用</th>
-<th>分类</th>
-<th style="width:300px">推理说明</th>
-</tr></thead>
-<tbody id="table-body"></tbody>
-</table>
-</div>
-<div class="pagination" id="pagination"></div>
-<div class="empty-state hidden" id="empty-state"><div class="icon">🔍</div><p>没有找到匹配的数据</p></div>
+  <div class="table-header">
+    <h2>详细数据</h2>
+    <span class="count" id="table-count">0 条</span>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead><tr>
+        <th style="width:60px">序号</th>
+        <th style="width:250px">问题描述</th>
+        <th style="width:100px">应用</th>
+        <th>分类</th>
+        <th style="width:300px">推理说明</th>
+      </tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+  <div class="empty-state hidden" id="empty-state"><div class="icon">🔍</div><p>没有找到匹配的数据</p></div>
 </div>
 
 <!-- 弹窗 -->
 <div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">
-<div class="modal" onclick="event.stopPropagation()">
-<div class="modal-header">
-<h3>数据详情</h3>
-<span class="modal-close" onclick="closeModal()">×</span>
-</div>
-<div class="modal-body" id="modal-body"></div>
-</div>
-</div>
-
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>数据详情</h3>
+      <span class="modal-close" onclick="closeModal()">×</span>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
 </div>
 
+</div>
+
+<script id="report-data" type="application/json">{{DETAILS_JSON}}</script>
 <script>
-const allData = {{DETAILS_JSON}};
+const allData = JSON.parse(document.getElementById('report-data').textContent);
 let filters = { level1: "", level2: "", level3: "" };
 let searchText = "";
 let charts = {};
@@ -199,393 +200,510 @@ let currentPage = 1;
 const pageSize = 50;
 
 function getAllOptions() {
-const level1s = {}, level2s = {}, level3s = {};
-allData.forEach(item => {
-if (item.status === "unrecognized") { level1s["未知问题"] = true; return; }
-if (item.status === "success") {
-const cls = item.classification;
-level1s[cls.level1] = true;
-level2s[cls.level2] = true;
-level3s[cls.level3] = true;
-}});
-return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort() };
+  const level1s = {}, level2s = {}, level3s = {};
+  allData.forEach(item => {
+    if (item.status === "unrecognized") {
+      level1s["未知问题"] = true;
+      return;
+    }
+    if (item.status === "success") {
+      const cls = item.classification;
+      level1s[cls.level1] = true;
+      level2s[cls.level2] = true;
+      level3s[cls.level3] = true;
+    }
+  });
+  return {
+    level1s: Object.keys(level1s).sort(),
+    level2s: Object.keys(level2s).sort(),
+    level3s: Object.keys(level3s).sort()
+  };
 }
 
 function getAvailableLevel2(level1) {
-const level2s = {};
-allData.forEach(item => {
-if (item.status === "success") {
-const cls = item.classification;
-if (!level1 || cls.level1 === level1) { level2s[cls.level2] = true; }
-}});
-return Object.keys(level2s).sort();
+  const level2s = {};
+  allData.forEach(item => {
+    if (item.status === "success") {
+      const cls = item.classification;
+      if (!level1 || cls.level1 === level1) {
+        level2s[cls.level2] = true;
+      }
+    }
+  });
+  return Object.keys(level2s).sort();
 }
 
 function getAvailableLevel3(level1, level2) {
-const level3s = {};
-allData.forEach(item => {
-if (item.status === "success") {
-const cls = item.classification;
-if (!level1 || cls.level1 === level1) {
-if (!level2 || cls.level2 === level2) { level3s[cls.level3] = true; }
-}});
-return Object.keys(level3s).sort();
+  const level3s = {};
+  allData.forEach(item => {
+    if (item.status === "success") {
+      const cls = item.classification;
+      if (!level1 || cls.level1 === level1) {
+        if (!level2 || cls.level2 === level2) {
+          level3s[cls.level3] = true;
+        }
+      }
+    }
+  });
+  return Object.keys(level3s).sort();
 }
 
 function initSelectOptions() {
-const opts = getAllOptions();
-fillSelect("filter-level1", opts.level1s, "全部");
+  const opts = getAllOptions();
+  fillSelect("filter-level1", opts.level1s, "全部");
 }
 
 function fillSelect(id, options, placeholder = "全部") {
-const sel = document.getElementById(id);
-const currentValue = sel.value;
-sel.innerHTML = '<option value="">' + placeholder + '</option>';
-options.forEach(opt => {
-const optEl = document.createElement("option");
-optEl.value = opt;
-optEl.textContent = opt;
-sel.appendChild(optEl);
-});
-if (options.includes(currentValue)) { sel.value = currentValue; }
-else { sel.value = ""; }
+  const sel = document.getElementById(id);
+  const currentValue = sel.value;
+  sel.innerHTML = '<option value="">' + placeholder + '</option>';
+  options.forEach(opt => {
+    const optEl = document.createElement("option");
+    optEl.value = opt;
+    optEl.textContent = opt;
+    sel.appendChild(optEl);
+  });
+  if (options.includes(currentValue)) {
+    sel.value = currentValue;
+  } else {
+    sel.value = "";
+  }
 }
 
 function getFilteredData() {
-return allData.filter(item => {
-if (item.status === "unrecognized") {
-if (filters.level1 === "未知问题") return true;
-if (filters.level1 || filters.level2 || filters.level3) return false;
-if (searchText) { if (!(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false; }
-return true;
-}
-if (item.status === "success") {
-const cls = item.classification;
-if (filters.level1 && cls.level1 !== filters.level1) return false;
-if (filters.level2 && cls.level2 !== filters.level2) return false;
-if (filters.level3 && cls.level3 !== filters.level3) return false;
-}
-if (searchText) { if (!(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false; }
-return true;
-});
+  return allData.filter(item => {
+    if (item.status === "unrecognized") {
+      if (filters.level1 === "未知问题") return true;
+      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (searchText) {
+        if (!(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
+      }
+      return true;
+    }
+    if (item.status === "success") {
+      const cls = item.classification;
+      if (filters.level1 && cls.level1 !== filters.level1) return false;
+      if (filters.level2 && cls.level2 !== filters.level2) return false;
+      if (filters.level3 && cls.level3 !== filters.level3) return false;
+    }
+    if (searchText) {
+      if (!(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
+    }
+    return true;
+  });
 }
 
 function calcStats(data) {
-const stats = { level1: {}, level2: {}, level3: {} };
-data.forEach(item => {
-if (item.status === "unrecognized") { stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1; return; }
-if (item.status !== "success") return;
-const cls = item.classification;
-stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
-stats.level2[cls.level2] = (stats.level2[cls.level2] || 0) + 1;
-stats.level3[cls.level3] = (stats.level3[cls.level3] || 0) + 1;
-});
-return stats;
+  const stats = { level1: {}, level2: {}, level3: {} };
+  data.forEach(item => {
+    if (item.status === "unrecognized") {
+      stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1;
+      return;
+    }
+    if (item.status !== "success") return;
+    const cls = item.classification;
+    stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
+    stats.level2[cls.level2] = (stats.level2[cls.level2] || 0) + 1;
+    stats.level3[cls.level3] = (stats.level3[cls.level3] || 0) + 1;
+  });
+  return stats;
 }
 
 function onFilterChange(source) {
-const level1Sel = document.getElementById("filter-level1");
-const level2Sel = document.getElementById("filter-level2");
-const level3Sel = document.getElementById("filter-level3");
+  const level1Sel = document.getElementById("filter-level1");
+  const level2Sel = document.getElementById("filter-level2");
+  const level3Sel = document.getElementById("filter-level3");
 
-if (source === "level1") {
-filters.level1 = level1Sel.value;
-if (filters.level1) {
-fillSelect("filter-level2", getAvailableLevel2(filters.level1), "全部");
-level2Sel.disabled = false;
-} else {
-level2Sel.disabled = true;
-level2Sel.innerHTML = '<option value="">全部</option>';
-level3Sel.disabled = true;
-level3Sel.innerHTML = '<option value="">全部</option>';
-}
-filters.level2 = "";
-filters.level3 = "";
-}
-if (source === "level2") {
-filters.level2 = level2Sel.value;
-if (filters.level2) {
-fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2), "全部");
-level3Sel.disabled = false;
-} else {
-level3Sel.disabled = true;
-level3Sel.innerHTML = '<option value="">全部</option>';
-}
-filters.level3 = "";
-}
-if (source === "level3") { filters.level3 = level3Sel.value; }
-currentPage = 1;
-updateAll();
+  if (source === "level1") {
+    filters.level1 = level1Sel.value;
+    if (filters.level1) {
+      fillSelect("filter-level2", getAvailableLevel2(filters.level1), "全部");
+      level2Sel.disabled = false;
+    } else {
+      level2Sel.disabled = true;
+      level2Sel.innerHTML = '<option value="">全部</option>';
+      level3Sel.disabled = true;
+      level3Sel.innerHTML = '<option value="">全部</option>';
+    }
+    filters.level2 = "";
+    filters.level3 = "";
+  }
+
+  if (source === "level2") {
+    filters.level2 = level2Sel.value;
+    if (filters.level2) {
+      fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2), "全部");
+      level3Sel.disabled = false;
+    } else {
+      level3Sel.disabled = true;
+      level3Sel.innerHTML = '<option value="">全部</option>';
+    }
+    filters.level3 = "";
+  }
+
+  if (source === "level3") {
+    filters.level3 = level3Sel.value;
+  }
+
+  currentPage = 1;
+  updateAll();
 }
 
 function onSearch() {
-searchText = document.getElementById("search-input").value;
-currentPage = 1;
-updateAll();
+  searchText = document.getElementById("search-input").value;
+  currentPage = 1;
+  updateAll();
 }
 
 function clearFilters() {
-filters = { level1: "", level2: "", level3: "" };
-searchText = "";
-fillSelect("filter-level1", getAllOptions().level1s, "全部");
-document.getElementById("filter-level1").value = "";
-const level2Sel = document.getElementById("filter-level2");
-level2Sel.disabled = true;
-level2Sel.innerHTML = '<option value="">全部</option>';
-const level3Sel = document.getElementById("filter-level3");
-level3Sel.disabled = true;
-level3Sel.innerHTML = '<option value="">全部</option>';
-document.getElementById("search-input").value = "";
-currentPage = 1;
-updateAll();
+  filters = { level1: "", level2: "", level3: "" };
+  searchText = "";
+  fillSelect("filter-level1", getAllOptions().level1s, "全部");
+  document.getElementById("filter-level1").value = "";
+  const level2Sel = document.getElementById("filter-level2");
+  level2Sel.disabled = true;
+  level2Sel.innerHTML = '<option value="">全部</option>';
+  const level3Sel = document.getElementById("filter-level3");
+  level3Sel.disabled = true;
+  level3Sel.innerHTML = '<option value="">全部</option>';
+  document.getElementById("search-input").value = "";
+  currentPage = 1;
+  updateAll();
 }
 
 function toggleCharts() {
-chartsVisible = !chartsVisible;
-const content = document.getElementById("charts-content");
-const toggle = document.querySelector(".section-header .toggle");
-if (chartsVisible) { content.classList.remove("collapsed"); toggle.textContent = "收起"; }
-else { content.classList.add("collapsed"); toggle.textContent = "展开"; }
+  chartsVisible = !chartsVisible;
+  const content = document.getElementById("charts-content");
+  const toggle = document.querySelector(".section-header .toggle");
+  if (chartsVisible) {
+    content.classList.remove("collapsed");
+    toggle.textContent = "收起";
+  } else {
+    content.classList.add("collapsed");
+    toggle.textContent = "展开";
+  }
 }
 
 function updateBreadcrumb() {
-const pathEl = document.getElementById("filter-path");
-if (!filters.level1 && !filters.level2 && !filters.level3 && !searchText) { pathEl.innerHTML = ""; return; }
-const parts = ["全部"];
-if (filters.level1) parts.push(filters.level1);
-if (filters.level2) parts.push(filters.level2);
-if (filters.level3) parts.push(filters.level3);
-if (searchText) parts.push("搜索:" + searchText);
-pathEl.innerHTML = parts.map((p, i) => {
-if (i === 0) return '<span class="item" onclick="clearFilters()">' + p + '</span>';
-return '<span class="item" onclick="clearLevel(' + i + ')">' + p + '</span>';
-}).join('<span class="sep">&#8250;</span>');
+  const pathEl = document.getElementById("filter-path");
+  if (!filters.level1 && !filters.level2 && !filters.level3 && !searchText) {
+    pathEl.innerHTML = "";
+    return;
+  }
+  const parts = ["全部"];
+  if (filters.level1) parts.push(filters.level1);
+  if (filters.level2) parts.push(filters.level2);
+  if (filters.level3) parts.push(filters.level3);
+  if (searchText) parts.push("搜索:" + searchText);
+  pathEl.innerHTML = parts.map((p, i) => {
+    if (i === 0) return '<span class="item" onclick="clearFilters()">' + p + '</span>';
+    return '<span class="item" onclick="clearLevel(' + i + ')">' + p + '</span>';
+  }).join('<span class="sep">&#8250;</span>');
 }
 
 function clearLevel(level) {
-if (level === 1) {
-filters.level2 = ""; filters.level3 = "";
-fillSelect("filter-level2", getAvailableLevel2(filters.level1), "全部");
-document.getElementById("filter-level2").disabled = false;
-document.getElementById("filter-level2").value = "";
-document.getElementById("filter-level3").disabled = true;
-document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
-} else if (level === 2) {
-filters.level3 = "";
-fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2), "全部");
-document.getElementById("filter-level3").disabled = false;
-document.getElementById("filter-level3").value = "";
-}
-searchText = ""; document.getElementById("search-input").value = "";
-currentPage = 1;
-updateAll();
+  if (level === 1) {
+    filters.level2 = "";
+    filters.level3 = "";
+    fillSelect("filter-level2", getAvailableLevel2(filters.level1), "全部");
+    document.getElementById("filter-level2").disabled = false;
+    document.getElementById("filter-level2").value = "";
+    document.getElementById("filter-level3").disabled = true;
+    document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  } else if (level === 2) {
+    filters.level3 = "";
+    fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2), "全部");
+    document.getElementById("filter-level3").disabled = false;
+    document.getElementById("filter-level3").value = "";
+  }
+  searchText = "";
+  document.getElementById("search-input").value = "";
+  currentPage = 1;
+  updateAll();
 }
 
 function updateTable() {
-const tbody = document.getElementById("table-body");
-const empty = document.getElementById("empty-state");
-const countEl = document.getElementById("table-count");
-const paginationEl = document.getElementById("pagination");
-const filtered = getFilteredData();
-countEl.textContent = filtered.length + " 条";
-const totalPages = Math.ceil(filtered.length / pageSize);
-if (currentPage > totalPages) currentPage = totalPages || 1;
-const start = (currentPage - 1) * pageSize;
-const end = start + pageSize;
-const pageData = filtered.slice(start, end);
-tbody.innerHTML = "";
-if (filtered.length === 0) { empty.classList.remove("hidden"); paginationEl.innerHTML = ""; return; }
-empty.classList.add("hidden");
-pageData.forEach((item, i) => {
-const globalIndex = start + i;
-const row = document.createElement("tr");
-row.dataset.index = globalIndex;
-const cls = item.classification || {};
-let clsHtml = "";
-if (item.status === "success") {
-const parts = [];
-if (cls.level1) parts.push('<span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'\',\'\',\'level1\',\'' + cls.level1 + '\')">' + cls.level1 + '</span>');
-if (cls.level2) parts.push('<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'' + cls.level2 + '\',\'\',\'level2\',\'' + cls.level2 + '\')">' + cls.level2 + '</span>');
-if (cls.level3) parts.push('<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'' + cls.level2 + '\',\'' + cls.level3 + '\',\'level3\',\'' + cls.level3 + '\')">' + cls.level3 + '</span>');
-clsHtml = '<span class="cls-path">' + parts.join("") + '</span>';
-} else {
-clsHtml = '<span class="cls-path"><span class="item" onclick="setFilterWithPath(\'未知问题\',\'\',\'\',\'level1\',\'未知问题\')" style="color:#dc2626">未知问题</span></span>';
-}
-row.innerHTML = '<td>' + (globalIndex + 1) + '</td>'
-+ '<td><span class="problem-text" title="' + item.input + '" onclick="showDetail(' + globalIndex + ')">' + item.input + '</span></td>'
-+ '<td><span class="app-tag">' + (cls.app || (item.raw_data && item.raw_data["应用名"]) || "") + '</span></td>'
-+ '<td>' + clsHtml + '</td>'
-+ '<td>' + (item.reasoning || "") + '</td>';
-tbody.appendChild(row);
-});
-updatePagination(filtered.length, totalPages);
+  const tbody = document.getElementById("table-body");
+  const empty = document.getElementById("empty-state");
+  const countEl = document.getElementById("table-count");
+  const paginationEl = document.getElementById("pagination");
+  const filtered = getFilteredData();
+  countEl.textContent = filtered.length + " 条";
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages || 1;
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageData = filtered.slice(start, end);
+  tbody.innerHTML = "";
+  if (filtered.length === 0) {
+    empty.classList.remove("hidden");
+    paginationEl.innerHTML = "";
+    return;
+  }
+  empty.classList.add("hidden");
+  pageData.forEach((item, i) => {
+    const globalIndex = start + i;
+    const row = document.createElement("tr");
+    row.dataset.index = globalIndex;
+    const cls = item.classification || {};
+    let clsHtml = "";
+    if (item.status === "success") {
+      const parts = [];
+      if (cls.level1) {
+        parts.push('<span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'\',\'\',\'level1\',\'' + cls.level1 + '\')">' + cls.level1 + '</span>');
+      }
+      if (cls.level2) {
+        parts.push('<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'' + cls.level2 + '\',\'\',\'level2\',\'' + cls.level2 + '\')">' + cls.level2 + '</span>');
+      }
+      if (cls.level3) {
+        parts.push('<span class="sep">.</span><span class="item" onclick="setFilterWithPath(\'' + cls.level1 + '\',\'' + cls.level2 + '\',\'' + cls.level3 + '\',\'level3\',\'' + cls.level3 + '\')">' + cls.level3 + '</span>');
+      }
+      clsHtml = '<span class="cls-path">' + parts.join("") + '</span>';
+    } else {
+      clsHtml = '<span class="cls-path"><span class="item" onclick="setFilterWithPath(\'未知问题\',\'\',\'\',\'level1\',\'未知问题\')" style="color:#dc2626">未知问题</span></span>';
+    }
+    row.innerHTML =
+      '<td>' + (globalIndex + 1) + '</td>' +
+      '<td><span class="problem-text" title="' + item.input + '" onclick="showDetail(' + globalIndex + ')">' + item.input + '</span></td>' +
+      '<td><span class="app-tag">' + (cls.app || (item.raw_data && item.raw_data["应用名"]) || "") + '</span></td>' +
+      '<td>' + clsHtml + '</td>' +
+      '<td>' + (item.reasoning || "") + '</td>';
+    tbody.appendChild(row);
+  });
+  updatePagination(filtered.length, totalPages);
 }
 
 function setFilter(field, value) {
-const level1Sel = document.getElementById("filter-level1");
-const level2Sel = document.getElementById("filter-level2");
-const level3Sel = document.getElementById("filter-level3");
+  const level1Sel = document.getElementById("filter-level1");
+  const level2Sel = document.getElementById("filter-level2");
+  const level3Sel = document.getElementById("filter-level3");
 
-if (field === "level1") {
-filters.level1 = value; level1Sel.value = value;
-fillSelect("filter-level2", getAvailableLevel2(value), "全部");
-level2Sel.disabled = false; level2Sel.value = ""; filters.level2 = "";
-level3Sel.disabled = true; level3Sel.innerHTML = '<option value="">全部</option>'; filters.level3 = "";
-} else if (field === "level2") {
-filters.level2 = value; level2Sel.value = value;
-fillSelect("filter-level3", getAvailableLevel3(filters.level1, value), "全部");
-level3Sel.disabled = false; level3Sel.value = ""; filters.level3 = "";
-} else if (field === "level3") {
-filters.level3 = value; level3Sel.value = value;
-}
-currentPage = 1;
-updateAll();
+  if (field === "level1") {
+    filters.level1 = value;
+    level1Sel.value = value;
+    fillSelect("filter-level2", getAvailableLevel2(value), "全部");
+    level2Sel.disabled = false;
+    level2Sel.value = "";
+    filters.level2 = "";
+    level3Sel.disabled = true;
+    level3Sel.innerHTML = '<option value="">全部</option>';
+    filters.level3 = "";
+  } else if (field === "level2") {
+    filters.level2 = value;
+    level2Sel.value = value;
+    fillSelect("filter-level3", getAvailableLevel3(filters.level1, value), "全部");
+    level3Sel.disabled = false;
+    level3Sel.value = "";
+    filters.level3 = "";
+  } else if (field === "level3") {
+    filters.level3 = value;
+    level3Sel.value = value;
+  }
+  currentPage = 1;
+  updateAll();
 }
 
 function setFilterWithPath(level1, level2, level3, targetField, targetValue) {
-const level1Sel = document.getElementById("filter-level1");
-const level2Sel = document.getElementById("filter-level2");
-const level3Sel = document.getElementById("filter-level3");
+  const level1Sel = document.getElementById("filter-level1");
+  const level2Sel = document.getElementById("filter-level2");
+  const level3Sel = document.getElementById("filter-level3");
 
-if (targetField === "level1") {
-filters.level1 = targetValue; level1Sel.value = targetValue;
-fillSelect("filter-level2", getAvailableLevel2(targetValue), "全部");
-level2Sel.disabled = false; level2Sel.value = ""; filters.level2 = "";
-level3Sel.disabled = true; level3Sel.innerHTML = '<option value="">全部</option>'; filters.level3 = "";
-} else if (targetField === "level2") {
-filters.level1 = level1; level1Sel.value = level1;
-fillSelect("filter-level2", getAvailableLevel2(level1), "全部");
-level2Sel.disabled = false;
-filters.level2 = targetValue; level2Sel.value = targetValue;
-fillSelect("filter-level3", getAvailableLevel3(level1, targetValue), "全部");
-level3Sel.disabled = false; level3Sel.value = ""; filters.level3 = "";
-} else if (targetField === "level3") {
-filters.level1 = level1; level1Sel.value = level1;
-fillSelect("filter-level2", getAvailableLevel2(level1), "全部");
-level2Sel.disabled = false;
-filters.level2 = level2; level2Sel.value = level2;
-fillSelect("filter-level3", getAvailableLevel3(level1, level2), "全部");
-level3Sel.disabled = false;
-filters.level3 = targetValue; level3Sel.value = targetValue;
-}
-currentPage = 1;
-updateAll();
+  if (targetField === "level1") {
+    filters.level1 = targetValue;
+    level1Sel.value = targetValue;
+    fillSelect("filter-level2", getAvailableLevel2(targetValue), "全部");
+    level2Sel.disabled = false;
+    level2Sel.value = "";
+    filters.level2 = "";
+    level3Sel.disabled = true;
+    level3Sel.innerHTML = '<option value="">全部</option>';
+    filters.level3 = "";
+  } else if (targetField === "level2") {
+    filters.level1 = level1;
+    level1Sel.value = level1;
+    fillSelect("filter-level2", getAvailableLevel2(level1), "全部");
+    level2Sel.disabled = false;
+    filters.level2 = targetValue;
+    level2Sel.value = targetValue;
+    fillSelect("filter-level3", getAvailableLevel3(level1, targetValue), "全部");
+    level3Sel.disabled = false;
+    level3Sel.value = "";
+    filters.level3 = "";
+  } else if (targetField === "level3") {
+    filters.level1 = level1;
+    level1Sel.value = level1;
+    fillSelect("filter-level2", getAvailableLevel2(level1), "全部");
+    level2Sel.disabled = false;
+    filters.level2 = level2;
+    level2Sel.value = level2;
+    fillSelect("filter-level3", getAvailableLevel3(level1, level2), "全部");
+    level3Sel.disabled = false;
+    filters.level3 = targetValue;
+    level3Sel.value = targetValue;
+  }
+  currentPage = 1;
+  updateAll();
 }
 
 /* 图表：柱状图和饼图点击逻辑保持一致——逐级递进 */
 function onBarClick(value) {
-if (filters.level2) { setFilter("level3", value); }
-else if (filters.level1) { setFilter("level2", value); }
-else { setFilter("level1", value); }
+  if (filters.level2) {
+    setFilter("level3", value);
+  } else if (filters.level1) {
+    setFilter("level2", value);
+  } else {
+    setFilter("level1", value);
+  }
 }
 
 function onPieClick(value) {
-if (filters.level2) { setFilter("level3", value); }
-else if (filters.level1) { setFilter("level2", value); }
-else { setFilter("level1", value); }
+  if (filters.level2) {
+    setFilter("level3", value);
+  } else if (filters.level1) {
+    setFilter("level2", value);
+  } else {
+    setFilter("level1", value);
+  }
 }
 
 function updateCharts() {
-const filtered = getFilteredData();
-const stats = calcStats(filtered);
-const barTitle = document.getElementById("bar-title");
-const pieTitle = document.getElementById("pie-title");
+  const filtered = getFilteredData();
+  const stats = calcStats(filtered);
+  const barTitle = document.getElementById("bar-title");
+  const pieTitle = document.getElementById("pie-title");
 
-if (filters.level2) {
-barTitle.textContent = "三级分类分布"; pieTitle.textContent = "三级分类分布";
-charts.level1.data.labels = Object.keys(stats.level3);
-charts.level1.data.datasets[0].data = Object.values(stats.level3);
-charts.pie.data.labels = Object.keys(stats.level3);
-charts.pie.data.datasets[0].data = Object.values(stats.level3);
-} else if (filters.level1) {
-barTitle.textContent = "二级分类分布"; pieTitle.textContent = "二级分类分布";
-charts.level1.data.labels = Object.keys(stats.level2);
-charts.level1.data.datasets[0].data = Object.values(stats.level2);
-charts.pie.data.labels = Object.keys(stats.level2);
-charts.pie.data.datasets[0].data = Object.values(stats.level2);
-} else {
-barTitle.textContent = "一级分类分布"; pieTitle.textContent = "一级分类分布";
-charts.level1.data.labels = Object.keys(stats.level1);
-charts.level1.data.datasets[0].data = Object.values(stats.level1);
-charts.pie.data.labels = Object.keys(stats.level1);
-charts.pie.data.datasets[0].data = Object.values(stats.level1);
-}
-charts.level1.options.plugins.legend.display = false;
-charts.level1.update();
-charts.pie.update();
+  if (filters.level2) {
+    barTitle.textContent = "三级分类分布";
+    pieTitle.textContent = "三级分类分布";
+    charts.level1.data.labels = Object.keys(stats.level3);
+    charts.level1.data.datasets[0].data = Object.values(stats.level3);
+    charts.pie.data.labels = Object.keys(stats.level3);
+    charts.pie.data.datasets[0].data = Object.values(stats.level3);
+  } else if (filters.level1) {
+    barTitle.textContent = "二级分类分布";
+    pieTitle.textContent = "二级分类分布";
+    charts.level1.data.labels = Object.keys(stats.level2);
+    charts.level1.data.datasets[0].data = Object.values(stats.level2);
+    charts.pie.data.labels = Object.keys(stats.level2);
+    charts.pie.data.datasets[0].data = Object.values(stats.level2);
+  } else {
+    barTitle.textContent = "一级分类分布";
+    pieTitle.textContent = "一级分类分布";
+    charts.level1.data.labels = Object.keys(stats.level1);
+    charts.level1.data.datasets[0].data = Object.values(stats.level1);
+    charts.pie.data.labels = Object.keys(stats.level1);
+    charts.pie.data.datasets[0].data = Object.values(stats.level1);
+  }
+  charts.level1.options.plugins.legend.display = false;
+  charts.level1.update();
+  charts.pie.update();
 }
 
 function initCharts() {
-const stats = calcStats(allData);
-const colorPalette = ["#3b82f6","#8b5cf6","#ec4899","#f43f5e","#06b6d4","#14b8a6","#16a34a","#ca8a04","#6366f1","#d946ef","#0ea5e9","#10b981","#f97316","#ef4444","#a855f7","#84cc16","#22d3ee","#e879f9","#fb923c","#34d399"];
+  const stats = calcStats(allData);
+  const colorPalette = [
+    "#3b82f6","#8b5cf6","#ec4899","#f43f5e","#06b6d4","#14b8a6","#16a34a","#ca8a04",
+    "#6366f1","#d946ef","#0ea5e9","#10b981","#f97316","#ef4444","#a855f7","#84cc16",
+    "#22d3ee","#e879f9","#fb923c","#34d399"
+  ];
 
-charts.level1 = new Chart(document.getElementById("level1Chart"), {
-type: "bar",
-data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: colorPalette }] },
-options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, onClick: (e,els) => { if(els.length>0) onBarClick(charts.level1.data.labels[els[0].index]); } }
-});
+  charts.level1 = new Chart(document.getElementById("level1Chart"), {
+    type: "bar",
+    data: {
+      labels: Object.keys(stats.level1),
+      datasets: [{ data: Object.values(stats.level1), backgroundColor: colorPalette }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      onClick: (e, els) => { if (els.length > 0) onBarClick(charts.level1.data.labels[els[0].index]); }
+    }
+  });
 
-charts.pie = new Chart(document.getElementById("pieChart"), {
-type: "doughnut",
-data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: colorPalette }] },
-options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" }, tooltip: { callbacks: { label: function(ctx) { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); const pct = Math.round(ctx.raw/total*100); return ctx.label + ": " + ctx.raw + " 条 (" + pct + "%)"; } } } }, onClick: (e,els) => { if(els.length>0) onPieClick(charts.pie.data.labels[els[0].index]); } }
-});
+  charts.pie = new Chart(document.getElementById("pieChart"), {
+    type: "doughnut",
+    data: {
+      labels: Object.keys(stats.level1),
+      datasets: [{ data: Object.values(stats.level1), backgroundColor: colorPalette }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "right" },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = Math.round(ctx.raw / total * 100);
+              return ctx.label + ": " + ctx.raw + " 条 (" + pct + "%)";
+            }
+          }
+        }
+      },
+      onClick: (e, els) => { if (els.length > 0) onPieClick(charts.pie.data.labels[els[0].index]); }
+    }
+  });
 }
 
 function updateAll() {
-updateCharts();
-updateBreadcrumb();
-updateTable();
+  updateCharts();
+  updateBreadcrumb();
+  updateTable();
 }
 
 function updatePagination(total, totalPages) {
-const paginationEl = document.getElementById("pagination");
-if (totalPages <= 1) { paginationEl.innerHTML = ""; return; }
-let html = "";
-html += '<button onclick="goToPage(1)" ' + (currentPage === 1 ? "disabled" : "") + '>首页</button>';
-html += '<button onclick="goToPage(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? "disabled" : "") + '>上一页</button>';
-const startPage = Math.max(1, currentPage - 2);
-const endPage = Math.min(totalPages, startPage + 4);
-for (let p = startPage; p <= endPage; p++) {
-html += '<button onclick="goToPage(' + p + ')" class="' + (p === currentPage ? "active" : "") + '">' + p + '</button>';
-}
-html += '<button onclick="goToPage(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? "disabled" : "") + '>下一页</button>';
-html += '<button onclick="goToPage(' + totalPages + ')" ' + (currentPage === totalPages ? "disabled" : "") + '>末页</button>';
-html += '<span class="page-info">第 ' + currentPage + '/' + totalPages + ' 页，共 ' + total + ' 条</span>';
-paginationEl.innerHTML = html;
+  const paginationEl = document.getElementById("pagination");
+  if (totalPages <= 1) {
+    paginationEl.innerHTML = "";
+    return;
+  }
+  let html = "";
+  html += '<button onclick="goToPage(1)" ' + (currentPage === 1 ? "disabled" : "") + '>首页</button>';
+  html += '<button onclick="goToPage(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? "disabled" : "") + '>上一页</button>';
+  const startPage = Math.max(1, currentPage - 2);
+  const endPage = Math.min(totalPages, startPage + 4);
+  for (let p = startPage; p <= endPage; p++) {
+    html += '<button onclick="goToPage(' + p + ')" class="' + (p === currentPage ? "active" : "") + '">' + p + '</button>';
+  }
+  html += '<button onclick="goToPage(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? "disabled" : "") + '>下一页</button>';
+  html += '<button onclick="goToPage(' + totalPages + ')" ' + (currentPage === totalPages ? "disabled" : "") + '>末页</button>';
+  html += '<span class="page-info">第 ' + currentPage + '/' + totalPages + ' 页，共 ' + total + ' 条</span>';
+  paginationEl.innerHTML = html;
 }
 
 function goToPage(page) {
-const filtered = getFilteredData();
-const totalPages = Math.ceil(filtered.length / pageSize);
-if (page < 1) page = 1;
-if (page > totalPages) page = totalPages;
-currentPage = page;
-updateTable();
+  const filtered = getFilteredData();
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  currentPage = page;
+  updateTable();
 }
 
 function showDetail(index) {
-const filtered = getFilteredData();
-const item = filtered[index];
-const raw = item.raw_data || {};
-const body = document.getElementById("modal-body");
-let html = "<table><thead><tr>";
-for (const key in raw) { html += "<th>" + key + "</th>"; }
-html += "</tr></thead><tbody><tr>";
-for (const key in raw) { html += "<td>" + raw[key] + "</td>"; }
-html += "</tr></tbody></table>";
-body.innerHTML = html;
-document.getElementById("modal-overlay").classList.remove("hidden");
+  const filtered = getFilteredData();
+  const item = filtered[index];
+  const raw = item.raw_data || {};
+  const body = document.getElementById("modal-body");
+  let html = "<table><thead><tr>";
+  for (const key in raw) { html += "<th>" + key + "</th>"; }
+  html += "</tr></thead><tbody><tr>";
+  for (const key in raw) { html += "<td>" + raw[key] + "</td>"; }
+  html += "</tr></tbody></table>";
+  body.innerHTML = html;
+  document.getElementById("modal-overlay").classList.remove("hidden");
 }
 
 function closeModal() {
-document.getElementById("modal-overlay").classList.add("hidden");
+  document.getElementById("modal-overlay").classList.add("hidden");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-initSelectOptions();
-initCharts();
-updateAll();
+  initSelectOptions();
+  initCharts();
+  updateAll();
 });
 </script>
 </body>
