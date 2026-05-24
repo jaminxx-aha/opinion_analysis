@@ -51,7 +51,7 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
 
 禁止编写脚本对问题模糊匹配，推导提示词如下三个反引号（```）分隔：
 ```
-这是<app_name>的舆情问题'''<json数据>'''，描述在data[i].desc中，请根据应用描述`<skill_path>/apps/<app_name>/info.md`、问题分类树`<skill_path>/apps/<app_name>/classification.md`和`<skill_path>/apps/<app_name>/examples.md`分类推理示例，推导出该问题属于哪一个分类
+这是<app_name>的舆情问题'''<json数据>'''，描述在data[i].desc中，请根据应用描述`<skill_path>/references/apps/<app_name>/info.md`、问题分类树`<skill_path>/references/apps/<app_name>/classification.md`和`<skill_path>/references/apps/<app_name>/examples.md`分类推理示例，推导出该问题属于哪一个分类
 
 分类格式：一级分类.二级分类.三级分类
 
