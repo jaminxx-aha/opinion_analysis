@@ -29,6 +29,8 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
 }
 ```
 
+提取步骤1返回的 `data` 数组，仅将 `data` 数组传入步骤2的推理提示词，不要传入完整JSON（元信息对分类无用）。
+
 ## 步骤2：对问题进行推导
 推导返回格式如下：
 ```json
@@ -49,24 +51,42 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
 }
 ```
 
-禁止编写脚本对问题模糊匹配，推导提示词如下三个反引号（```）分隔：
-```
-这是<app_name>的舆情问题'''<json数据>'''，描述在data[i].desc中，请根据应用描述`<skill_path>/references/apps/<app_name>/info.md`、问题分类树`<skill_path>/references/apps/<app_name>/classification.md`和`<skill_path>/references/apps/<app_name>/examples.md`分类推理示例，推导出该问题属于哪一个分类
+禁止编写脚本对问题模糊匹配，推理提示词如下：
+
+这是<app_name>的舆情问题，问题描述如下：
+
+---DATA---
+<步骤1返回的data数组JSON>
+---DATA_END---
+
+请根据以下参考资料推导分类：
+- 应用描述：<skill_path>/references/apps/<app_name>/info.md
+- 问题分类树：<skill_path>/references/apps/<app_name>/classification.md
+- 分类推理示例：<skill_path>/references/apps/<app_name>/examples.md
 
 分类格式：一级分类.二级分类.三级分类
 
-逐层推导：
+逐层推导规则：
 1. 先从用户描述中提取关键词，推断一级分类
 2. 根据一级分类下的二级分类，结合场景关键词推断二级分类
 3. 根据二级分类下的三级分类，结合页面/功能推断三级分类
 
 如果无法推导出一级分类，则返回"classification": ["未知问题"]，如果无法推导出二级分类"classification": ["一级分类值"]，如果无法推出三级分类，则返回"classification": ["一级分类值", "二级分类值"]，如果全部推理出，则返回"classification": ["一级分类值", "二级分类值", "三级分类值"]
-```
+
+推理说明格式要求：每个分类层级必须说明推导依据，格式为"关键词→一级分类原因，场景→二级分类原因→三级分类原因"。不允许只写结论不写推导过程。
 
 ## 步骤3：保存分类结果
 
-分类完成后，调用脚本将结果和原始数据写入数据库，直接将JSON字符串作为命令行参数传入：
+分类完成后，将完整结果JSON写入临时文件，然后调用脚本处理：
 
+```bash
+# 先将JSON写入临时文件
+cat > <output_dir>/batch_<start>_<end>.json << 'JSONEOF'
+<完整JSON字符串>
+JSONEOF
+
+# 再调用脚本读取文件
+python <skill_path>/scripts/save_results.py <output_dir>/batch_<start>_<end>.json --output-dir <output_dir>
 ```
-python <skill_path>/scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
-```
+
+注意：不要将JSON作为命令行参数直接传入（有长度限制），必须通过文件传递。

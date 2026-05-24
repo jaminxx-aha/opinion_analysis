@@ -3,10 +3,12 @@
 将分类结果和原始Excel数据写入本地SQLite数据库
 
 用法:
-  python save_results.py '<分类结果JSON>' --output-dir <输出目录>
+  python save_results.py <分类结果JSON文件路径> --output-dir <输出目录>
+  python save_results.py --stdin --output-dir <输出目录>   (从标准输入读取JSON)
 
 参数:
-  分类结果JSON    子Agent输出的分类结果JSON字符串或文件路径
+  分类结果JSON    子Agent输出的分类结果JSON文件路径（推荐方式，避免命令行长度限制）
+  --stdin         从标准输入读取JSON数据
   --output-dir    输出目录（report.db 所在目录）
 
 分类结果JSON格式:
@@ -18,15 +20,18 @@
     "end": 100,
     "data": [
       {"num": 1, "classification": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"], "reasoning": "..."},
-      {"num": 2, "classification": ["未知问题"], "reasoning": "..."},
-      {"num": 3, "classification": ["卡顿"], "reasoning": "..."}
+      {"num": 2, "classification": ["未知问题"], "reasoning": "..."}
     ]
   }
 
   classification为分类数组：三级推导为[一级,二级,三级]，二级推导为[一级,二级]，一级推导为[一级]，无法归类为["未知问题"]
 
 示例:
-  python save_results.py '{"excel_path":"data.xlsx","app":"抖音","problem_column":5,"start":1,"end":5,"data":[{"num":1,"classification":["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"],"reasoning":"..."}]}' --output-dir ./output/data
+  # 通过文件传入（推荐）
+  python save_results.py ./output/batch_1_100.json --output-dir ./output/data
+
+  # 通过标准输入传入
+  cat result.json | python save_results.py --stdin --output-dir ./output/data
 """
 
 import sys
@@ -34,26 +39,17 @@ import json
 import os
 import sqlite3
 import pandas as pd
+from datetime import datetime
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+from config import resolve_column
 
 DB_FILENAME = "report.db"
 
 
-def resolve_column(col_spec, columns):
-    """将列索引或列名转换为实际列名"""
-    try:
-        idx = int(col_spec)
-        if 1 <= idx <= len(columns):
-            return columns[idx - 1]
-        return None
-    except ValueError:
-        return col_spec
-
-
-def init_db(db_path: str, app: str = ""):
-    """初始化数据库，创建单表结构"""
+def init_db(db_path: str):
+    """初始化数据库，创建单表结构，设置并发写入超时"""
     conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA busy_timeout = 30000")  # 30秒并发等待
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -76,14 +72,20 @@ def init_db(db_path: str, app: str = ""):
     return conn
 
 
-def save_results(json_input, output_dir):
-    # 解析输入：JSON字符串或文件路径
+def read_json_input(json_input, use_stdin=False):
+    """解析JSON输入：文件路径或标准输入"""
+    if use_stdin:
+        return json.loads(sys.stdin.read())
+
     if os.path.isfile(json_input):
         with open(json_input, 'r', encoding='utf-8') as f:
-            result = json.load(f)
-    else:
-        result = json.loads(json_input)
+            return json.load(f)
 
+    return json.loads(json_input)
+
+
+def save_results(result, output_dir):
+    """将分类结果写入数据库"""
     excel_path = result.get("excel_path")
     app = result.get("app", "")
     problem_column = result.get("problem_column", "")
@@ -95,8 +97,15 @@ def save_results(json_input, output_dir):
         print("错误：缺少 excel_path")
         sys.exit(1)
 
-    # 读取Excel原始数据
-    df = pd.read_excel(excel_path)
+    # 读取Excel原始数据（如果output_dir中有缓存则优先使用）
+    cache_path = os.path.join(output_dir, "_excel_cache.pkl")
+    if os.path.isfile(cache_path):
+        df = pd.read_pickle(cache_path)
+    else:
+        df = pd.read_excel(excel_path)
+        # 写入缓存供后续子agent使用
+        df.to_pickle(cache_path)
+
     columns = df.columns.tolist()
     problem_col_name = resolve_column(problem_column, columns)
 
@@ -105,7 +114,7 @@ def save_results(json_input, output_dir):
     db_path = os.path.join(output_dir, DB_FILENAME)
 
     # 初始化数据库
-    conn = init_db(db_path, app)
+    conn = init_db(db_path)
     cursor = conn.cursor()
 
     inserted = 0
@@ -115,7 +124,7 @@ def save_results(json_input, output_dir):
         reasoning = item.get("reasoning", "")
 
         # 获取原始行数据
-        row_idx = num - 1  # pandas行索引从0开始
+        row_idx = num - 1
         if 0 <= row_idx < len(df):
             row = df.iloc[row_idx]
             problem = str(row[problem_col_name]) if problem_col_name and not pd.isna(row[problem_col_name]) else ""
@@ -156,7 +165,6 @@ def save_results(json_input, output_dir):
 
     # 写入日志
     log_path = os.path.join(output_dir, "report.log")
-    from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(log_path, "a", encoding="utf-8") as log_f:
         log_f.write(f"{now} {start} - {end} 分类成功\n")
@@ -166,35 +174,47 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='将分类结果和原始数据写入数据库')
-    parser.add_argument('json_input', help='分类结果JSON（字符串或文件路径）')
+    parser.add_argument('json_input', nargs='?', default=None, help='分类结果JSON文件路径')
+    parser.add_argument('--stdin', action='store_true', help='从标准输入读取JSON数据')
     parser.add_argument('--output-dir', required=True, help='输出目录路径')
 
     args = parser.parse_args()
 
+    if not args.stdin and not args.json_input:
+        print("错误：请指定JSON文件路径或使用 --stdin 从标准输入读取")
+        sys.exit(1)
+
     # 在try前提取start/end，用于失败日志
     start, end = "", ""
     try:
-        parsed = json.loads(args.json_input) if not os.path.isfile(args.json_input) else {}
+        if args.stdin:
+            raw = sys.stdin.read()
+            parsed = json.loads(raw)
+        elif os.path.isfile(args.json_input):
+            parsed = {}
+        else:
+            parsed = json.loads(args.json_input)
         start = parsed.get("start", "")
         end = parsed.get("end", "")
     except Exception:
         pass
 
     try:
-        save_results(args.json_input, args.output_dir)
+        result = read_json_input(args.json_input, args.stdin)
+        save_results(result, args.output_dir)
     except json.JSONDecodeError as e:
         print(f"JSON解析失败: {e}")
         log_path = os.path.join(args.output_dir, "report.log")
-        from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        os.makedirs(args.output_dir, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_f:
             log_f.write(f"{now} {start} - {end} 分类失败: JSON解析失败\n")
         sys.exit(1)
     except Exception as e:
         print(f"错误: {e}")
         log_path = os.path.join(args.output_dir, "report.log")
-        from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        os.makedirs(args.output_dir, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as log_f:
             log_f.write(f"{now} {start} - {end} 分类失败: {e}\n")
         sys.exit(1)

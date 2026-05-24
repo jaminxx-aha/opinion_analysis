@@ -17,24 +17,9 @@
 
 import sys
 import json
-import os
 import pandas as pd
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-from config import apps_in_folder, app_alias_map
-
-
-def resolve_column(col_spec, columns):
-    """将列索引或列名转换为实际列名"""
-    if col_spec is None:
-        return None
-    try:
-        idx = int(col_spec)
-        if 1 <= idx <= len(columns):
-            return columns[idx - 1]
-        return None
-    except ValueError:
-        return col_spec
+from config import resolve_column, apps_in_folder, app_alias_map
 
 
 def get_rows(excel_path, problem_column, app_name="", start_row=1, end_row=None):
@@ -71,7 +56,7 @@ def get_rows(excel_path, problem_column, app_name="", start_row=1, end_row=None)
         "start": start_row,
         "end": end_row,
         "app": app_name,
-        "problem_column": int(problem_column) if problem_column.isdigit() else problem_column,
+        "problem_column": int(problem_column) if str(problem_column).isdigit() else problem_column,
         "data": data,
     }
 
