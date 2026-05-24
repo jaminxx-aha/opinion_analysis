@@ -19,14 +19,12 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
   "total_rows": 100,
   "start": 1,
   "end": 100,
-  "app": "抖音",
+  "app": "<app_name>",
   "problem_column": 5,
   "data": [
-    {"num": 1, "desc": "抖音刷视频卡顿严重"},
-    {"num": 2, "desc": "看视频突然闪退"},
-    {"num": 3, "desc": "抖音很卡"},
-    {"num": 4, "desc": "视频播放卡顿"},
-    {"num": 5, "desc": "抖音充值失败"}
+    {"num": 1, "desc": "问题描述1"},
+    {"num": 2, "desc": "问题描述2"},
+    {"num": 3, "desc": "问题描述3"}
   ]
 }
 ```
@@ -39,15 +37,14 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
   "total_rows": 100,
   "start": 1,
   "end": 100,
-  "app": "抖音",
+  "app": "<app_name>",
   "problem_column": 5,
   "output_dir": "...",
   "data": [
-    {"num": 1, "classification": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"], "reasoning": "\"卡顿\"→一级分类卡顿，\"刷视频\"→二级分类滑动卡顿→三级分类首页推荐视频流上下滑动卡顿"},
-    {"num": 2, "classification": ["闪退/崩溃","使用过程闪退","视频播放过程闪退"], "reasoning": "描述不含应用名但app_name已知为抖音，\"闪退\"→一级分类闪退/崩溃，\"看视频\"→二级分类使用过程闪退→三级分类视频播放过程闪退"},
-    {"num": 3, "classification": ["卡顿"], "reasoning": "\"很卡\"→一级分类卡顿，无具体场景信息无法推导二级分类"},
-    {"num": 4, "classification": ["卡顿","视频播放卡顿"], "reasoning": "\"卡顿\"→一级分类卡顿，\"视频播放\"→二级分类视频播放卡顿，未指明具体页面无法推导三级分类"},
-    {"num": 5, "classification": ["未知问题"], "reasoning": "\"充值失败\"不属于8类性能问题，无法归类"}
+    {"num": 1, "classification": ["一级分类","二级分类","三级分类"], "reasoning": "关键词→一级分类，场景→二级分类→三级分类"},
+    {"num": 2, "classification": ["一级分类","二级分类"], "reasoning": "关键词→一级分类，场景→二级分类，未指明具体页面无法推导三级分类"},
+    {"num": 3, "classification": ["一级分类"], "reasoning": "关键词→一级分类，无具体场景无法推导二级分类"},
+    {"num": 4, "classification": ["未知问题"], "reasoning": "不属于8类性能问题，无法归类"}
   ]
 }
 ```
@@ -56,14 +53,14 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
 ```
 这是<app_name>的舆情问题'''<json数据>'''，描述在data[i].desc中，请根据应用描述`<skill_path>/apps/<app_name>/info.md`、问题分类树`<skill_path>/apps/<app_name>/classification.md`和`<skill_path>/apps/<app_name>/examples.md`分类推理示例，推导出该问题属于哪一个分类
 
-分类格式：`{一级分类}.{二级分类}.{三级分类}`
+分类格式：一级分类.二级分类.三级分类
 
 逐层推导：
 1. 先从用户描述中提取关键词，推断一级分类
 2. 根据一级分类下的二级分类，结合场景关键词推断二级分类
 3. 根据二级分类下的三级分类，结合页面/功能推断三级分类
 
-如果无法推导出一级分类，则返回`"classification": ["未知问题"]`，如果无法推导出二级分类`"classification": [{一级分类}]`，如果无法推出三级分类，则返回`classification": [{一级分类}, {二级分类}]`，如果全部推理出，则返回`classification": [{一级分类}, {二级分类}, {三级分类}]`
+如果无法推导出一级分类，则返回"classification": ["未知问题"]，如果无法推导出二级分类"classification": ["一级分类值"]，如果无法推出三级分类，则返回"classification": ["一级分类值", "二级分类值"]，如果全部推理出，则返回"classification": ["一级分类值", "二级分类值", "三级分类值"]
 ```
 
 ## 步骤3：保存分类结果
