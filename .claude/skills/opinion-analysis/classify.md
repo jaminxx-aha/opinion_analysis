@@ -81,5 +81,3 @@ python <skill_path>/scripts/get_rows.py <Excel文件路径> --problem-column <pr
 ```
 python <skill_path>/scripts/save_results.py '<JSON字符串>' --output-dir <output_dir>
 ```
-
-save_results.py 会自动读取Excel原始数据并一起写入数据库，在output_dir下生成report.db。
