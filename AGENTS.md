@@ -32,7 +32,7 @@ Python 3.8+, pandas, openpyxl, openai, anthropic, python-dotenv. Install: `pip3 
 
 ## Critical constraints
 
-- `.env`, `output/`, `classify.md` at repo root are gitignored
+- `.env`, `output/` at repo root are gitignored
 
 
 逐层推导规则：

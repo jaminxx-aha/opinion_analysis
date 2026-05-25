@@ -29,10 +29,14 @@ import time
 import shutil
 import sqlite3
 import threading
+import logging
 import concurrent.futures
 
 import pandas as pd
 from dotenv import load_dotenv
+
+logger = logging.getLogger("classify_data")
+logger.setLevel(logging.INFO)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
@@ -88,6 +92,15 @@ def init_output_dir(excel_path, output_dir):
     cache_path = os.path.join(output_dir, "_excel_cache.pkl")
     if not os.path.isfile(cache_path):
         pd.read_excel(excel_path).to_pickle(cache_path)
+
+
+def setup_logging(output_dir):
+    log_path = os.path.join(output_dir, "classify.log")
+    handler = logging.FileHandler(log_path, encoding="utf-8", mode="a")
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logger.addHandler(handler)
+    logger.info("日志初始化完成, 日志文件: %s", log_path)
 
 
 def load_reference(app_name):
@@ -167,24 +180,28 @@ _progress_done = 0
 
 
 def save_item(num, classification, reason, app_name, problem_col, df, db_path):
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA busy_timeout = 30000")
-    cursor = conn.cursor()
-    row = df.iloc[num - 1]
-    problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
-    raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
-    if not classification or classification[0] == "未知问题":
-        cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
-                       (num, app_name, problem, "unrecognized", reason, raw_json))
-    else:
-        l1 = classification[0]
-        l2 = classification[1] if len(classification) >= 2 else ""
-        l3 = classification[2] if len(classification) >= 3 else ""
-        fp = ".".join(filter(None, [l1, l2, l3]))
-        cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                       (num, app_name, problem, "success", app_name, l1, l2, l3, fp, reason, raw_json))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        cursor = conn.cursor()
+        row = df.iloc[num - 1]
+        problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
+        raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
+        if not classification or classification[0] == "未知问题":
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
+                           (num, app_name, problem, "unrecognized", reason, raw_json))
+        else:
+            l1 = classification[0]
+            l2 = classification[1] if len(classification) >= 2 else ""
+            l3 = classification[2] if len(classification) >= 3 else ""
+            fp = ".".join(filter(None, [l1, l2, l3]))
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, "success", app_name, l1, l2, l3, fp, reason, raw_json))
+        conn.commit()
+        conn.close()
+        logger.info("行%d 入库成功, 分类: %s, 状态: %s", num, ".".join(classification) if classification else "无", "unrecognized" if (not classification or classification[0] == "未知问题") else "success")
+    except Exception as e:
+        logger.error("行%d 入库失败: %s", num, e)
 
 
 def process_item(num, desc, app_name, problem_col, df, refs, db_path,
@@ -196,7 +213,9 @@ def process_item(num, desc, app_name, problem_col, df, refs, db_path,
         reason = "LLM调用失败"
         try:
             prompt = build_prompt(app_name, desc, refs)
+            logger.debug("行%d 开始LLM推理, 描述长度: %d", num, len(desc))
             text = call_llm(client, provider, prompt, model, max_tokens, max_retries)
+            logger.debug("行%d LLM推理成功, 返回文本长度: %d", num, len(text) if text else 0)
             parsed = extract_json(text)
             if parsed:
                 cls = parsed.get("classification", ["未知问题"])
@@ -204,16 +223,24 @@ def process_item(num, desc, app_name, problem_col, df, refs, db_path,
                 if not isinstance(cls, list):
                     cls = ["未知问题"]
                     reason = "分类格式错误"
+                    logger.warning("行%d LLM推理返回分类格式错误, 原始返回: %s", num, text[:200])
                 if not reason:
                     reason = "LLM未返回reason"
+                logger.info("行%d LLM推理分类结果: %s", num, ".".join(cls) if cls else "无")
+            else:
+                logger.warning("行%d LLM推理返回JSON解析失败, 原始返回: %s", num, text[:200])
+                reason = "JSON解析失败"
         except Exception as e:
             reason = f"API调用失败: {e}"
+            logger.error("行%d LLM推理失败: %s", num, e)
+    else:
+        logger.warning("行%d 空描述,跳过分类", num)
     save_item(num, cls, reason, app_name, problem_col, df, db_path)
     is_failed = cls[0] == "未知问题" and ("LLM" in reason or "失败" in reason or "空描述" in reason)
     with _progress_lock:
         _progress_done += 1
         pct = _progress_done * 100 // total
-        print(f"  [{pct:3d}%] 行{num}: {cls[0]} → {reason[:60]}")
+        logger.debug("[%3d%%] 行%d: %s -> %s", pct, num, cls[0], reason[:60])
     return is_failed
 
 
@@ -236,42 +263,43 @@ def main():
     args = parser.parse_args()
 
     if not args.api_key:
-        print("错误: 需要 --api-key 或 LLM_API_KEY 环境变量"); sys.exit(1)
+        logger.error("需要 --api-key 或 LLM_API_KEY 环境变量"); sys.exit(1)
     if not args.model:
-        print("错误: 需要 --model 或 LLM_MODEL 环境变量"); sys.exit(1)
+        logger.error("需要 --model 或 LLM_MODEL 环境变量"); sys.exit(1)
 
     app_name = args.app_name
     if app_name not in SUPPORTED_APPS:
-        print(f"警告: '{app_name}' 不在支持列表中, 所有数据归为'未知问题'")
+        logger.warning("' %s' 不在支持列表中, 所有数据归为'未知问题'", app_name)
         refs = {"info": "", "classification": "", "examples": ""}
     else:
         refs = load_reference(app_name)
         if not refs:
-            print(f"错误: 无法加载 '{app_name}' 的知识库"); sys.exit(1)
+            logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
 
     excel_path = args.excel_path
     output_dir = args.output_dir
     init_output_dir(excel_path, output_dir)
+    setup_logging(output_dir)
 
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
     problem_col = args.problem_name or resolve_column(args.problem_index, columns)
     if problem_col not in columns:
-        print(f"错误: 问题描述列 '{problem_col}' 不存在"); sys.exit(1)
+        logger.error("问题描述列 '%s' 不存在", problem_col); sys.exit(1)
 
     if args.app_index > 0:
         app_col = resolve_column(args.app_index, columns)
         if app_col not in columns:
-            print(f"错误: 应用名列 '{app_col}' 不存在"); sys.exit(1)
+            logger.error("应用名列 '%s' 不存在", app_col); sys.exit(1)
         filtered = [idx for idx, row in df.iterrows()
                      if app_alias_map.get(str(row[app_col]).strip() if not pd.isna(row[app_col]) else "", str(row[app_col]).strip() if not pd.isna(row[app_col]) else "") == app_name]
-        print(f"总行数: {len(df)}, 筛选 '{app_name}': {len(filtered)}条")
+        logger.info("总行数: %d, 筛选 '%s': %d条", len(df), app_name, len(filtered))
         if not filtered:
-            print(f"警告: 未找到 '{app_name}' 数据, 处理全部行")
+            logger.warning("未找到 '%s' 数据, 处理全部行", app_name)
             filtered = list(range(len(df)))
     else:
         filtered = list(range(len(df)))
-        print(f"总行数: {len(df)} (无应用名列筛选)")
+        logger.info("总行数: %d (无应用名列筛选)", len(df))
 
     all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                  for i in filtered]
@@ -279,8 +307,7 @@ def main():
     db_path = os.path.join(output_dir, "report.db")
     init_db(db_path)
 
-    print(f"共 {len(all_data)}条, 并发 {args.max_concurrent}, provider={args.provider}, model={args.model}")
-    print()
+    logger.info("共 %d条, 并发 %d, provider=%s, model=%s", len(all_data), args.max_concurrent, args.provider, args.model)
 
     client = create_client(args.provider, args.api_key, args.base_url)
     total = len(all_data)
@@ -304,7 +331,8 @@ def main():
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
     status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
-    print(f"\n分类完成: {ok + fail}/{len(all_data)}条 (成功{ok}, 失败{fail}) | {status}")
+    logger.info("分类完成: %d/%d条 (成功%d, 失败%d) | %s", ok + fail, len(all_data), ok, fail, status)
+    print(f"分类完成: {ok + fail}/{len(all_data)}条 (成功{ok}, 失败{fail}) | {status}")
 
 
 if __name__ == "__main__":
