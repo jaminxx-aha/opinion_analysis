@@ -160,17 +160,24 @@ def create_client(provider, api_key, base_url):
 
 
 def call_llm(client, provider, prompt, model, max_tokens, max_retries):
+    from openai import APITimeoutError
     for attempt in range(max_retries):
         try:
             if provider == "anthropic":
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3)
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=60.0)
                 return resp.content[0].text
             else:
-                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3)
+                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=60.0)
                 return resp.choices[0].message.content
+        except APITimeoutError as e:
+            logger.warning("行LLM调用超时(60s), 第%d次重试", attempt + 1)
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                raise
         except Exception as e:
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(3)
             else:
                 raise
 
