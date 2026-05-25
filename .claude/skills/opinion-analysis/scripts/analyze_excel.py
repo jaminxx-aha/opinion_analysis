@@ -20,7 +20,7 @@ import argparse
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 
-from config import apps_in_folder, app_alias_map, resolve_column, SUPPORTED_APPS, get_app_dir
+from config import app_alias_map, resolve_column, SUPPORTED_APPS, get_app_dir
 
 
 def get_excel_info(excel_path: str) -> dict:
@@ -82,7 +82,6 @@ def verify_db(db_path: str, expected_count: int) -> None:
         print(f"验证通过: 数据库 {actual_count} 条，期望 {expected_count} 条")
     else:
         print(f"警告: 数据库 {actual_count} 条，期望 {expected_count} 条，有 {expected_count - actual_count} 条数据丢失")
-        print("请检查子agent执行日志 (report.log) 了解失败原因")
 
 
 def generate_report(input_path: str, output_dir: str = None) -> str:

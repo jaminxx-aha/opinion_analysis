@@ -2,21 +2,21 @@
 """
 classify_data.py - 使用LLM API自动分类舆情数据
 
+一条命令完成: 初始化输出目录 → 分类 → 验证
+
 用法:
   python classify_data.py \
-    --app-name 抖音 \
-    --app-index 2 \
-    --problem-index 5 \
-    --excel-path test/抖音卡顿舆情数据.xlsx \
-    --output-dir output/抖音卡顿舆情数据
+    --app-name 抖音 --app-index 2 --problem-index 5 \
+    --excel-path test/douyin_100.xlsx \
+    --output-dir output/douyin_100
 
-LLM API配置 (命令行参数或.env环境变量):
-  --provider / LLM_PROVIDER    API类型: openai 或 anthropic (默认openai)
+LLM配置从项目根目录.env自动加载, 也可命令行参数覆盖:
+  --provider / LLM_PROVIDER    openai 或 anthropic (默认openai)
   --model / LLM_MODEL          模型名称
   --api-key / LLM_API_KEY      API密钥
-  --base-url / LLM_BASE_URL    API基础URL (仅openai类型)
-  --max-concurrent             最大并发调用数 (默认5)
-  --max-tokens                 最大生成token数 (默认8192)
+  --base-url / LLM_BASE_URL    API基础URL (仅openai)
+  --max-concurrent             最大并发数 (默认5)
+  --max-tokens                 最大生成token (默认8192)
   --max-retries                最大重试次数 (默认3)
 """
 
@@ -28,6 +28,7 @@ import argparse
 import time
 import shutil
 import sqlite3
+import threading
 import concurrent.futures
 
 import pandas as pd
@@ -44,15 +45,49 @@ def _load_env():
     global _ENV_LOADED
     if _ENV_LOADED:
         return
-    for env_path in [os.path.join(PROJECT_DIR, ".env"), os.path.join(PROJECT_DIR, ".env.local")]:
-        if os.path.isfile(env_path):
-            load_dotenv(env_path, override=False)
+    for p in [os.path.join(PROJECT_DIR, ".env"), os.path.join(PROJECT_DIR, ".env.local")]:
+        if os.path.isfile(p):
+            load_dotenv(p, override=False)
     _ENV_LOADED = True
 
 
 sys.path.insert(0, SCRIPT_DIR)
 from config import resolve_column, app_alias_map, SUPPORTED_APPS, get_app_dir
-from save_results import init_db
+
+
+DB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS report (
+    id INTEGER PRIMARY KEY,
+    app TEXT,
+    problem TEXT,
+    status TEXT DEFAULT 'success',
+    cls_app TEXT,
+    level1 TEXT,
+    level2 TEXT,
+    level3 TEXT,
+    full_path TEXT,
+    reasoning TEXT,
+    raw_data TEXT
+)
+"""
+
+
+def init_db(db_path):
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute(DB_SCHEMA)
+    conn.commit()
+    conn.close()
+
+
+def init_output_dir(excel_path, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    dest = os.path.join(output_dir, os.path.basename(excel_path))
+    if not os.path.isfile(dest):
+        shutil.copy2(excel_path, dest)
+    cache_path = os.path.join(output_dir, "_excel_cache.pkl")
+    if not os.path.isfile(cache_path):
+        pd.read_excel(excel_path).to_pickle(cache_path)
 
 
 def load_reference(app_name):
@@ -62,29 +97,24 @@ def load_reference(app_name):
     refs = {}
     for fname, key in [("info.md", "info"), ("classification.md", "classification"), ("examples.md", "examples")]:
         fpath = os.path.join(app_dir, fname)
-        if os.path.isfile(fpath):
-            with open(fpath, "r", encoding="utf-8") as f:
-                refs[key] = f.read()
-        else:
-            refs[key] = ""
+        refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
     return refs
 
 
 def build_prompt(app_name, desc, refs):
-    parts = [
+    return "\n".join([
         f"你是一位专业的{app_name}应用性能问题分类专家，精通{app_name}的功能模块、页面结构和各类性能问题的表现特征。你需要根据用户反馈的问题描述，结合{app_name}的应用知识，逐层推导出最准确的分类。\n\n",
         f"当前需要分类的{app_name}舆情问题描述如下：\n\n---DATA---\n{desc}\n---DATA_END---\n",
         "请根据以下参考资料推导分类：\n",
         f"【应用描述】\n{refs.get('info', '')}\n",
         f"【问题分类树】\n{refs.get('classification', '')}\n",
         f"【分类推理示例】\n{refs.get('examples', '')}\n",
-        "分类格式：一级分类.二级分类.三级分类\n\n逐层推导规则：\n1. 先从用户描述中提取关键词，推断一级分类\n2. 根据一级分类下的二级分类，结合场景关键词推断二级分类\n3. 根据二级分类下的三级分类，结合页面/功能推断三级分类\n",
-        "输出JSON格式：\n{\"classification\": [\"一级分类\", \"二级分类\", \"三级分类\"], \"reason\": \"关键词→一级分类原因，场景→二级分类原因→三级分类原因\"}\n\n如果无法推导出一级分类，返回[\"未知问题\"]；无法推导出二级分类，返回[\"一级分类值\"]；无法推导出三级分类，返回[\"一级分类值\", \"二级分类值\"]；全部推理出，返回[\"一级分类值\", \"二级分类值\", \"三级分类值\"]。\n\nreason必须包含推导过程，不允许只写结论。\n请只返回JSON，不要添加其他文字。",
-    ]
-    return "\n".join(parts)
+        "分类格式：一级分类.二级分类.三级分类\n\n逐层推导规则：\n1. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合\"分类推理示例\"，推理问题的一级分类\n2. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合第一步推理出的一级分类下的二级分类，推理问题的二级分类\n3. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合第二步推理出的二级分类下的三级分类，推理问题的三级分类\n",
+        "输出JSON格式：\n{\"classification\": [\"一级分类\", \"二级分类\", \"三级分类\"], \"reason\": \"推理过程\"}\n\n如果无法推导出一级分类，返回[\"未知问题\"]；无法推导出二级分类，返回[\"一级分类值\"]；无法推导出三级分类，返回[\"一级分类值\", \"二级分类值\"]；全部推理出，返回[\"一级分类值\", \"二级分类值\", \"三级分类值\"]。\n\nreason必须包含推导过程，不允许只写结论。\n请只返回JSON，不要添加其他文字。",
+    ])
 
 
-def extract_json_from_response(text):
+def extract_json(text):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -95,165 +125,129 @@ def extract_json_from_response(text):
                 return json.loads(m)
             except json.JSONDecodeError:
                 continue
-    brace_match = re.search(r'\{[\s\S]*\}', text)
-    if brace_match:
+    brace = re.search(r'\{[\s\S]*\}', text)
+    if brace:
         try:
-            return json.loads(brace_match.group())
+            return json.loads(brace.group())
         except json.JSONDecodeError:
             pass
     return None
 
 
-def call_llm_openai(prompt, model, api_key, base_url, max_tokens):
-    from openai import OpenAI
-    kwargs = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    client = OpenAI(**kwargs)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=0.3,
-    )
-    return response.choices[0].message.content
+def create_client(provider, api_key, base_url):
+    if provider == "anthropic":
+        from anthropic import Anthropic
+        return Anthropic(api_key=api_key)
+    else:
+        from openai import OpenAI
+        kwargs = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return OpenAI(**kwargs)
 
 
-def call_llm_anthropic(prompt, model, api_key, max_tokens):
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
-    return response.content[0].text
-
-
-def call_llm(prompt, provider, model, api_key, base_url, max_tokens, max_retries):
+def call_llm(client, provider, prompt, model, max_tokens, max_retries):
     for attempt in range(max_retries):
         try:
             if provider == "anthropic":
-                return call_llm_anthropic(prompt, model, api_key, max_tokens)
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3)
+                return resp.content[0].text
             else:
-                return call_llm_openai(prompt, model, api_key, base_url, max_tokens)
+                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3)
+                return resp.choices[0].message.content
         except Exception as e:
             if attempt < max_retries - 1:
-                wait = 2 ** attempt
-                print(f"  API调用失败 (第{attempt+1}次): {e}, {wait}秒后重试...")
-                time.sleep(wait)
+                time.sleep(2 ** attempt)
             else:
-                print(f"  API调用失败，已达最大重试次数: {e}")
                 raise
 
 
-def init_output_dir(excel_path, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    excel_basename = os.path.basename(excel_path)
-    dest = os.path.join(output_dir, excel_basename)
-    if not os.path.isfile(dest):
-        shutil.copy2(excel_path, dest)
-        print(f"已复制Excel文件到: {dest}")
-    else:
-        print(f"Excel文件已存在: {dest}")
-    cache_path = os.path.join(output_dir, "_excel_cache.pkl")
-    if not os.path.isfile(cache_path):
-        df = pd.read_excel(excel_path)
-        df.to_pickle(cache_path)
-        print(f"已缓存Excel数据到: {cache_path}")
-    print(f"输出目录已初始化: {output_dir}")
+_progress_lock = threading.Lock()
+_progress_done = 0
 
 
-def save_item_to_db(num, classification, reason, app_name, problem_col, df, output_dir):
-    db_path = os.path.join(output_dir, "report.db")
+def save_item(num, classification, reason, app_name, problem_col, df, db_path):
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
     cursor = conn.cursor()
-    row_idx = num - 1
-    row = df.iloc[row_idx]
+    row = df.iloc[num - 1]
     problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
-    raw_data = {col: str(row[col]) if not pd.isna(row[col]) else "" for col in df.columns}
-    raw_data_json = json.dumps(raw_data, ensure_ascii=False)
-    if classification[0] == "未知问题" or not classification:
-        cursor.execute(
-            "INSERT OR REPLACE INTO report (id, app, problem, status, reasoning, raw_data) VALUES (?, ?, ?, ?, ?, ?)",
-            (num, app_name, problem, "unrecognized", reason, raw_data_json),
-        )
+    raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
+    if not classification or classification[0] == "未知问题":
+        cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
+                       (num, app_name, problem, "unrecognized", reason, raw_json))
     else:
-        level1 = classification[0]
-        level2 = classification[1] if len(classification) >= 2 else ""
-        level3 = classification[2] if len(classification) >= 3 else ""
-        full_path = ".".join([l for l in [level1, level2, level3] if l])
-        cursor.execute(
-            "INSERT OR REPLACE INTO report (id, app, problem, status, cls_app, level1, level2, level3, full_path, reasoning, raw_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (num, app_name, problem, "success", app_name, level1, level2, level3, full_path, reason, raw_data_json),
-        )
+        l1 = classification[0]
+        l2 = classification[1] if len(classification) >= 2 else ""
+        l3 = classification[2] if len(classification) >= 3 else ""
+        fp = ".".join(filter(None, [l1, l2, l3]))
+        cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                       (num, app_name, problem, "success", app_name, l1, l2, l3, fp, reason, raw_json))
     conn.commit()
     conn.close()
 
 
-def process_item(num, desc, app_name, problem_col, df, refs, output_dir,
-                 provider, model, api_key, base_url, max_tokens, max_retries):
-    prompt = build_prompt(app_name, desc, refs)
+def process_item(num, desc, app_name, problem_col, df, refs, db_path,
+                 client, provider, model, max_tokens, max_retries, total):
+    global _progress_done
     cls = ["未知问题"]
-    reason = "LLM调用失败"
-    try:
-        response_text = call_llm(prompt, provider, model, api_key, base_url, max_tokens, max_retries)
-        parsed = extract_json_from_response(response_text)
-        if parsed:
-            cls = parsed.get("classification", ["未知问题"])
-            reason = parsed.get("reason", parsed.get("reasoning", ""))
-            if not isinstance(cls, list):
-                cls = ["未知问题"]
-                reason = "分类格式错误"
-            if not reason:
-                reason = "LLM未返回reason"
-    except Exception as e:
-        reason = f"API调用失败: {e}"
-    save_item_to_db(num, cls, reason, app_name, problem_col, df, output_dir)
-    is_failed = cls[0] == "未知问题" and ("LLM" in reason or "失败" in reason)
+    reason = "空描述,跳过分类"
+    if desc.strip():
+        reason = "LLM调用失败"
+        try:
+            prompt = build_prompt(app_name, desc, refs)
+            text = call_llm(client, provider, prompt, model, max_tokens, max_retries)
+            parsed = extract_json(text)
+            if parsed:
+                cls = parsed.get("classification", ["未知问题"])
+                reason = parsed.get("reason", parsed.get("reasoning", ""))
+                if not isinstance(cls, list):
+                    cls = ["未知问题"]
+                    reason = "分类格式错误"
+                if not reason:
+                    reason = "LLM未返回reason"
+        except Exception as e:
+            reason = f"API调用失败: {e}"
+    save_item(num, cls, reason, app_name, problem_col, df, db_path)
+    is_failed = cls[0] == "未知问题" and ("LLM" in reason or "失败" in reason or "空描述" in reason)
+    with _progress_lock:
+        _progress_done += 1
+        pct = _progress_done * 100 // total
+        print(f"  [{pct:3d}%] 行{num}: {cls[0]} → {reason[:60]}")
     return is_failed
 
 
 def main():
     _load_env()
-
     parser = argparse.ArgumentParser(description="使用LLM API自动分类舆情数据")
-    parser.add_argument("--app-name", required=True, help="应用名 (如 抖音、微信)")
-    parser.add_argument("--app-index", type=int, required=True, help="应用名列号 (1-based, 0=无应用名列)")
-    parser.add_argument("--problem-name", default=None, help="问题描述列名")
-    parser.add_argument("--problem-index", type=int, required=True, help="问题描述列号 (1-based)")
-    parser.add_argument("--excel-path", required=True, help="Excel文件路径")
-    parser.add_argument("--output-dir", required=True, help="输出目录路径")
-
-    parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "openai"),
-                        choices=["openai", "anthropic"], help="API类型")
-    parser.add_argument("--model", default=os.environ.get("LLM_MODEL", None), help="模型名称")
-    parser.add_argument("--api-key", default=os.environ.get("LLM_API_KEY", None), help="API密钥")
-    parser.add_argument("--base-url", default=os.environ.get("LLM_BASE_URL", None), help="API基础URL (仅openai)")
-    parser.add_argument("--max-concurrent", type=int, default=5, help="最大并发调用数")
-    parser.add_argument("--max-tokens", type=int, default=8192, help="最大生成token数")
-    parser.add_argument("--max-retries", type=int, default=3, help="最大重试次数")
-
+    parser.add_argument("--app-name", required=True)
+    parser.add_argument("--app-index", type=int, required=True)
+    parser.add_argument("--problem-name", default=None)
+    parser.add_argument("--problem-index", type=int, required=True)
+    parser.add_argument("--excel-path", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "openai"), choices=["openai", "anthropic"])
+    parser.add_argument("--model", default=os.environ.get("LLM_MODEL"))
+    parser.add_argument("--api-key", default=os.environ.get("LLM_API_KEY"))
+    parser.add_argument("--base-url", default=os.environ.get("LLM_BASE_URL"))
+    parser.add_argument("--max-concurrent", type=int, default=5)
+    parser.add_argument("--max-tokens", type=int, default=8192)
+    parser.add_argument("--max-retries", type=int, default=3)
     args = parser.parse_args()
 
     if not args.api_key:
-        print("错误: 需要API密钥 (--api-key 或 LLM_API_KEY 环境变量)")
-        sys.exit(1)
+        print("错误: 需要 --api-key 或 LLM_API_KEY 环境变量"); sys.exit(1)
     if not args.model:
-        print("错误: 需要模型名称 (--model 或 LLM_MODEL 环境变量)")
-        sys.exit(1)
+        print("错误: 需要 --model 或 LLM_MODEL 环境变量"); sys.exit(1)
 
     app_name = args.app_name
     if app_name not in SUPPORTED_APPS:
-        print(f"警告: '{app_name}' 不在支持列表 {SUPPORTED_APPS} 中，所有数据将归为'未知问题'")
+        print(f"警告: '{app_name}' 不在支持列表中, 所有数据归为'未知问题'")
         refs = {"info": "", "classification": "", "examples": ""}
     else:
         refs = load_reference(app_name)
         if not refs:
-            print(f"错误: 无法加载 '{app_name}' 的知识库")
-            sys.exit(1)
+            print(f"错误: 无法加载 '{app_name}' 的知识库"); sys.exit(1)
 
     excel_path = args.excel_path
     output_dir = args.output_dir
@@ -261,85 +255,56 @@ def main():
 
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
-
-    problem_col = args.problem_name if args.problem_name else resolve_column(args.problem_index, columns)
+    problem_col = args.problem_name or resolve_column(args.problem_index, columns)
     if problem_col not in columns:
-        print(f"错误: 问题描述列 '{problem_col}' 不存在")
-        sys.exit(1)
+        print(f"错误: 问题描述列 '{problem_col}' 不存在"); sys.exit(1)
 
     if args.app_index > 0:
         app_col = resolve_column(args.app_index, columns)
         if app_col not in columns:
-            print(f"错误: 应用名列 '{app_col}' 不存在")
-            sys.exit(1)
-        filtered_indices = []
-        for idx, row in df.iterrows():
-            val = str(row[app_col]).strip() if not pd.isna(row[app_col]) else ""
-            resolved = app_alias_map.get(val, val)
-            if resolved == app_name:
-                filtered_indices.append(idx)
-        total_rows = len(df)
-        filtered_count = len(filtered_indices)
-        print(f"总行数: {total_rows}, 筛选 '{app_name}' 行数: {filtered_count}")
-        if filtered_count == 0:
-            print(f"警告: 未找到 '{app_name}' 相关数据，将处理全部行")
-            filtered_indices = list(range(len(df)))
+            print(f"错误: 应用名列 '{app_col}' 不存在"); sys.exit(1)
+        filtered = [idx for idx, row in df.iterrows()
+                     if app_alias_map.get(str(row[app_col]).strip() if not pd.isna(row[app_col]) else "", str(row[app_col]).strip() if not pd.isna(row[app_col]) else "") == app_name]
+        print(f"总行数: {len(df)}, 筛选 '{app_name}': {len(filtered)}条")
+        if not filtered:
+            print(f"警告: 未找到 '{app_name}' 数据, 处理全部行")
+            filtered = list(range(len(df)))
     else:
-        filtered_indices = list(range(len(df)))
-        filtered_count = len(df)
-        print(f"总行数: {filtered_count} (无应用名列筛选)")
+        filtered = list(range(len(df)))
+        print(f"总行数: {len(df)} (无应用名列筛选)")
 
-    all_data = []
-    for idx in filtered_indices:
-        num = idx + 1
-        desc = str(df.iloc[idx][problem_col]) if not pd.isna(df.iloc[idx][problem_col]) else ""
-        all_data.append({"num": num, "desc": desc})
+    all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+                 for i in filtered]
 
     db_path = os.path.join(output_dir, "report.db")
     init_db(db_path)
 
-    print(f"共 {len(all_data)} 条数据, 每条单独调用LLM并直接写DB, 并发 {args.max_concurrent}")
-    print(f"LLM配置: provider={args.provider}, model={args.model}")
+    print(f"共 {len(all_data)}条, 并发 {args.max_concurrent}, provider={args.provider}, model={args.model}")
     print()
 
-    total_classified = 0
-    failed_items = 0
+    client = create_client(args.provider, args.api_key, args.base_url)
+    total = len(all_data)
+    ok = 0
+    fail = 0
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_concurrent) as executor:
-        future_to_num = {}
-        for item in all_data:
-            future = executor.submit(
-                process_item,
-                item["num"], item["desc"], app_name, problem_col, df, refs, output_dir,
-                args.provider, args.model, args.api_key, args.base_url,
-                args.max_tokens, args.max_retries,
-            )
-            future_to_num[future] = item["num"]
-
-        for future in concurrent.futures.as_completed(future_to_num):
-            num = future_to_num[future]
+        futures = {executor.submit(process_item, d["num"], d["desc"], app_name, problem_col, df, refs, db_path,
+                                   client, args.provider, args.model, args.max_tokens, args.max_retries, total): d["num"]
+                   for d in all_data}
+        for f in concurrent.futures.as_completed(futures):
             try:
-                is_failed = future.result()
-                if is_failed:
-                    failed_items += 1
+                if f.result():
+                    fail += 1
                 else:
-                    total_classified += 1
-            except Exception as e:
-                print(f"  行{num}: 执行失败 {e}")
-                failed_items += 1
-
-    print()
-    print(f"分类完成: {total_classified + failed_items}/{len(all_data)} 条 (成功 {total_classified}, 失败 {failed_items})")
+                    ok += 1
+            except Exception:
+                fail += 1
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM report")
-    db_count = cursor.fetchone()[0]
+    cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
-    if db_count == len(all_data):
-        print(f"验证通过: 数据库 {db_count} 条")
-    else:
-        print(f"警告: 数据库 {db_count} 条, 期望 {len(all_data)} 条, 差 {len(all_data) - db_count} 条")
+    status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
+    print(f"\n分类完成: {ok + fail}/{len(all_data)}条 (成功{ok}, 失败{fail}) | {status}")
 
 
 if __name__ == "__main__":
