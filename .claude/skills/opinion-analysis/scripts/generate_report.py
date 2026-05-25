@@ -33,19 +33,19 @@ def read_data_from_db(db_path: str) -> dict:
     summary = {
         "total": len(rows),
         "classified": 0,
-        "unrecognized_app": 0,
-        "no_description": 0,
+        "unknown_issue": 0,
+        "infer_failed": 0,
     }
 
     details = []
     for r in rows:
         raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
         status = r['status']
-        if status == 'success' and r['level1']:
+        if status == 1 and r['level1'] and r['level1'] != '未知问题':
             summary["classified"] += 1
             details.append({
                 'input': r['problem'],
-                'status': 'success',
+                'status': 'classified',
                 'classification': {
                     'app': r['cls_app'] or r['app'],
                     'level1': r['level1'],
@@ -56,11 +56,11 @@ def read_data_from_db(db_path: str) -> dict:
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
-        elif status == 'unrecognized':
-            summary["unrecognized_app"] += 1
+        elif status == 1 and r['level1'] == '未知问题':
+            summary["unknown_issue"] += 1
             details.append({
                 'input': r['problem'],
-                'status': 'unrecognized',
+                'status': 'unknown_issue',
                 'classification': {
                     'app': r['app'] or '',
                     'level1': '未知问题',
@@ -71,12 +71,12 @@ def read_data_from_db(db_path: str) -> dict:
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
-        elif status == 'no_description':
-            summary["no_description"] += 1
+        elif status == 0:
+            summary["infer_failed"] += 1
             details.append({
                 'input': r['problem'],
-                'status': 'no_description',
-                'output': f"{r['app']}没有描述",
+                'status': 'infer_failed',
+                'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
         else:
@@ -200,7 +200,8 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
     total = summary.get('total', len(details))
     classified = summary.get('classified', 0)
-    unrecognized = summary.get('unrecognized_app', 0)
+    unknown_issue = summary.get('unknown_issue', 0)
+    infer_failed = summary.get('infer_failed', 0)
 
     # 查找Excel来源文件名
     input_dir = os.path.dirname(os.path.abspath(input_path))
@@ -214,7 +215,8 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
     variables = {
         'TOTAL': total,
         'CLASSIFIED': classified,
-        'UNRECOGNIZED': unrecognized,
+        'UNKNOWN_ISSUE': unknown_issue,
+        'INFER_FAILED': infer_failed,
         'DETAILS_JSON': json.dumps(details, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'EXCEL_FILENAME': excel_filename,

@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS report (
     id INTEGER PRIMARY KEY,
     app TEXT,
     problem TEXT,
-    status TEXT DEFAULT 'success',
+    status INTEGER DEFAULT 1,
     cls_app TEXT,
     level1 TEXT,
     level2 TEXT,
@@ -95,7 +95,7 @@ def init_output_dir(excel_path, output_dir):
 
 
 def setup_logging(output_dir):
-    log_path = os.path.join(output_dir, "classify.log")
+    log_path = os.path.join(output_dir, "report.log")
     handler = logging.FileHandler(log_path, encoding="utf-8", mode="a")
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
@@ -179,7 +179,7 @@ _progress_lock = threading.Lock()
 _progress_done = 0
 
 
-def save_item(num, classification, reason, app_name, problem_col, df, db_path):
+def save_item(num, classification, reason, app_name, problem_col, df, db_path, infer_ok):
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout = 30000")
@@ -187,19 +187,23 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path):
         row = df.iloc[num - 1]
         problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
-        if not classification or classification[0] == "未知问题":
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
-                           (num, app_name, problem, "unrecognized", reason, raw_json))
-        else:
+        status_val = 1 if infer_ok else 0
+        if infer_ok and classification and classification[0] != "未知问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
             fp = ".".join(filter(None, [l1, l2, l3]))
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, "success", app_name, l1, l2, l3, fp, reason, raw_json))
+                           (num, app_name, problem, status_val, app_name, l1, l2, l3, fp, reason, raw_json))
+        elif infer_ok:
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status_val, app_name, "未知问题", "", "", "未知问题", reason, raw_json))
+        else:
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
+                           (num, app_name, problem, status_val, reason, raw_json))
         conn.commit()
         conn.close()
-        logger.info("行%d 入库成功, 分类: %s, 状态: %s", num, ".".join(classification) if classification else "无", "unrecognized" if (not classification or classification[0] == "未知问题") else "success")
+        logger.info("行%d 入库成功, 分类: %s, 推理状态: %s", num, ".".join(classification) if classification else "无", "成功" if infer_ok else "失败")
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)
 
@@ -209,6 +213,7 @@ def process_item(num, desc, app_name, problem_col, df, refs, db_path,
     global _progress_done
     cls = ["未知问题"]
     reason = "空描述,跳过分类"
+    infer_ok = False
     if desc.strip():
         reason = "LLM调用失败"
         try:
@@ -224,6 +229,8 @@ def process_item(num, desc, app_name, problem_col, df, refs, db_path,
                     cls = ["未知问题"]
                     reason = "分类格式错误"
                     logger.warning("行%d LLM推理返回分类格式错误, 原始返回: %s", num, text[:200])
+                else:
+                    infer_ok = True
                 if not reason:
                     reason = "LLM未返回reason"
                 logger.info("行%d LLM推理分类结果: %s", num, ".".join(cls) if cls else "无")
@@ -235,13 +242,12 @@ def process_item(num, desc, app_name, problem_col, df, refs, db_path,
             logger.error("行%d LLM推理失败: %s", num, e)
     else:
         logger.warning("行%d 空描述,跳过分类", num)
-    save_item(num, cls, reason, app_name, problem_col, df, db_path)
-    is_failed = cls[0] == "未知问题" and ("LLM" in reason or "失败" in reason or "空描述" in reason)
+    save_item(num, cls, reason, app_name, problem_col, df, db_path, infer_ok)
     with _progress_lock:
         _progress_done += 1
         pct = _progress_done * 100 // total
         logger.debug("[%3d%%] 行%d: %s -> %s", pct, num, cls[0], reason[:60])
-    return is_failed
+    return infer_ok
 
 
 def main():
@@ -321,9 +327,9 @@ def main():
         for f in concurrent.futures.as_completed(futures):
             try:
                 if f.result():
-                    fail += 1
-                else:
                     ok += 1
+                else:
+                    fail += 1
             except Exception:
                 fail += 1
 
@@ -331,8 +337,8 @@ def main():
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
     status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
-    logger.info("分类完成: %d/%d条 (成功%d, 失败%d) | %s", ok + fail, len(all_data), ok, fail, status)
-    print(f"分类完成: {ok + fail}/{len(all_data)}条 (成功{ok}, 失败{fail}) | {status}")
+    logger.info("分类完成: %d/%d条 (推理成功%d, 推理失败%d) | %s", ok + fail, len(all_data), ok, fail, status)
+    print(f"分类完成: {ok + fail}/{len(all_data)}条 (推理成功{ok}, 推理失败{fail}) | {status}")
 
 
 if __name__ == "__main__":
