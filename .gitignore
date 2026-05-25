@@ -10,6 +10,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# 环境变量
+.env
+.env.local
+
 # IDE配置
 .vscode/
 ./classify.md
