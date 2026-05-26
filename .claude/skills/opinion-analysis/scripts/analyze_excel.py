@@ -54,10 +54,9 @@ def get_excel_info(excel_path: str) -> dict:
 
 
 def init_output_dir(excel_path: str, output_dir: str) -> None:
-    """创建输出目录、复制Excel文件、缓存pandas数据供子agent使用"""
+    """创建输出目录、复制Excel文件"""
     os.makedirs(output_dir, exist_ok=True)
 
-    # 复制原始Excel文件
     excel_basename = os.path.basename(excel_path)
     dest = os.path.join(output_dir, excel_basename)
     if not os.path.isfile(dest):
@@ -65,13 +64,6 @@ def init_output_dir(excel_path: str, output_dir: str) -> None:
         print(f"已复制Excel文件到: {dest}")
     else:
         print(f"Excel文件已存在: {dest}")
-
-    # 缓存pandas数据
-    cache_path = os.path.join(output_dir, "_excel_cache.pkl")
-    if not os.path.isfile(cache_path):
-        df = pd.read_excel(excel_path)
-        df.to_pickle(cache_path)
-        print(f"已缓存Excel数据到: {cache_path}")
 
     print(f"输出目录已初始化: {output_dir}")
 

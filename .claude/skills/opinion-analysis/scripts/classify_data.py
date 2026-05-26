@@ -18,6 +18,8 @@ LLM配置从项目根目录.env自动加载:
   LLM_MAX_TOKENS    最大生成token
   LLM_BATCH_SIZE    每次LLM调用处理的问题数(默认1)
   LLM_MAX_RETRIES   最大重试次数
+  LLM_TIMEOUT      请求超时时间(秒, 默认120)
+  LLM_VERIFY_SSL  SDK模式SSL校验(true/false, 默认true)
 """
 
 import sys
@@ -93,13 +95,10 @@ def init_db(db_path):
 
 
 def init_output_dir(excel_path, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    dest = os.path.join(output_dir, os.path.basename(excel_path))
-    if not os.path.isfile(dest):
-        shutil.copy2(excel_path, dest)
-    cache_path = os.path.join(output_dir, "_excel_cache.pkl")
-    if not os.path.isfile(cache_path):
-        pd.read_excel(excel_path).to_pickle(cache_path)
+    if os.path.isdir(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+    shutil.copy2(excel_path, os.path.join(output_dir, os.path.basename(excel_path)))
 
 
 def setup_logging(output_dir):
@@ -182,7 +181,7 @@ _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
 
 
-def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries):
+def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout):
     base_url = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
     headers = {"Content-Type": "application/json"}
     body = {
@@ -208,7 +207,7 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
 
     for attempt in range(max_retries):
         try:
-            resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=120)
+            resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=timeout)
             result = json.loads(resp.read().decode("utf-8"))
             if provider == "anthropic":
                 content = result.get("content", [])
@@ -239,19 +238,24 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
 
 # ========== Python SDK客户端 ==========
 
-def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries):
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl):
     base_url = base_url.rstrip("/") if base_url else None
 
     if provider == "anthropic":
         from anthropic import Anthropic, APITimeoutError
-        client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
+        if not verify_ssl:
+            import httpx
+            http_client = httpx.Client(verify=False)
+            client = Anthropic(api_key=api_key, base_url=base_url, http_client=http_client) if base_url else Anthropic(api_key=api_key, http_client=http_client)
+        else:
+            client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
         for attempt in range(max_retries):
             try:
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=90.0)
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=timeout)
                 text_block = next((b for b in resp.content if hasattr(b, 'text')), None)
                 return text_block.text if text_block else ""
             except APITimeoutError:
-                logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
+                logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
                 if attempt < max_retries - 1:
                     time.sleep(5)
                 else:
@@ -266,13 +270,16 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
         kwargs = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
+        if not verify_ssl:
+            import httpx
+            kwargs["http_client"] = httpx.Client(verify=False)
         client = OpenAI(**kwargs)
         for attempt in range(max_retries):
             try:
-                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=90.0)
+                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=timeout)
                 return resp.choices[0].message.content
             except APITimeoutError:
-                logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
+                logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
                 if attempt < max_retries - 1:
                     time.sleep(5)
                 else:
@@ -319,7 +326,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, total):
+                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, total):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done
 
@@ -340,9 +347,9 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
         for parse_attempt in range(max_retries):
             if runtime == "sdk":
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries)
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl)
             else:
-                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries)
+                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout)
 
             logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
 
@@ -446,6 +453,8 @@ def main():
     max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "8192"))
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
+    timeout = int(os.environ.get("LLM_TIMEOUT", "120"))
+    verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
 
     if not api_key:
         logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
@@ -512,7 +521,7 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, total): i
+                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, total): i
                    for i, batch in enumerate(batches)}
         for f in concurrent.futures.as_completed(futures):
             try:
