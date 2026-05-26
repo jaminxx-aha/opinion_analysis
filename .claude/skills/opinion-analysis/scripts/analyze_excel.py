@@ -11,6 +11,12 @@
 
 import sys
 import os
+import io
+
+# Windows下强制UTF-8输出
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import shutil
 import sqlite3
 import pandas as pd

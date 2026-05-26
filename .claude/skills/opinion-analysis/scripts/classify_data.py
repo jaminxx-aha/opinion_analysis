@@ -2,26 +2,32 @@
 """
 classify_data.py - 使用LLM API自动分类舆情数据
 
-一条命令完成: 初始化输出目录 → 分类 → 验证
-
 用法:
   python classify_data.py \
     --app-name 抖音 --app-index 2 --problem-index 5 \
     --excel-path test/douyin_100.xlsx \
     --output-dir output/douyin_100
 
-LLM配置从项目根目录.env自动加载, 也可命令行参数覆盖:
-  --provider / LLM_PROVIDER    openai 或 anthropic (默认openai)
-  --model / LLM_MODEL          模型名称
-  --api-key / LLM_API_KEY      API密钥
-  --base-url / LLM_BASE_URL    API基础URL (仅openai)
-  --max-concurrent             最大并发数 (默认5)
-  --max-tokens                 最大生成token (默认8192)
-  --max-retries                最大重试次数 (默认3)
+LLM配置从项目根目录.env自动加载:
+  LLM_PROVIDER      API格式 (openai/anthropic)
+  LLM_RUNTIME       调用方式 (python/node)
+  LLM_MODEL         模型名称
+  LLM_API_KEY       API密钥
+  LLM_BASE_URL      API基础URL
+  LLM_MAX_CONCURRENT 最大并发数
+  LLM_MAX_TOKENS    最大生成token
+  LLM_BATCH_SIZE    每次LLM调用处理的问题数(默认1)
+  LLM_MAX_RETRIES   最大重试次数
 """
 
 import sys
 import os
+import io
+
+# Windows下强制UTF-8输出
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import json
 import re
 import argparse
@@ -31,6 +37,8 @@ import sqlite3
 import threading
 import logging
 import concurrent.futures
+import subprocess
+import uuid
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -114,17 +122,45 @@ def load_reference(app_name):
     return refs
 
 
-def build_prompt(app_name, desc, refs):
-    return "\n".join([
-        f"你是一位专业的{app_name}应用性能问题分类专家，精通{app_name}的功能模块、页面结构和各类性能问题的表现特征。你需要根据用户反馈的问题描述，结合{app_name}的应用知识，逐层推导出最准确的分类。\n\n",
-        f"当前需要分类的{app_name}舆情问题描述如下：\n\n---DATA---\n{desc}\n---DATA_END---\n",
-        "请根据以下参考资料推导分类：\n",
-        f"【应用描述】\n{refs.get('info', '')}\n",
-        f"【问题分类树】\n{refs.get('classification', '')}\n",
-        f"【分类推理示例】\n{refs.get('examples', '')}\n",
-        "分类格式：一级分类.二级分类.三级分类\n\n逐层推导规则：\n1. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合\"分类推理示例\"，推理问题的一级分类\n2. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合第一步推理出的一级分类下的二级分类，推理问题的二级分类\n3. 分析问题描述，根据\"应用描述\"、\"问题分类树\"，结合第二步推理出的二级分类下的三级分类，推理问题的三级分类\n",
-        "输出JSON格式：\n{\"classification\": [\"一级分类\", \"二级分类\", \"三级分类\"], \"reason\": \"推理过程\"}\n\n如果无法推导出一级分类，返回[\"未知问题\"]；无法推导出二级分类，返回[\"一级分类值\"]；无法推导出三级分类，返回[\"一级分类值\", \"二级分类值\"]；全部推理出，返回[\"一级分类值\", \"二级分类值\", \"三级分类值\"]。\n\nreason必须包含推导过程，不允许只写结论。\n请只返回JSON，不要添加其他文字。",
+def build_batch_prompt(app_name, items, refs):
+    """构建批量分类prompt，items为[{num, desc}]列表"""
+    problems_text = "\n".join([
+        f"[问题{i+1}] 编号:{item['num']}\n描述:{item['desc']}\n"
+        for i, item in enumerate(items)
     ])
+    return f"""你是一位专业的{app_name}应用性能问题分类专家，精通{app_name}的功能模块、页面结构和各类性能问题的表现特征。你需要根据用户反馈的问题描述，结合{app_name}的应用知识，逐层推导出最准确的分类。
+
+当前需要分类的{len(items)}个{app_name}舆情问题描述如下：
+
+---DATA---
+{problems_text}
+---DATA_END---
+
+请根据以下参考资料推导分类：
+
+【应用描述】
+{refs.get('info', '')}
+
+【问题分类树】
+{refs.get('classification', '')}
+
+【分类推理示例】
+{refs.get('examples', '')}
+
+分类格式：一级分类.二级分类.三级分类
+
+逐层推导规则：
+1. 分析问题描述，根据"应用描述"、"问题分类树"，结合"分类推理示例"，推理问题的一级分类
+2. 分析问题描述，根据"应用描述"、"问题分类树"，结合第一步推理出的一级分类下的二级分类，推理问题的二级分类
+3. 分析问题描述，根据"应用描述"、"问题分类树"，结合第二步推理出的二级分类下的三级分类，推理问题的三级分类
+
+输出JSON数组格式（{len(items)}个结果）：
+[{{"num": 编号, "classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
+
+如果无法推导出一级分类，返回["未知问题"]；无法推导出二级分类，返回["一级分类值"]；无法推导出三级分类，返回["一级分类值", "二级分类值"]。
+
+reason必须包含推导过程，不允许只写结论。
+请只返回JSON数组，不要添加其他文字。"""
 
 
 def extract_json(text):
@@ -138,7 +174,7 @@ def extract_json(text):
                 return json.loads(m)
             except json.JSONDecodeError:
                 continue
-    brace = re.search(r'\{[\s\S]*\}', text)
+    brace = re.search(r'\[[\s\S]*\]' if '[' in text else r'\{[\s\S]*\}', text)
     if brace:
         try:
             return json.loads(brace.group())
@@ -147,7 +183,91 @@ def extract_json(text):
     return None
 
 
-def create_client(provider, api_key, base_url):
+# ========== Node.js服务进程管理 ==========
+
+_node_service = None
+_node_lock = threading.Lock()
+_node_reader_lock = threading.Lock()
+
+
+def start_node_service():
+    """启动Node.js长运行服务进程"""
+    global _node_service
+    js_script = os.path.join(SCRIPT_DIR, "js", "llm_service.js")
+    _node_service = subprocess.Popen(
+        ["node", js_script],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding='utf-8',
+        bufsize=1  # 行缓冲
+    )
+    logger.info("Node.js服务进程已启动, PID: %d", _node_service.pid)
+    return _node_service
+
+
+def stop_node_service():
+    """停止Node.js服务进程"""
+    global _node_service
+    if _node_service and _node_service.poll() is None:
+        try:
+            # 发送结束信号
+            _node_service.stdin.write(json.dumps({"id": "end", "end": True}) + "\n")
+            _node_service.stdin.flush()
+            _node_service.wait(timeout=5)
+        except Exception:
+            _node_service.terminate()
+            _node_service.wait(timeout=3)
+        logger.info("Node.js服务进程已停止")
+
+
+def call_node_service(prompt, model, max_tokens, request_id=None):
+    """调用Node.js服务（线程安全）"""
+    global _node_service, _node_lock, _node_reader_lock
+
+    if request_id is None:
+        request_id = str(uuid.uuid4())
+
+    request = {
+        "id": request_id,
+        "prompt": prompt,
+        "model": model,
+        "maxTokens": max_tokens
+    }
+
+    with _node_lock:
+        try:
+            # 写入请求
+            _node_service.stdin.write(json.dumps(request) + "\n")
+            _node_service.stdin.flush()
+
+            # 读取响应（行缓冲）
+            with _node_reader_lock:
+                response_line = _node_service.stdout.readline()
+
+            if not response_line:
+                raise Exception("Node.js服务无响应")
+
+            response = json.loads(response_line.strip())
+
+            if response.get("error"):
+                raise Exception(response["error"])
+
+            if response.get("id") != request_id:
+                logger.warning("响应ID不匹配: 期望 %s, 收到 %s", request_id, response.get("id"))
+
+            return response.get("result")
+
+        except json.JSONDecodeError:
+            raise Exception(f"响应解析失败: {response_line[:100]}")
+        except Exception as e:
+            raise Exception(f"Node.js服务调用失败: {e}")
+
+
+# ========== Python SDK客户端 ==========
+
+def create_python_client(provider, api_key, base_url):
     if provider == "anthropic":
         from anthropic import Anthropic
         return Anthropic(api_key=api_key)
@@ -159,23 +279,24 @@ def create_client(provider, api_key, base_url):
         return OpenAI(**kwargs)
 
 
-def call_llm(client, provider, prompt, model, max_tokens, max_retries):
+def call_python_llm(client, provider, prompt, model, max_tokens, max_retries):
     from openai import APITimeoutError
+
     for attempt in range(max_retries):
         try:
             if provider == "anthropic":
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=60.0)
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=90.0)
                 return resp.content[0].text
             else:
-                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=60.0)
+                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=90.0)
                 return resp.choices[0].message.content
-        except APITimeoutError as e:
-            logger.warning("行LLM调用超时(60s), 第%d次重试", attempt + 1)
+        except APITimeoutError:
+            logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
             if attempt < max_retries - 1:
-                time.sleep(3)
+                time.sleep(5)
             else:
                 raise
-        except Exception as e:
+        except Exception:
             if attempt < max_retries - 1:
                 time.sleep(3)
             else:
@@ -215,50 +336,98 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, i
         logger.error("行%d 入库失败: %s", num, e)
 
 
-def process_item(num, desc, app_name, problem_col, df, refs, db_path,
-                 client, provider, model, max_tokens, max_retries, total):
+def process_batch(batch, app_name, problem_col, df, refs, db_path,
+                  client, runtime, provider, model, max_tokens, max_retries, total):
+    """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done
-    cls = ["未知问题"]
-    reason = "空描述,跳过分类"
-    infer_ok = False
-    if desc.strip():
-        reason = "LLM调用失败"
-        try:
-            prompt = build_prompt(app_name, desc, refs)
-            logger.debug("行%d 开始LLM推理, 描述长度: %d", num, len(desc))
-            text = call_llm(client, provider, prompt, model, max_tokens, max_retries)
-            logger.debug("行%d LLM推理成功, 返回文本长度: %d", num, len(text) if text else 0)
-            parsed = extract_json(text)
-            if parsed:
-                cls = parsed.get("classification", ["未知问题"])
-                reason = parsed.get("reason", parsed.get("reasoning", ""))
-                if not isinstance(cls, list):
-                    cls = ["未知问题"]
-                    reason = "分类格式错误"
-                    logger.warning("行%d LLM推理返回分类格式错误, 原始返回: %s", num, text[:200])
+
+    results = []
+    valid_items = [item for item in batch if item["desc"].strip()]
+
+    if not valid_items:
+        for item in batch:
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, False)
+            results.append((item["num"], False))
+        with _progress_lock:
+            _progress_done += len(batch)
+        return results
+
+    try:
+        prompt = build_batch_prompt(app_name, valid_items, refs)
+        logger.debug("批量开始LLM推理, 有效问题数: %d", len(valid_items))
+
+        # 根据runtime选择调用方式
+        if runtime in ["node", "js"]:
+            text = call_node_service(prompt, model, max_tokens)
+        else:
+            text = call_python_llm(client, provider, prompt, model, max_tokens, max_retries)
+
+        logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
+
+        parsed = extract_json(text)
+        if parsed and isinstance(parsed, list):
+            parsed_map = {int(p.get("num", 0)): p for p in parsed if isinstance(p, dict)}
+            for item in valid_items:
+                num = item["num"]
+                p = parsed_map.get(num)
+                if p:
+                    cls = p.get("classification", ["未知问题"])
+                    reason = p.get("reason", p.get("reasoning", ""))
+                    if not isinstance(cls, list):
+                        cls = ["未知问题"]
+                        reason = "分类格式错误"
+                    infer_ok = cls[0] != "未知问题"
+                    save_item(num, cls, reason, app_name, problem_col, df, db_path, infer_ok)
+                    results.append((num, infer_ok))
+                    logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
                 else:
-                    infer_ok = True
-                if not reason:
-                    reason = "LLM未返回reason"
-                logger.info("行%d LLM推理分类结果: %s", num, ".".join(cls) if cls else "无")
-            else:
-                logger.warning("行%d LLM推理返回JSON解析失败, 原始返回: %s", num, text[:200])
-                reason = "JSON解析失败"
-        except Exception as e:
-            reason = f"API调用失败: {e}"
-            logger.error("行%d LLM推理失败: %s", num, e)
-    else:
-        logger.warning("行%d 空描述,跳过分类", num)
-    save_item(num, cls, reason, app_name, problem_col, df, db_path, infer_ok)
+                    save_item(num, ["未知问题"], "批量结果中未找到该编号", app_name, problem_col, df, db_path, False)
+                    results.append((num, False))
+                    logger.warning("行%d 批量结果中未找到", num)
+        else:
+            logger.warning("批量LLM推理返回JSON解析失败, 原始返回: %s", text[:300] if text else "空")
+            for item in valid_items:
+                save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, False)
+                results.append((item["num"], False))
+
+    except Exception as e:
+        logger.error("批量LLM推理失败: %s", e)
+        for item in valid_items:
+            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, False)
+            results.append((item["num"], False))
+
+    for item in batch:
+        if not item["desc"].strip():
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, False)
+            results.append((item["num"], False))
+
     with _progress_lock:
-        _progress_done += 1
+        _progress_done += len(batch)
         pct = _progress_done * 100 // total
-        logger.debug("[%3d%%] 行%d: %s -> %s", pct, num, cls[0], reason[:60])
-    return infer_ok
+        logger.debug("[%3d%%] 批量完成 %d条", pct, len(batch))
+
+    return results
 
 
 def main():
     _load_env()
+
+    # 从环境变量读取LLM配置
+    provider = os.environ.get("LLM_PROVIDER", "openai")  # API格式: openai/anthropic
+    runtime = os.environ.get("LLM_RUNTIME", "python")     # 调用方式: python/node
+    model = os.environ.get("LLM_MODEL")
+    api_key = os.environ.get("LLM_API_KEY")
+    base_url = os.environ.get("LLM_BASE_URL")
+    max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "5"))
+    max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "8192"))
+    batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
+    max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
+
+    if not api_key:
+        logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
+    if not model:
+        logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
+
     parser = argparse.ArgumentParser(description="使用LLM API自动分类舆情数据")
     parser.add_argument("--app-name", required=True)
     parser.add_argument("--app-index", type=int, required=True)
@@ -266,19 +435,7 @@ def main():
     parser.add_argument("--problem-index", type=int, required=True)
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "openai"), choices=["openai", "anthropic"])
-    parser.add_argument("--model", default=os.environ.get("LLM_MODEL"))
-    parser.add_argument("--api-key", default=os.environ.get("LLM_API_KEY"))
-    parser.add_argument("--base-url", default=os.environ.get("LLM_BASE_URL"))
-    parser.add_argument("--max-concurrent", type=int, default=5)
-    parser.add_argument("--max-tokens", type=int, default=8192)
-    parser.add_argument("--max-retries", type=int, default=3)
     args = parser.parse_args()
-
-    if not args.api_key:
-        logger.error("需要 --api-key 或 LLM_API_KEY 环境变量"); sys.exit(1)
-    if not args.model:
-        logger.error("需要 --model 或 LLM_MODEL 环境变量"); sys.exit(1)
 
     app_name = args.app_name
     if app_name not in SUPPORTED_APPS:
@@ -320,25 +477,40 @@ def main():
     db_path = os.path.join(output_dir, "report.db")
     init_db(db_path)
 
-    logger.info("共 %d条, 并发 %d, provider=%s, model=%s", len(all_data), args.max_concurrent, args.provider, args.model)
+    logger.info("共 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s", len(all_data), max_concurrent, batch_size, provider, runtime, model)
 
-    client = create_client(args.provider, args.api_key, args.base_url)
+    # 初始化客户端
+    client = None
+    if runtime in ["node", "js"]:
+        start_node_service()
+    else:
+        client = create_python_client(provider, api_key, base_url)
+
     total = len(all_data)
     ok = 0
     fail = 0
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_concurrent) as executor:
-        futures = {executor.submit(process_item, d["num"], d["desc"], app_name, problem_col, df, refs, db_path,
-                                   client, args.provider, args.model, args.max_tokens, args.max_retries, total): d["num"]
-                   for d in all_data}
-        for f in concurrent.futures.as_completed(futures):
-            try:
-                if f.result():
-                    ok += 1
-                else:
-                    fail += 1
-            except Exception:
-                fail += 1
+    batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
+                                       client, runtime, provider, model, max_tokens, max_retries, total): i
+                       for i, batch in enumerate(batches)}
+            for f in concurrent.futures.as_completed(futures):
+                try:
+                    batch_results = f.result()
+                    for _, infer_ok in batch_results:
+                        if infer_ok:
+                            ok += 1
+                        else:
+                            fail += 1
+                except Exception:
+                    fail += batch_size
+    finally:
+        # 停止Node.js服务
+        if runtime in ["node", "js"]:
+            stop_node_service()
 
     conn = sqlite3.connect(db_path)
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]

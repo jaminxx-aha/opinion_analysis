@@ -1,7 +1,7 @@
 ---
 name: opinion-analysis
 description: 分析Excel舆情数据，自动分类性能问题并生成交互式可视化HTML报告。当用户提供Excel舆情数据文件时触发。
-dependencies: python>=3.8, pandas>=1.5.0, openpyxl, openai, anthropic, python-dotenv
+dependencies: python>=3.8, pandas>=1.5.0, openpyxl, openai, anthropic, python-dotenv | node>=18.0.0 (可选)
 ---
 
 # 舆情分析技能
@@ -24,18 +24,12 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 
 ### 步骤2：分类
 
-一条命令完成初始化、分类、验证：
-
 ```bash
 python <skill_path>/scripts/classify_data.py \
   --app-name <app_name> --app-index <app_index> \
   --problem-index <problem_index> \
   --excel-path <Excel文件路径> --output-dir <output_dir>
 ```
-
-LLM配置从项目根目录 `.env` 自动加载，也可命令行覆盖：`--provider`、`--model`、`--api-key`、`--base-url`
-
-可选：`--max-concurrent`（并发数，默认5）、`--max-tokens`（默认8192）、`--max-retries`（默认3）
 
 输出目录默认 `./output/<excel_name>`，也可用户指定。
 
@@ -47,13 +41,13 @@ python <skill_path>/scripts/analyze_excel.py <output_dir>/report.db --output-dir
 
 ## 资源文件
 
-- [references/apps/](references/apps/) — 各应用知识库（`info.md`、`classification.md`、`examples.md`）
+- [references/apps/](references/apps/) — 各应用知识库
 - [assets/report_template.html](assets/report_template.html) — HTML报告模板
-- [scripts/classify_data.py](scripts/classify_data.py) — LLM分类脚本（含初始化、分类、验证）
-- [scripts/analyze_excel.py](scripts/analyze_excel.py) — Excel信息查看 + HTML报告生成
-- [scripts/generate_report.py](scripts/generate_report.py) — 报告模板渲染
-- [scripts/config.py](scripts/config.py) — 应用名配置、别名映射、公共函数
+- [scripts/js/llm_client.js](scripts/js/llm_client.js) — Node.js LLM客户端
+- [scripts/classify_data.py](scripts/classify_data.py) — 分类脚本
+- [scripts/analyze_excel.py](scripts/analyze_excel.py) — Excel分析 + 报告生成
+- [scripts/config.py](scripts/config.py) — 配置与公共函数
 
 ## 支持的应用
 
-抖音、微信、淘宝、快手、小红书（其他应用数据全部归为"未知问题"）
+抖音、微信、淘宝、快手、小红书
