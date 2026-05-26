@@ -564,6 +564,15 @@ def main():
     logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", success + unknown + failed, len(all_data), success, unknown, failed, db_status)
     print(f"分类完成: {success + unknown + failed}/{len(all_data)}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
+    # 分类完成后自动生成报告
+    from analyze_excel import generate_report
+    report_path = generate_report(db_path, output_dir)
+    if report_path:
+        logger.info("报告已生成: %s", report_path)
+        print(f"报告已生成: {report_path}")
+    else:
+        logger.warning("报告生成失败")
+
 
 if __name__ == "__main__":
     main()

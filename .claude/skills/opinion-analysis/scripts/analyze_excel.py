@@ -32,7 +32,7 @@ from config import app_alias_map, resolve_column, SUPPORTED_APPS, get_app_dir
 def get_excel_info(excel_path: str) -> dict:
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
-    sample_size = min(10, len(df))
+    sample_size = min(3, len(df))
 
     columns_with_index = {i+1: col for i, col in enumerate(columns)}
     column_samples = {}
@@ -191,7 +191,7 @@ def main():
             for idx, col in result['columns_with_index'].items():
                 print(f"  [{idx}] {col}")
             print()
-            print("=== 各列样本数据（前10行）===")
+            print("=== 各列样本数据（前3行）===")
             for col, samples in result['column_samples'].items():
                 print(f"\n【{col}】")
                 for i, s in enumerate(samples):

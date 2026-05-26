@@ -22,7 +22,7 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 - **问题描述列**：内容为问题描述文本，记 `problem_index` 和 `row_count`
 - 验证 `references/apps/<app_name>/` 存在；不存在的应用所有数据归为"未知问题"，需告知用户
 
-### 步骤2：分类
+### 步骤2：分类并生成报告
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
@@ -31,13 +31,7 @@ python <skill_path>/scripts/classify_data.py \
   --excel-path <Excel文件路径> --output-dir <output_dir>
 ```
 
-输出目录默认 `./output/<excel_name>`，也可用户指定。
-
-### 步骤3：生成报告
-
-```bash
-python <skill_path>/scripts/analyze_excel.py <output_dir>/report.db --output-dir <output_dir>
-```
+分类完成后自动生成HTML报告。输出目录默认 `./output/<excel_name>`，也可用户指定。
 
 ## 资源文件
 
