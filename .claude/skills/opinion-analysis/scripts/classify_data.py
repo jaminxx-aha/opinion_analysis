@@ -147,21 +147,17 @@ def build_batch_prompt(app_name, items, refs):
 【分类推理示例】
 {refs.get('examples', '')}
 
-分类格式：一级分类.二级分类.三级分类
-
 逐层推导规则：
+如果无法推导出一级分类，返回["未知问题"]；无法推导出二级分类，返回["一级分类值"]；无法推导出三级分类，返回["一级分类值", "二级分类值"]。
 1. 分析问题描述，根据"应用描述"、"问题分类树"，结合"分类推理示例"，推理问题的一级分类
 2. 分析问题描述，根据"应用描述"、"问题分类树"，结合第一步推理出的一级分类下的二级分类，推理问题的二级分类
 3. 分析问题描述，根据"应用描述"、"问题分类树"，结合第二步推理出的二级分类下的三级分类，推理问题的三级分类
 
-输出JSON数组格式（{len(items)}个结果）：
+必须按照以下json格式返回，不要返回多余数据，json格式被三个反引号分割
+```
 [{{"num": 编号, "classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
-
-如果无法推导出一级分类，返回["未知问题"]；无法推导出二级分类，返回["一级分类值"]；无法推导出三级分类，返回["一级分类值", "二级分类值"]。
-
-reason必须包含推导过程，不允许只写结论。
-请只返回JSON数组，不要添加其他文字。"""
-
+```
+"""
 
 def extract_json(text):
     try:
@@ -186,13 +182,44 @@ def extract_json(text):
 # ========== Node.js服务进程管理 ==========
 
 _node_service = None
-_node_lock = threading.Lock()
-_node_reader_lock = threading.Lock()
+_response_thread = None
+_pending_responses = {}  # {request_id: {"event": threading.Event, "result": None, "error": None}}
+_response_lock = threading.Lock()
+
+
+def _response_reader():
+    """后台线程：持续读取Node.js服务的响应，分发给等待的线程"""
+    global _node_service, _pending_responses, _response_lock
+
+    while _node_service and _node_service.poll() is None:
+        try:
+            line = _node_service.stdout.readline()
+            if not line:
+                break
+
+            response = json.loads(line.strip())
+            request_id = response.get("id")
+
+            with _response_lock:
+                if request_id in _pending_responses:
+                    pending = _pending_responses[request_id]
+                    if response.get("error"):
+                        pending["error"] = response["error"]
+                    else:
+                        pending["result"] = response.get("result")
+                    pending["event"].set()
+
+        except json.JSONDecodeError:
+            logger.warning("响应JSON解析失败: %s", line[:100] if line else "空")
+        except Exception as e:
+            logger.error("响应读取异常: %s", e)
+            break
 
 
 def start_node_service():
-    """启动Node.js长运行服务进程"""
-    global _node_service
+    """启动Node.js长运行服务进程和响应读取线程"""
+    global _node_service, _response_thread
+
     js_script = os.path.join(SCRIPT_DIR, "js", "llm_service.js")
     _node_service = subprocess.Popen(
         ["node", js_script],
@@ -203,13 +230,19 @@ def start_node_service():
         encoding='utf-8',
         bufsize=1  # 行缓冲
     )
-    logger.info("Node.js服务进程已启动, PID: %d", _node_service.pid)
+
+    # 启动后台响应读取线程
+    _response_thread = threading.Thread(target=_response_reader, daemon=True)
+    _response_thread.start()
+
+    logger.info("Node.js服务进程已启动, PID: %d, 响应读取线程已启动", _node_service.pid)
     return _node_service
 
 
 def stop_node_service():
     """停止Node.js服务进程"""
-    global _node_service
+    global _node_service, _response_thread
+
     if _node_service and _node_service.poll() is None:
         try:
             # 发送结束信号
@@ -222,12 +255,17 @@ def stop_node_service():
         logger.info("Node.js服务进程已停止")
 
 
-def call_node_service(prompt, model, max_tokens, request_id=None):
-    """调用Node.js服务（线程安全）"""
-    global _node_service, _node_lock, _node_reader_lock
+def call_node_service(prompt, model, max_tokens, request_id=None, timeout=120):
+    """调用Node.js服务（真正并发）"""
+    global _node_service, _pending_responses, _response_lock
 
     if request_id is None:
         request_id = str(uuid.uuid4())
+
+    # 注册等待事件
+    event = threading.Event()
+    with _response_lock:
+        _pending_responses[request_id] = {"event": event, "result": None, "error": None}
 
     request = {
         "id": request_id,
@@ -236,33 +274,29 @@ def call_node_service(prompt, model, max_tokens, request_id=None):
         "maxTokens": max_tokens
     }
 
-    with _node_lock:
-        try:
-            # 写入请求
-            _node_service.stdin.write(json.dumps(request) + "\n")
-            _node_service.stdin.flush()
+    try:
+        # 发送请求（无需锁，stdin写入是线程安全的）
+        _node_service.stdin.write(json.dumps(request) + "\n")
+        _node_service.stdin.flush()
 
-            # 读取响应（行缓冲）
-            with _node_reader_lock:
-                response_line = _node_service.stdout.readline()
+        # 等待响应（每个线程独立等待自己的event）
+        if not event.wait(timeout=timeout):
+            raise Exception(f"等待响应超时({timeout}s)")
 
-            if not response_line:
-                raise Exception("Node.js服务无响应")
+        # 获取结果
+        with _response_lock:
+            pending = _pending_responses.pop(request_id, {})
 
-            response = json.loads(response_line.strip())
+        if pending.get("error"):
+            raise Exception(pending["error"])
 
-            if response.get("error"):
-                raise Exception(response["error"])
+        return pending.get("result")
 
-            if response.get("id") != request_id:
-                logger.warning("响应ID不匹配: 期望 %s, 收到 %s", request_id, response.get("id"))
-
-            return response.get("result")
-
-        except json.JSONDecodeError:
-            raise Exception(f"响应解析失败: {response_line[:100]}")
-        except Exception as e:
-            raise Exception(f"Node.js服务调用失败: {e}")
+    except Exception as e:
+        # 清理
+        with _response_lock:
+            _pending_responses.pop(request_id, None)
+        raise Exception(f"Node.js服务调用失败: {e}")
 
 
 # ========== Python SDK客户端 ==========
@@ -286,7 +320,9 @@ def call_python_llm(client, provider, prompt, model, max_tokens, max_retries):
         try:
             if provider == "anthropic":
                 resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=90.0)
-                return resp.content[0].text
+                # 过滤出文本块，跳过ThinkingBlock等其他类型
+                text_block = next((b for b in resp.content if hasattr(b, 'text')), None)
+                return text_block.text if text_block else ""
             else:
                 resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=90.0)
                 return resp.choices[0].message.content
@@ -307,7 +343,8 @@ _progress_lock = threading.Lock()
 _progress_done = 0
 
 
-def save_item(num, classification, reason, app_name, problem_col, df, db_path, infer_ok):
+def save_item(num, classification, reason, app_name, problem_col, df, db_path, status):
+    """status: 0=成功, 1=未知问题, 2=失败"""
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout = 30000")
@@ -315,23 +352,23 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, i
         row = df.iloc[num - 1]
         problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
-        status_val = 1 if infer_ok else 0
-        if infer_ok and classification and classification[0] != "未知问题":
+        if status == 0 and classification and classification[0] != "未知问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
             fp = ".".join(filter(None, [l1, l2, l3]))
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status_val, app_name, l1, l2, l3, fp, reason, raw_json))
-        elif infer_ok:
+                           (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json))
+        elif status == 1:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status_val, app_name, "未知问题", "", "", "未知问题", reason, raw_json))
+                           (num, app_name, problem, status, app_name, "未知问题", "", "", "未知问题", reason, raw_json))
         else:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
-                           (num, app_name, problem, status_val, reason, raw_json))
+                           (num, app_name, problem, status, reason, raw_json))
         conn.commit()
         conn.close()
-        logger.info("行%d 入库成功, 分类: %s, 推理状态: %s", num, ".".join(classification) if classification else "无", "成功" if infer_ok else "失败")
+        status_label = {0: "成功", 1: "未知问题", 2: "失败"}
+        logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)
 
@@ -346,7 +383,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     if not valid_items:
         for item in batch:
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, False)
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2)
             results.append((item["num"], False))
         with _progress_lock:
             _progress_done += len(batch)
@@ -376,30 +413,35 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     if not isinstance(cls, list):
                         cls = ["未知问题"]
                         reason = "分类格式错误"
-                    infer_ok = cls[0] != "未知问题"
-                    save_item(num, cls, reason, app_name, problem_col, df, db_path, infer_ok)
-                    results.append((num, infer_ok))
+                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 2)
+                        results.append((num, 2))
+                    elif cls[0] == "未知问题":
+                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                        results.append((num, 1))
+                    else:
+                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                        results.append((num, 0))
                     logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
                 else:
-                    save_item(num, ["未知问题"], "批量结果中未找到该编号", app_name, problem_col, df, db_path, False)
-                    results.append((num, False))
+                    save_item(num, ["未知问题"], "批量结果中未找到该编号", app_name, problem_col, df, db_path, 2)
+                    results.append((num, 2))
                     logger.warning("行%d 批量结果中未找到", num)
         else:
             logger.warning("批量LLM推理返回JSON解析失败, 原始返回: %s", text[:300] if text else "空")
             for item in valid_items:
-                save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, False)
-                results.append((item["num"], False))
+                save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2)
+                results.append((item["num"], 2))
 
     except Exception as e:
         logger.error("批量LLM推理失败: %s", e)
         for item in valid_items:
-            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, False)
-            results.append((item["num"], False))
+            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2)
+            results.append((item["num"], 2))
 
     for item in batch:
         if not item["desc"].strip():
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, False)
-            results.append((item["num"], False))
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2)
+            results.append((item["num"], 2))
 
     with _progress_lock:
         _progress_done += len(batch)
@@ -487,8 +529,9 @@ def main():
         client = create_python_client(provider, api_key, base_url)
 
     total = len(all_data)
-    ok = 0
-    fail = 0
+    success = 0
+    unknown = 0
+    failed = 0
 
     batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
@@ -500,13 +543,15 @@ def main():
             for f in concurrent.futures.as_completed(futures):
                 try:
                     batch_results = f.result()
-                    for _, infer_ok in batch_results:
-                        if infer_ok:
-                            ok += 1
+                    for _, st in batch_results:
+                        if st == 0:
+                            success += 1
+                        elif st == 1:
+                            unknown += 1
                         else:
-                            fail += 1
+                            failed += 1
                 except Exception:
-                    fail += batch_size
+                    failed += batch_size
     finally:
         # 停止Node.js服务
         if runtime in ["node", "js"]:
@@ -515,9 +560,9 @@ def main():
     conn = sqlite3.connect(db_path)
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
-    status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
-    logger.info("分类完成: %d/%d条 (推理成功%d, 推理失败%d) | %s", ok + fail, len(all_data), ok, fail, status)
-    print(f"分类完成: {ok + fail}/{len(all_data)}条 (推理成功{ok}, 推理失败{fail}) | {status}")
+    db_status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
+    logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", success + unknown + failed, len(all_data), success, unknown, failed, db_status)
+    print(f"分类完成: {success + unknown + failed}/{len(all_data)}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
 
 if __name__ == "__main__":

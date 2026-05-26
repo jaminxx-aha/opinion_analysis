@@ -9,8 +9,15 @@
 """
 
 import sys
-import json
 import os
+import io
+
+# Windows下强制UTF-8输出
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+import json
 import sqlite3
 import re
 from datetime import datetime
@@ -40,8 +47,8 @@ def read_data_from_db(db_path: str) -> dict:
     details = []
     for r in rows:
         raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
-        status = r['status']
-        if status == 1 and r['level1'] and r['level1'] != '未知问题':
+        status = r['status']  # 0=成功, 1=未知问题, 2=失败
+        if status == 0 and r['level1'] and r['level1'] != '未知问题':
             summary["classified"] += 1
             details.append({
                 'input': r['problem'],
@@ -56,7 +63,7 @@ def read_data_from_db(db_path: str) -> dict:
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
-        elif status == 1 and r['level1'] == '未知问题':
+        elif status == 1:
             summary["unknown_issue"] += 1
             details.append({
                 'input': r['problem'],
@@ -71,7 +78,7 @@ def read_data_from_db(db_path: str) -> dict:
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
-        elif status == 0:
+        elif status == 2:
             summary["infer_failed"] += 1
             details.append({
                 'input': r['problem'],

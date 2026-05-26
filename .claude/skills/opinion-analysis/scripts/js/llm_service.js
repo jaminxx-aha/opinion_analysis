@@ -130,7 +130,7 @@ async function handleRequest(data) {
   }
 }
 
-// 主循环
+// 主循环 - 并发处理
 async function main() {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -138,23 +138,36 @@ async function main() {
     terminal: false
   });
 
-  // 每行一个JSON请求
-  for await (const line of rl) {
-    if (!line.trim()) continue;
+  // 每行一个JSON请求，立即发起异步LLM调用（不阻塞等待）
+  rl.on('line', async (line) => {
+    if (!line.trim()) return;
 
     try {
       const data = JSON.parse(line);
-      const response = await handleRequest(data);
-      // 输出JSON响应（每行一个）
-      process.stdout.write(JSON.stringify(response) + '\n');
+
+      // 结束信号
+      if (data.end) {
+        rl.close();
+        process.exit(0);
+        return;
+      }
+
+      // 立即发起异步调用，不等待
+      handleRequest(data).then(response => {
+        process.stdout.write(JSON.stringify(response) + '\n');
+      }).catch(error => {
+        process.stdout.write(JSON.stringify({ id: data.id, error: error.message }) + '\n');
+      });
+
     } catch (error) {
-      // 解析错误也返回响应
       process.stdout.write(JSON.stringify({ id: null, error: 'JSON解析失败: ' + error.message }) + '\n');
     }
-  }
+  });
 
   // stdin关闭时退出
-  process.exit(0);
+  rl.on('close', () => {
+    process.exit(0);
+  });
 }
 
 main().catch(error => {

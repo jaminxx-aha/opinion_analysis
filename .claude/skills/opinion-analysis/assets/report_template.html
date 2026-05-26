@@ -75,12 +75,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tbl-hdr .cnt { font-size: 12px; color: var(--text-secondary); }
 .tbl-scroll { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.tbl col:nth-child(1) { width: 48px; }
-.tbl col:nth-child(2) { width: 32%; }
+.tbl col:nth-child(1) { width: 36px; }
+.tbl col:nth-child(2) { width: 35%; }
 .tbl col:nth-child(3) { width: 20%; }
 .tbl col:nth-child(4) { width: auto; }
-.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
 .tbl td { font-size: 13px; padding: 9px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl td:first-child { text-align: left; }
+.tbl th:first-child { text-align: left; padding: 10px 4px 10px 20px; }
 .tbl tbody tr:hover { background: var(--primary-light); }
 .tbl tbody tr:last-child td { border-bottom: none; }
 
