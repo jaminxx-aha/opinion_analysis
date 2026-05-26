@@ -1,7 +1,7 @@
 ---
 name: opinion-analysis
 description: 分析Excel舆情数据，自动分类性能问题并生成交互式可视化HTML报告。当用户提供Excel舆情数据文件时触发。
-dependencies: python>=3.8, pandas>=1.5.0, openpyxl, openai, anthropic, python-dotenv | node>=18.0.0 (可选)
+dependencies: python>=3.8, pandas>=1.5.0, openpyxl, python-dotenv
 ---
 
 # 舆情分析技能
@@ -37,8 +37,7 @@ python <skill_path>/scripts/classify_data.py \
 
 - [references/apps/](references/apps/) — 各应用知识库
 - [assets/report_template.html](assets/report_template.html) — HTML报告模板
-- [scripts/js/llm_client.js](scripts/js/llm_client.js) — Node.js LLM客户端
-- [scripts/classify_data.py](scripts/classify_data.py) — 分类脚本
+- [scripts/classify_data.py](scripts/classify_data.py) — 分类脚本（原生urllib调用LLM）
 - [scripts/analyze_excel.py](scripts/analyze_excel.py) — Excel分析 + 报告生成
 - [scripts/config.py](scripts/config.py) — 配置与公共函数
 

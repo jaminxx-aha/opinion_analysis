@@ -46,21 +46,20 @@ python3 .claude/skills/opinion_analysis/scripts/analyze_excel.py 舆情数据示
 ```
 .claude/skills/opinion_analysis/
 ├── SKILL.md              # 技能说明文档
-├── apps/                 # 应用背景知识库
-│   ├── 抖音.md
-│   ├── 微信.md
-│   ├── 淘宝.md
-│   ├── 快手.md
-│   └── 小红书.md
-├── examples.md           # 分类推理示例
-├── taxonomy.md           # 分类体系定义
+├── references/apps/      # 应用背景知识库
+│   ├── 抖音/
+│   ├── 微信/
+│   ├── 淘宝/
+│   ├── 快手/
+│   └── 小红书/
+├── assets/               # 报告模板
 └── scripts/
-    ├── analyze_excel.py  # 数据处理脚本
-    └──generate_report.py # 报告生成脚本
+    ├── classify_data.py  # LLM分类脚本（原生urllib/SDK双模式）
+    ├── analyze_excel.py  # Excel分析+报告生成
+    ├── generate_report.py # 报告生成脚本
+    └── config.py         # 配置与公共函数
 
 test/                     # 测试数据
-├── 舆情数据示例.xlsx
-└── 舆情数据示例_10000.xlsx
 ```
 
 ## 分类输出
@@ -91,9 +90,11 @@ test/                     # 测试数据
 
 ## 依赖
 
-- Python 3.x
+- Python 3.8+
 - pandas
 - openpyxl
+- python-dotenv
+- 可选（SDK方式）：openai, anthropic
 
 ## 许可
 

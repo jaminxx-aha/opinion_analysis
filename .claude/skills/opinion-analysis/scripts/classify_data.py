@@ -10,7 +10,7 @@ classify_data.py - 使用LLM API自动分类舆情数据
 
 LLM配置从项目根目录.env自动加载:
   LLM_PROVIDER      API格式 (openai/anthropic)
-  LLM_RUNTIME       调用方式 (python/node)
+  LLM_RUNTIME       调用方式 (native/sdk, 默认native)
   LLM_MODEL         模型名称
   LLM_API_KEY       API密钥
   LLM_BASE_URL      API基础URL
@@ -24,7 +24,6 @@ import sys
 import os
 import io
 
-# Windows下强制UTF-8输出
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -33,12 +32,13 @@ import re
 import argparse
 import time
 import shutil
+import ssl
 import sqlite3
 import threading
 import logging
 import concurrent.futures
-import subprocess
-import uuid
+import urllib.request
+import urllib.error
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -125,12 +125,12 @@ def load_reference(app_name):
 def build_batch_prompt(app_name, items, refs):
     """构建批量分类prompt，items为[{num, desc}]列表"""
     problems_text = "\n".join([
-        f"[问题{i+1}] 编号:{item['num']}\n描述:{item['desc']}\n"
+        f"[问题{i+1}] {item['desc']}\n"
         for i, item in enumerate(items)
     ])
     return f"""你是一位专业的{app_name}应用性能问题分类专家，精通{app_name}的功能模块、页面结构和各类性能问题的表现特征。你需要根据用户反馈的问题描述，结合{app_name}的应用知识，逐层推导出最准确的分类。
 
-当前需要分类的{len(items)}个{app_name}舆情问题描述如下：
+当前需要分类的{"1个" if len(items) == 1 else f"{len(items)}个"}{app_name}舆情问题描述如下：
 
 ---DATA---
 {problems_text}
@@ -144,18 +144,14 @@ def build_batch_prompt(app_name, items, refs):
 【问题分类树】
 {refs.get('classification', '')}
 
-【分类推理示例】
+【分类推理示例】（注意：问题描述可能不含应用名，但已知为{app_name}的问题）
 {refs.get('examples', '')}
 
-逐层推导规则：
-如果无法推导出一级分类，返回["未知问题"]；无法推导出二级分类，返回["一级分类值"]；无法推导出三级分类，返回["一级分类值", "二级分类值"]。
-1. 分析问题描述，根据"应用描述"、"问题分类树"，结合"分类推理示例"，推理问题的一级分类
-2. 分析问题描述，根据"应用描述"、"问题分类树"，结合第一步推理出的一级分类下的二级分类，推理问题的二级分类
-3. 分析问题描述，根据"应用描述"、"问题分类树"，结合第二步推理出的二级分类下的三级分类，推理问题的三级分类
+推导规则：参照示例的推理方式逐层推导，无法推导的层级截断（如无法推导二级则只返回一级，无法推导三级则只返回到二级）；不属于性能问题的归为"未知问题"。
 
 必须按照以下json格式返回，不要返回多余数据，json格式被三个反引号分割
 ```
-[{{"num": 编号, "classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
+[{{"classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
 ```
 """
 
@@ -179,164 +175,113 @@ def extract_json(text):
     return None
 
 
-# ========== Node.js服务进程管理 ==========
+# ========== 原生HTTP LLM客户端 (urllib) ==========
 
-_node_service = None
-_response_thread = None
-_pending_responses = {}  # {request_id: {"event": threading.Event, "result": None, "error": None}}
-_response_lock = threading.Lock()
-
-
-def _response_reader():
-    """后台线程：持续读取Node.js服务的响应，分发给等待的线程"""
-    global _node_service, _pending_responses, _response_lock
-
-    while _node_service and _node_service.poll() is None:
-        try:
-            line = _node_service.stdout.readline()
-            if not line:
-                break
-
-            response = json.loads(line.strip())
-            request_id = response.get("id")
-
-            with _response_lock:
-                if request_id in _pending_responses:
-                    pending = _pending_responses[request_id]
-                    if response.get("error"):
-                        pending["error"] = response["error"]
-                    else:
-                        pending["result"] = response.get("result")
-                    pending["event"].set()
-
-        except json.JSONDecodeError:
-            logger.warning("响应JSON解析失败: %s", line[:100] if line else "空")
-        except Exception as e:
-            logger.error("响应读取异常: %s", e)
-            break
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
 
 
-def start_node_service():
-    """启动Node.js长运行服务进程和响应读取线程"""
-    global _node_service, _response_thread
-
-    js_script = os.path.join(SCRIPT_DIR, "js", "llm_service.js")
-    _node_service = subprocess.Popen(
-        ["node", js_script],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding='utf-8',
-        bufsize=1  # 行缓冲
-    )
-
-    # 启动后台响应读取线程
-    _response_thread = threading.Thread(target=_response_reader, daemon=True)
-    _response_thread.start()
-
-    logger.info("Node.js服务进程已启动, PID: %d, 响应读取线程已启动", _node_service.pid)
-    return _node_service
-
-
-def stop_node_service():
-    """停止Node.js服务进程"""
-    global _node_service, _response_thread
-
-    if _node_service and _node_service.poll() is None:
-        try:
-            # 发送结束信号
-            _node_service.stdin.write(json.dumps({"id": "end", "end": True}) + "\n")
-            _node_service.stdin.flush()
-            _node_service.wait(timeout=5)
-        except Exception:
-            _node_service.terminate()
-            _node_service.wait(timeout=3)
-        logger.info("Node.js服务进程已停止")
-
-
-def call_node_service(prompt, model, max_tokens, request_id=None, timeout=120):
-    """调用Node.js服务（真正并发）"""
-    global _node_service, _pending_responses, _response_lock
-
-    if request_id is None:
-        request_id = str(uuid.uuid4())
-
-    # 注册等待事件
-    event = threading.Event()
-    with _response_lock:
-        _pending_responses[request_id] = {"event": event, "result": None, "error": None}
-
-    request = {
-        "id": request_id,
-        "prompt": prompt,
+def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries):
+    base_url = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
+    headers = {"Content-Type": "application/json"}
+    body = {
         "model": model,
-        "maxTokens": max_tokens
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3
     }
 
-    try:
-        # 发送请求（无需锁，stdin写入是线程安全的）
-        _node_service.stdin.write(json.dumps(request) + "\n")
-        _node_service.stdin.flush()
-
-        # 等待响应（每个线程独立等待自己的event）
-        if not event.wait(timeout=timeout):
-            raise Exception(f"等待响应超时({timeout}s)")
-
-        # 获取结果
-        with _response_lock:
-            pending = _pending_responses.pop(request_id, {})
-
-        if pending.get("error"):
-            raise Exception(pending["error"])
-
-        return pending.get("result")
-
-    except Exception as e:
-        # 清理
-        with _response_lock:
-            _pending_responses.pop(request_id, None)
-        raise Exception(f"Node.js服务调用失败: {e}")
-
-
-# ========== Python SDK客户端 ==========
-
-def create_python_client(provider, api_key, base_url):
     if provider == "anthropic":
-        from anthropic import Anthropic
-        return Anthropic(api_key=api_key)
+        url = base_url + "/messages"
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
     else:
-        from openai import OpenAI
-        kwargs = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return OpenAI(**kwargs)
+        if base_url.endswith("/v1"):
+            url = base_url + "/chat/completions"
+        else:
+            url = base_url + "/v1/chat/completions"
+        headers["Authorization"] = f"Bearer {api_key}"
 
-
-def call_python_llm(client, provider, prompt, model, max_tokens, max_retries):
-    from openai import APITimeoutError
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
     for attempt in range(max_retries):
         try:
+            resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=120)
+            result = json.loads(resp.read().decode("utf-8"))
             if provider == "anthropic":
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=90.0)
-                # 过滤出文本块，跳过ThinkingBlock等其他类型
-                text_block = next((b for b in resp.content if hasattr(b, 'text')), None)
-                return text_block.text if text_block else ""
+                content = result.get("content", [])
+                text_item = next((c for c in content if c.get("type") == "text"), None)
+                return text_item.get("text", "") if text_item else ""
             else:
-                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=90.0)
-                return resp.choices[0].message.content
-        except APITimeoutError:
-            logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
+                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8", errors="replace")
+            logger.error("LLM API HTTP错误 %d: %s", e.code, error_body[:300])
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                raise Exception(f"API错误 {e.code}: {error_body[:300]}")
+        except urllib.error.URLError as e:
+            logger.error("LLM API连接错误: %s", e.reason)
             if attempt < max_retries - 1:
                 time.sleep(5)
             else:
                 raise
-        except Exception:
+        except Exception as e:
+            logger.error("LLM调用异常: %s", e)
             if attempt < max_retries - 1:
                 time.sleep(3)
             else:
                 raise
+
+
+# ========== Python SDK客户端 ==========
+
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries):
+    base_url = base_url.rstrip("/") if base_url else None
+
+    if provider == "anthropic":
+        from anthropic import Anthropic, APITimeoutError
+        client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
+        for attempt in range(max_retries):
+            try:
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=90.0)
+                text_block = next((b for b in resp.content if hasattr(b, 'text')), None)
+                return text_block.text if text_block else ""
+            except APITimeoutError:
+                logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
+                if attempt < max_retries - 1:
+                    time.sleep(5)
+                else:
+                    raise
+            except Exception:
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                else:
+                    raise
+    else:
+        from openai import OpenAI, APITimeoutError
+        kwargs = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        client = OpenAI(**kwargs)
+        for attempt in range(max_retries):
+            try:
+                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=90.0)
+                return resp.choices[0].message.content
+            except APITimeoutError:
+                logger.warning("LLM调用超时(90s), 第%d次重试", attempt + 1)
+                if attempt < max_retries - 1:
+                    time.sleep(5)
+                else:
+                    raise
+            except Exception:
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                else:
+                    raise
 
 
 _progress_lock = threading.Lock()
@@ -374,7 +319,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                  client, runtime, provider, model, max_tokens, max_retries, total):
+                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, total):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done
 
@@ -393,29 +338,70 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
         prompt = build_batch_prompt(app_name, valid_items, refs)
         logger.debug("批量开始LLM推理, 有效问题数: %d", len(valid_items))
 
-        # 根据runtime选择调用方式
-        if runtime in ["node", "js"]:
-            text = call_node_service(prompt, model, max_tokens)
-        else:
-            text = call_python_llm(client, provider, prompt, model, max_tokens, max_retries)
+        for parse_attempt in range(max_retries):
+            if runtime == "sdk":
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries)
+            else:
+                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries)
 
-        logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
+            logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
 
-        parsed = extract_json(text)
-        if parsed and isinstance(parsed, list):
-            parsed_map = {int(p.get("num", 0)): p for p in parsed if isinstance(p, dict)}
-            for item in valid_items:
+            parsed = extract_json(text)
+            if not parsed or not isinstance(parsed, list):
+                logger.warning("批量LLM推理返回JSON解析失败(第%d次), 原始返回: %s", parse_attempt + 1, text[:300] if text else "空")
+                if parse_attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue
+                else:
+                    for item in valid_items:
+                        save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2)
+                        results.append((item["num"], 2))
+                    break
+
+            format_errors = False
+            for p in parsed:
+                if not isinstance(p, dict):
+                    continue
+                cls = p.get("classification", ["未知问题"])
+                if not isinstance(cls, list):
+                    format_errors = True
+                    break
+
+            if format_errors:
+                logger.warning("批量LLM推理返回分类格式错误(第%d次)", parse_attempt + 1)
+                if parse_attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue
+                else:
+                    for i, item in enumerate(valid_items):
+                        num = item["num"]
+                        p = parsed[i] if i < len(parsed) and isinstance(parsed[i], dict) else None
+                        if p:
+                            cls = p.get("classification", ["未知问题"])
+                            reason = p.get("reason", "")
+                            if not isinstance(cls, list):
+                                save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2)
+                                results.append((num, 2))
+                            elif cls[0] == "未知问题":
+                                save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                                results.append((num, 1))
+                            else:
+                                save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                                results.append((num, 0))
+                            logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
+                        else:
+                            save_item(num, ["未知问题"], "批量结果数量不足", app_name, problem_col, df, db_path, 2)
+                            results.append((num, 2))
+                            logger.warning("行%d 批量结果数量不足", num)
+                    break
+
+            for i, item in enumerate(valid_items):
                 num = item["num"]
-                p = parsed_map.get(num)
+                p = parsed[i] if i < len(parsed) and isinstance(parsed[i], dict) else None
                 if p:
                     cls = p.get("classification", ["未知问题"])
-                    reason = p.get("reason", p.get("reasoning", ""))
-                    if not isinstance(cls, list):
-                        cls = ["未知问题"]
-                        reason = "分类格式错误"
-                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 2)
-                        results.append((num, 2))
-                    elif cls[0] == "未知问题":
+                    reason = p.get("reason", "")
+                    if cls[0] == "未知问题":
                         save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
                         results.append((num, 1))
                     else:
@@ -423,14 +409,10 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         results.append((num, 0))
                     logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
                 else:
-                    save_item(num, ["未知问题"], "批量结果中未找到该编号", app_name, problem_col, df, db_path, 2)
+                    save_item(num, ["未知问题"], "批量结果数量不足", app_name, problem_col, df, db_path, 2)
                     results.append((num, 2))
-                    logger.warning("行%d 批量结果中未找到", num)
-        else:
-            logger.warning("批量LLM推理返回JSON解析失败, 原始返回: %s", text[:300] if text else "空")
-            for item in valid_items:
-                save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2)
-                results.append((item["num"], 2))
+                    logger.warning("行%d 批量结果数量不足", num)
+            break
 
     except Exception as e:
         logger.error("批量LLM推理失败: %s", e)
@@ -455,8 +437,8 @@ def main():
     _load_env()
 
     # 从环境变量读取LLM配置
-    provider = os.environ.get("LLM_PROVIDER", "openai")  # API格式: openai/anthropic
-    runtime = os.environ.get("LLM_RUNTIME", "python")     # 调用方式: python/node
+    provider = os.environ.get("LLM_PROVIDER", "openai")
+    runtime = os.environ.get("LLM_RUNTIME", "native")
     model = os.environ.get("LLM_MODEL")
     api_key = os.environ.get("LLM_API_KEY")
     base_url = os.environ.get("LLM_BASE_URL")
@@ -521,13 +503,6 @@ def main():
 
     logger.info("共 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s", len(all_data), max_concurrent, batch_size, provider, runtime, model)
 
-    # 初始化客户端
-    client = None
-    if runtime in ["node", "js"]:
-        start_node_service()
-    else:
-        client = create_python_client(provider, api_key, base_url)
-
     total = len(all_data)
     success = 0
     unknown = 0
@@ -535,27 +510,22 @@ def main():
 
     batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       client, runtime, provider, model, max_tokens, max_retries, total): i
-                       for i, batch in enumerate(batches)}
-            for f in concurrent.futures.as_completed(futures):
-                try:
-                    batch_results = f.result()
-                    for _, st in batch_results:
-                        if st == 0:
-                            success += 1
-                        elif st == 1:
-                            unknown += 1
-                        else:
-                            failed += 1
-                except Exception:
-                    failed += batch_size
-    finally:
-        # 停止Node.js服务
-        if runtime in ["node", "js"]:
-            stop_node_service()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
+                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, total): i
+                   for i, batch in enumerate(batches)}
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                batch_results = f.result()
+                for _, st in batch_results:
+                    if st == 0:
+                        success += 1
+                    elif st == 1:
+                        unknown += 1
+                    else:
+                        failed += 1
+            except Exception:
+                failed += batch_size
 
     conn = sqlite3.connect(db_path)
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
