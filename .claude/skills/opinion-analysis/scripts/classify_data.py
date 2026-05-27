@@ -20,6 +20,7 @@ LLM配置从项目根目录.env自动加载:
   LLM_MAX_RETRIES   最大重试次数
   LLM_TIMEOUT      请求超时时间(秒, 默认120)
   LLM_VERIFY_SSL  SDK模式SSL校验(true/false, 默认true)
+  LLM_DISABLE_PROXY  SDK模式禁用代理(true/false, 默认false)
 """
 
 import sys
@@ -238,14 +239,14 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
 
 # ========== Python SDK客户端 ==========
 
-def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl):
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy = False):
     base_url = base_url.rstrip("/") if base_url else None
-
+    trust_env = not disable_proxy
     if provider == "anthropic":
         from anthropic import Anthropic, APITimeoutError
-        if not verify_ssl:
+        if not verify_ssl or disable_proxy:
             import httpx
-            http_client = httpx.Client(verify=False)
+            http_client = httpx.Client(verify=verify_ssl, trust_env=trust_env)
             client = Anthropic(api_key=api_key, base_url=base_url, http_client=http_client) if base_url else Anthropic(api_key=api_key, http_client=http_client)
         else:
             client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
@@ -270,9 +271,9 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
         kwargs = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
-        if not verify_ssl:
+        if not verify_ssl or disable_proxy:
             import httpx
-            kwargs["http_client"] = httpx.Client(verify=False)
+            kwargs["http_client"] = httpx.Client(verify=verify_ssl, trust_env=trust_env)
         client = OpenAI(**kwargs)
         for attempt in range(max_retries):
             try:
@@ -326,7 +327,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, total):
+                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done
 
@@ -347,7 +348,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
         for parse_attempt in range(max_retries):
             if runtime == "sdk":
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl)
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy)
             else:
                 text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout)
 
@@ -455,6 +456,7 @@ def main():
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
     timeout = int(os.environ.get("LLM_TIMEOUT", "120"))
     verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
+    disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
 
     if not api_key:
         logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
@@ -521,7 +523,7 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, total): i
+                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total): i
                    for i, batch in enumerate(batches)}
         for f in concurrent.futures.as_completed(futures):
             try:
