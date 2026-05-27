@@ -96,9 +96,7 @@ def init_db(db_path):
 
 
 def init_output_dir(excel_path, output_dir):
-    if os.path.isdir(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
     shutil.copy2(excel_path, os.path.join(output_dir, os.path.basename(excel_path)))
 
 
@@ -506,13 +504,20 @@ def main():
         filtered = list(range(len(df)))
         logger.info("总行数: %d (无应用名列筛选)", len(df))
 
-    all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
-                 for i in filtered]
-
     db_path = os.path.join(output_dir, "report.db")
     init_db(db_path)
 
-    logger.info("共 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s", len(all_data), max_concurrent, batch_size, provider, runtime, model)
+    conn = sqlite3.connect(db_path)
+    max_id = conn.execute("SELECT MAX(id) FROM report").fetchone()[0]
+    conn.close()
+    if max_id is None:
+        max_id = 0
+
+    all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+                 for i in filtered if (i + 1) > max_id]
+
+    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s",
+                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, runtime, model)
 
     total = len(all_data)
     success = 0
@@ -541,7 +546,8 @@ def main():
     conn = sqlite3.connect(db_path)
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
-    db_status = "验证通过" if cnt == len(all_data) else f"警告: DB {cnt}条, 期望 {len(all_data)}条"
+    total_all = len(filtered)
+    db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
     logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", success + unknown + failed, len(all_data), success, unknown, failed, db_status)
     print(f"分类完成: {success + unknown + failed}/{len(all_data)}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
