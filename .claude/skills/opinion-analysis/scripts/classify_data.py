@@ -29,8 +29,10 @@ import os
 import io
 
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    if hasattr(sys.stdout, 'buffer') and (not isinstance(sys.stdout, io.TextIOWrapper) or sys.stdout.encoding.lower() != 'utf-8'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if hasattr(sys.stderr, 'buffer') and (not isinstance(sys.stderr, io.TextIOWrapper) or sys.stderr.encoding.lower() != 'utf-8'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import json
 import re
 import argparse
@@ -181,7 +183,7 @@ _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
 
 
-def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout):
+def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, log_file=None):
     base_url = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
     headers = {"Content-Type": "application/json"}
     body = {
@@ -210,7 +212,7 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
         try:
             logger.info("LLM请求发送(原生), 尝试%d/%d", attempt + 1, max_retries)
             resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=timeout)
-            result = _read_stream(resp, provider)
+            result = _read_stream(resp, provider, log_file)
             logger.info("LLM响应接收完成(原生), 长度%d", len(result))
             return result
         except urllib.error.HTTPError as e:
@@ -234,25 +236,63 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
                 raise
 
 
-def _read_stream(resp, provider):
-    """读取SSE流式响应，拼接完整文本"""
+def _read_stream(resp, provider, log_file=None):
+    """读取SSE流式响应，拼接完整文本，流式打印到日志文件"""
     full_text = ""
+    log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
+    _wrote_reasoning_header = False
+    _wrote_content_header = False
+
     for raw_line in resp:
         line = raw_line.decode("utf-8", errors="replace").strip()
         if not line:
             continue
-        logger.debug("SSE原始行: %s", line[:200])
         if provider == "anthropic":
-            if line.startswith("event: content_block_delta"):
+            if line.startswith("event: content_block_start"):
                 next_raw = next(resp, None)
                 if next_raw:
                     next_line = next_raw.decode("utf-8", errors="replace").strip()
                     if next_line.startswith("data: "):
                         try:
-                            delta = json.loads(next_line[6:])
-                            text = delta.get("delta", {}).get("text", "")
-                            full_text += text
-                            logger.debug("Anthropic delta: %s", text[:100])
+                            block = json.loads(next_line[6:])
+                            block_type = block.get("content_block", {}).get("type", "")
+                            if log_fh:
+                                if block_type == "thinking" and not _wrote_reasoning_header:
+                                    log_fh.write("===== 思考过程 =====\n")
+                                    log_fh.flush()
+                                    _wrote_reasoning_header = True
+                                elif block_type == "text" and not _wrote_content_header:
+                                    log_fh.write("\n===== 返回内容 =====\n")
+                                    log_fh.flush()
+                                    _wrote_content_header = True
+                        except json.JSONDecodeError:
+                            continue
+            elif line.startswith("event: content_block_delta"):
+                next_raw = next(resp, None)
+                if next_raw:
+                    next_line = next_raw.decode("utf-8", errors="replace").strip()
+                    if next_line.startswith("data: "):
+                        try:
+                            delta_data = json.loads(next_line[6:])
+                            delta = delta_data.get("delta", {})
+                            delta_type = delta.get("type", "")
+                            if delta_type == "thinking_delta":
+                                thinking = delta.get("thinking", "")
+                                if log_fh:
+                                    if not _wrote_reasoning_header:
+                                        log_fh.write("===== 思考过程 =====\n")
+                                        _wrote_reasoning_header = True
+                                    log_fh.write(thinking)
+                                    log_fh.flush()
+                            else:
+                                text = delta.get("text", "")
+                                full_text += text
+                                if log_fh:
+                                    if not _wrote_content_header:
+                                        log_fh.write("\n===== 返回内容 =====\n")
+                                        _wrote_content_header = True
+                                    log_fh.write(text)
+                                    log_fh.flush()
                         except json.JSONDecodeError:
                             continue
         else:
@@ -268,19 +308,32 @@ def _read_stream(resp, provider):
                         reasoning = delta.get("reasoning_content") or ""
                         content = delta.get("content") or ""
                         if reasoning:
-                            logger.debug("思考delta: %s", reasoning[:100])
+                            if log_fh:
+                                if not _wrote_reasoning_header:
+                                    log_fh.write("===== 思考过程 =====\n")
+                                    _wrote_reasoning_header = True
+                                log_fh.write(reasoning)
+                                log_fh.flush()
                         if content:
                             full_text += content
-                            logger.debug("内容delta: %s", content[:100])
+                            if log_fh:
+                                if not _wrote_content_header:
+                                    log_fh.write("\n===== 返回内容 =====\n")
+                                    _wrote_content_header = True
+                                log_fh.write(content)
+                                log_fh.flush()
                 except json.JSONDecodeError:
                     continue
-    logger.debug("流式拼接完成, 总长度: %d", len(full_text))
+
+    if log_fh:
+        log_fh.close()
+
     return full_text
 
 
 # ========== Python SDK客户端 ==========
 
-def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy = False):
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy=False, log_file=None):
     base_url = base_url.rstrip("/") if base_url else None
     trust_env = not disable_proxy
     if provider == "anthropic":
@@ -295,11 +348,41 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
             try:
                 logger.info("LLM请求发送(Anthropic SDK), 尝试%d/%d", attempt + 1, max_retries)
                 resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=timeout, stream=True)
+                log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
+                _wrote_reasoning_header = False
+                _wrote_content_header = False
                 full_text = ""
                 for event in resp:
-                    if event.type == "content_block_delta":
-                        full_text += event.delta.text
-                        logger.debug("Anthropic SDK delta: %s", event.delta.text[:100])
+                    if event.type == "content_block_start":
+                        if log_fh:
+                            block_type = event.content_block.type
+                            if block_type == "thinking" and not _wrote_reasoning_header:
+                                log_fh.write("===== 思考过程 =====\n")
+                                log_fh.flush()
+                                _wrote_reasoning_header = True
+                            elif block_type == "text" and not _wrote_content_header:
+                                log_fh.write("\n===== 返回内容 =====\n")
+                                log_fh.flush()
+                                _wrote_content_header = True
+                    elif event.type == "content_block_delta":
+                        delta_type = event.delta.type
+                        if delta_type == "thinking_delta":
+                            if log_fh:
+                                if not _wrote_reasoning_header:
+                                    log_fh.write("===== 思考过程 =====\n")
+                                    _wrote_reasoning_header = True
+                                log_fh.write(event.delta.thinking)
+                                log_fh.flush()
+                        else:
+                            full_text += event.delta.text
+                            if log_fh:
+                                if not _wrote_content_header:
+                                    log_fh.write("\n===== 返回内容 =====\n")
+                                    _wrote_content_header = True
+                                log_fh.write(event.delta.text)
+                                log_fh.flush()
+                if log_fh:
+                    log_fh.close()
                 logger.debug("Anthropic SDK流式拼接完成, 总长度: %d", len(full_text))
                 logger.info("LLM响应接收完成(Anthropic SDK), 长度%d", len(full_text))
                 return full_text
@@ -327,6 +410,9 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
             try:
                 logger.info("LLM请求发送(OpenAI SDK), 尝试%d/%d", attempt + 1, max_retries)
                 stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=timeout, stream=True)
+                log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
+                _wrote_reasoning_header = False
+                _wrote_content_header = False
                 full_text = ""
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
@@ -334,10 +420,22 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
                         reasoning = getattr(delta, 'reasoning_content', None) or ""
                         content = delta.content or ""
                         if reasoning:
-                            logger.debug("思考delta: %s", reasoning[:100])
+                            if log_fh:
+                                if not _wrote_reasoning_header:
+                                    log_fh.write("===== 思考过程 =====\n")
+                                    _wrote_reasoning_header = True
+                                log_fh.write(reasoning)
+                                log_fh.flush()
                         if content:
                             full_text += content
-                            logger.debug("内容delta: %s", content[:100])
+                            if log_fh:
+                                if not _wrote_content_header:
+                                    log_fh.write("\n===== 返回内容 =====\n")
+                                    _wrote_content_header = True
+                                log_fh.write(content)
+                                log_fh.flush()
+                if log_fh:
+                    log_fh.close()
                 logger.debug("OpenAI SDK流式拼接完成, 总长度: %d", len(full_text))
                 logger.info("LLM响应接收完成(OpenAI SDK), 长度%d", len(full_text))
                 return full_text
@@ -356,6 +454,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
 
 _progress_lock = threading.Lock()
 _progress_done = 0
+_output_dir = ""
 
 
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status):
@@ -391,10 +490,14 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
                    runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total):
     """处理一批问题，batch为[{num, desc}]列表"""
-    global _progress_done
+    global _progress_done, _output_dir
 
     results = []
     valid_items = [item for item in batch if item["desc"].strip()]
+
+    start_num = batch[0]["num"]
+    end_num = batch[-1]["num"]
+    log_file = os.path.join(_output_dir, f"llm_{start_num}_{end_num}.log") if _output_dir else None
 
     if not valid_items:
         for item in batch:
@@ -410,9 +513,9 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
         for parse_attempt in range(max_retries):
             if runtime == "sdk":
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy)
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, log_file=log_file)
             else:
-                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout)
+                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, log_file=log_file)
 
             logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
 
@@ -584,6 +687,9 @@ def main():
 
     logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s",
                 len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, runtime, model)
+
+    global _output_dir
+    _output_dir = output_dir
 
     total = len(all_data)
     success = 0
