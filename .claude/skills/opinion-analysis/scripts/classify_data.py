@@ -20,6 +20,7 @@ LLM配置从项目根目录.env自动加载:
   LLM_MAX_RETRIES   最大重试次数
   LLM_TIMEOUT      请求超时时间(秒, 默认120)
   LLM_VERIFY_SSL  SDK模式SSL校验(true/false, 默认true)
+  LLM_LOG_LEVEL  日志等级(DEBUG/INFO/WARNING/ERROR, 默认INFO)
   LLM_DISABLE_PROXY  SDK模式禁用代理(true/false, 默认false)
 """
 
@@ -187,7 +188,8 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
         "model": model,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
+        "temperature": 0.3,
+        "stream": True
     }
 
     if provider == "anthropic":
@@ -206,14 +208,11 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
 
     for attempt in range(max_retries):
         try:
+            logger.info("LLM请求发送(原生), 尝试%d/%d", attempt + 1, max_retries)
             resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=timeout)
-            result = json.loads(resp.read().decode("utf-8"))
-            if provider == "anthropic":
-                content = result.get("content", [])
-                text_item = next((c for c in content if c.get("type") == "text"), None)
-                return text_item.get("text", "") if text_item else ""
-            else:
-                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            result = _read_stream(resp, provider)
+            logger.info("LLM响应接收完成(原生), 长度%d", len(result))
+            return result
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8", errors="replace")
             logger.error("LLM API HTTP错误 %d: %s", e.code, error_body[:300])
@@ -235,6 +234,50 @@ def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries
                 raise
 
 
+def _read_stream(resp, provider):
+    """读取SSE流式响应，拼接完整文本"""
+    full_text = ""
+    for raw_line in resp:
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if not line:
+            continue
+        logger.debug("SSE原始行: %s", line[:200])
+        if provider == "anthropic":
+            if line.startswith("event: content_block_delta"):
+                next_raw = next(resp, None)
+                if next_raw:
+                    next_line = next_raw.decode("utf-8", errors="replace").strip()
+                    if next_line.startswith("data: "):
+                        try:
+                            delta = json.loads(next_line[6:])
+                            text = delta.get("delta", {}).get("text", "")
+                            full_text += text
+                            logger.debug("Anthropic delta: %s", text[:100])
+                        except json.JSONDecodeError:
+                            continue
+        else:
+            if line.startswith("data: "):
+                payload = line[6:]
+                if payload == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload)
+                    choices = chunk.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        reasoning = delta.get("reasoning_content") or ""
+                        content = delta.get("content") or ""
+                        if reasoning:
+                            logger.debug("思考delta: %s", reasoning[:100])
+                        if content:
+                            full_text += content
+                            logger.debug("内容delta: %s", content[:100])
+                except json.JSONDecodeError:
+                    continue
+    logger.debug("流式拼接完成, 总长度: %d", len(full_text))
+    return full_text
+
+
 # ========== Python SDK客户端 ==========
 
 def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy = False):
@@ -250,9 +293,16 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
             client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
         for attempt in range(max_retries):
             try:
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=timeout)
-                text_block = next((b for b in resp.content if hasattr(b, 'text')), None)
-                return text_block.text if text_block else ""
+                logger.info("LLM请求发送(Anthropic SDK), 尝试%d/%d", attempt + 1, max_retries)
+                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=timeout, stream=True)
+                full_text = ""
+                for event in resp:
+                    if event.type == "content_block_delta":
+                        full_text += event.delta.text
+                        logger.debug("Anthropic SDK delta: %s", event.delta.text[:100])
+                logger.debug("Anthropic SDK流式拼接完成, 总长度: %d", len(full_text))
+                logger.info("LLM响应接收完成(Anthropic SDK), 长度%d", len(full_text))
+                return full_text
             except APITimeoutError:
                 logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
                 if attempt < max_retries - 1:
@@ -275,8 +325,22 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
         client = OpenAI(**kwargs)
         for attempt in range(max_retries):
             try:
-                resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=timeout)
-                return resp.choices[0].message.content
+                logger.info("LLM请求发送(OpenAI SDK), 尝试%d/%d", attempt + 1, max_retries)
+                stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=timeout, stream=True)
+                full_text = ""
+                for chunk in stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta:
+                        reasoning = getattr(delta, 'reasoning_content', None) or ""
+                        content = delta.content or ""
+                        if reasoning:
+                            logger.debug("思考delta: %s", reasoning[:100])
+                        if content:
+                            full_text += content
+                            logger.debug("内容delta: %s", content[:100])
+                logger.debug("OpenAI SDK流式拼接完成, 总长度: %d", len(full_text))
+                logger.info("LLM响应接收完成(OpenAI SDK), 长度%d", len(full_text))
+                return full_text
             except APITimeoutError:
                 logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
                 if attempt < max_retries - 1:
@@ -452,9 +516,11 @@ def main():
     max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "8192"))
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
-    timeout = int(os.environ.get("LLM_TIMEOUT", "120"))
+    timeout = int(os.environ.get("LLM_TIMEOUT", "60"))
     verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
     disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
+    log_level = os.environ.get("LLM_LOG_LEVEL", "INFO").upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     if not api_key:
         logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
