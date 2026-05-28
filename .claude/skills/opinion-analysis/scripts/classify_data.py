@@ -10,17 +10,16 @@ classify_data.py - 使用LLM API自动分类舆情数据
 
 LLM配置从项目根目录.env自动加载:
   LLM_PROVIDER      API格式 (openai/anthropic)
-  LLM_RUNTIME       调用方式 (native/sdk, 默认native)
   LLM_MODEL         模型名称
   LLM_API_KEY       API密钥
   LLM_BASE_URL      API基础URL
-  LLM_MAX_CONCURRENT 最大并发数
-  LLM_MAX_TOKENS    最大生成token
+  LLM_MAX_CONCURRENT 最大并发数(默认1)
+  LLM_MAX_TOKENS    最大生成token(默认1024)
   LLM_BATCH_SIZE    每次LLM调用处理的问题数(默认1)
   LLM_MAX_RETRIES   最大重试次数
-  LLM_TIMEOUT      请求超时时间(秒, 默认120)
+  LLM_TIMEOUT      请求超时时间(秒, 默认30)
   LLM_VERIFY_SSL  SDK模式SSL校验(true/false, 默认true)
-  LLM_LOG_LEVEL  日志等级(DEBUG/INFO/WARNING/ERROR, 默认INFO)
+  LLM_LOG_LEVEL  日志等级(DEBUG/INFO/WARNING/ERROR, 默认DEBUG)
   LLM_DISABLE_PROXY  SDK模式禁用代理(true/false, 默认false)
 """
 
@@ -38,13 +37,12 @@ import re
 import argparse
 import time
 import shutil
-import ssl
 import sqlite3
+
 import threading
 import logging
 import concurrent.futures
-import urllib.request
-import urllib.error
+
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -179,164 +177,9 @@ def extract_json(text):
     return None
 
 
-# ========== 原生HTTP LLM客户端 (urllib) ==========
-
-_ssl_ctx = ssl.create_default_context()
-_ssl_ctx.check_hostname = False
-_ssl_ctx.verify_mode = ssl.CERT_NONE
-
-
-def call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, log_file=None):
-    base_url = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
-    headers = {"Content-Type": "application/json"}
-    body = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-        "stream": True
-    }
-
-    if provider == "anthropic":
-        url = base_url + "/messages"
-        headers["x-api-key"] = api_key
-        headers["anthropic-version"] = "2023-06-01"
-    else:
-        if base_url.endswith("/v1"):
-            url = base_url + "/chat/completions"
-        else:
-            url = base_url + "/v1/chat/completions"
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-
-    for attempt in range(max_retries):
-        try:
-            logger.info("LLM请求发送(原生), 尝试%d/%d", attempt + 1, max_retries)
-            resp = urllib.request.urlopen(req, context=_ssl_ctx, timeout=timeout)
-            result = _read_stream(resp, provider, log_file)
-            logger.info("LLM响应接收完成(原生), 长度%d", len(result))
-            return result
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode("utf-8", errors="replace")
-            logger.error("LLM API HTTP错误 %d: %s", e.code, error_body[:300])
-            if attempt < max_retries - 1:
-                time.sleep(3)
-            else:
-                raise Exception(f"API错误 {e.code}: {error_body[:300]}")
-        except urllib.error.URLError as e:
-            logger.error("LLM API连接错误: %s", e.reason)
-            if attempt < max_retries - 1:
-                time.sleep(5)
-            else:
-                raise
-        except Exception as e:
-            logger.error("LLM调用异常: %s", e)
-            if attempt < max_retries - 1:
-                time.sleep(3)
-            else:
-                raise
-
-
-def _read_stream(resp, provider, log_file=None):
-    """读取SSE流式响应，拼接完整文本，流式打印到日志文件"""
-    full_text = ""
-    log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
-    _wrote_reasoning_header = False
-    _wrote_content_header = False
-
-    for raw_line in resp:
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line:
-            continue
-        if provider == "anthropic":
-            if line.startswith("event: content_block_start"):
-                next_raw = next(resp, None)
-                if next_raw:
-                    next_line = next_raw.decode("utf-8", errors="replace").strip()
-                    if next_line.startswith("data: "):
-                        try:
-                            block = json.loads(next_line[6:])
-                            block_type = block.get("content_block", {}).get("type", "")
-                            if log_fh:
-                                if block_type == "thinking" and not _wrote_reasoning_header:
-                                    log_fh.write("===== 思考过程 =====\n")
-                                    log_fh.flush()
-                                    _wrote_reasoning_header = True
-                                elif block_type == "text" and not _wrote_content_header:
-                                    log_fh.write("\n===== 返回内容 =====\n")
-                                    log_fh.flush()
-                                    _wrote_content_header = True
-                        except json.JSONDecodeError:
-                            continue
-            elif line.startswith("event: content_block_delta"):
-                next_raw = next(resp, None)
-                if next_raw:
-                    next_line = next_raw.decode("utf-8", errors="replace").strip()
-                    if next_line.startswith("data: "):
-                        try:
-                            delta_data = json.loads(next_line[6:])
-                            delta = delta_data.get("delta", {})
-                            delta_type = delta.get("type", "")
-                            if delta_type == "thinking_delta":
-                                thinking = delta.get("thinking", "")
-                                if log_fh:
-                                    if not _wrote_reasoning_header:
-                                        log_fh.write("===== 思考过程 =====\n")
-                                        _wrote_reasoning_header = True
-                                    log_fh.write(thinking)
-                                    log_fh.flush()
-                            else:
-                                text = delta.get("text", "")
-                                full_text += text
-                                if log_fh:
-                                    if not _wrote_content_header:
-                                        log_fh.write("\n===== 返回内容 =====\n")
-                                        _wrote_content_header = True
-                                    log_fh.write(text)
-                                    log_fh.flush()
-                        except json.JSONDecodeError:
-                            continue
-        else:
-            if line.startswith("data: "):
-                payload = line[6:]
-                if payload == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(payload)
-                    choices = chunk.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        reasoning = delta.get("reasoning_content") or ""
-                        content = delta.get("content") or ""
-                        if reasoning:
-                            if log_fh:
-                                if not _wrote_reasoning_header:
-                                    log_fh.write("===== 思考过程 =====\n")
-                                    _wrote_reasoning_header = True
-                                log_fh.write(reasoning)
-                                log_fh.flush()
-                        if content:
-                            full_text += content
-                            if log_fh:
-                                if not _wrote_content_header:
-                                    log_fh.write("\n===== 返回内容 =====\n")
-                                    _wrote_content_header = True
-                                log_fh.write(content)
-                                log_fh.flush()
-                except json.JSONDecodeError:
-                    continue
-
-    if log_fh:
-        log_fh.close()
-
-    return full_text
-
-
 # ========== Python SDK客户端 ==========
 
-def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy=False, log_file=None):
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy=False, log_file=None):
     base_url = base_url.rstrip("/") if base_url else None
     trust_env = not disable_proxy
     if provider == "anthropic":
@@ -347,59 +190,44 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
             client = Anthropic(api_key=api_key, base_url=base_url, http_client=http_client) if base_url else Anthropic(api_key=api_key, http_client=http_client)
         else:
             client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
-        for attempt in range(max_retries):
-            try:
-                logger.info("LLM请求发送(Anthropic SDK), 尝试%d/%d", attempt + 1, max_retries)
-                resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.3, timeout=timeout, stream=True)
-                log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
-                _wrote_reasoning_header = False
-                _wrote_content_header = False
-                full_text = ""
-                for event in resp:
-                    if event.type == "content_block_start":
-                        if log_fh:
-                            block_type = event.content_block.type
-                            if block_type == "thinking" and not _wrote_reasoning_header:
-                                log_fh.write("===== 思考过程 =====\n")
-                                log_fh.flush()
-                                _wrote_reasoning_header = True
-                            elif block_type == "text" and not _wrote_content_header:
-                                log_fh.write("\n===== 返回内容 =====\n")
-                                log_fh.flush()
-                                _wrote_content_header = True
-                    elif event.type == "content_block_delta":
-                        delta_type = event.delta.type
-                        if delta_type == "thinking_delta":
-                            if log_fh:
-                                if not _wrote_reasoning_header:
-                                    log_fh.write("===== 思考过程 =====\n")
-                                    _wrote_reasoning_header = True
-                                log_fh.write(event.delta.thinking)
-                                log_fh.flush()
-                        else:
-                            full_text += event.delta.text
-                            if log_fh:
-                                if not _wrote_content_header:
-                                    log_fh.write("\n===== 返回内容 =====\n")
-                                    _wrote_content_header = True
-                                log_fh.write(event.delta.text)
-                                log_fh.flush()
+        resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.7, timeout=timeout, stream=True)
+        log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
+        _wrote_reasoning_header = False
+        _wrote_content_header = False
+        full_text = ""
+        for event in resp:
+            if event.type == "content_block_start":
                 if log_fh:
-                    log_fh.close()
-                logger.debug("Anthropic SDK流式拼接完成, 总长度: %d", len(full_text))
-                logger.info("LLM响应接收完成(Anthropic SDK), 长度%d", len(full_text))
-                return full_text
-            except APITimeoutError:
-                logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
-                if attempt < max_retries - 1:
-                    time.sleep(5)
+                    block_type = event.content_block.type
+                    if block_type == "thinking" and not _wrote_reasoning_header:
+                        log_fh.write("===== 思考过程 =====\n")
+                        log_fh.flush()
+                        _wrote_reasoning_header = True
+                    elif block_type == "text" and not _wrote_content_header:
+                        log_fh.write("\n===== 返回内容 =====\n")
+                        log_fh.flush()
+                        _wrote_content_header = True
+            elif event.type == "content_block_delta":
+                delta_type = event.delta.type
+                if delta_type == "thinking_delta":
+                    if log_fh:
+                        if not _wrote_reasoning_header:
+                            log_fh.write("===== 思考过程 =====\n")
+                            _wrote_reasoning_header = True
+                        log_fh.write(event.delta.thinking)
+                        log_fh.flush()
                 else:
-                    raise
-            except Exception:
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                else:
-                    raise
+                    full_text += event.delta.text
+                    if log_fh:
+                        if not _wrote_content_header:
+                            log_fh.write("\n===== 返回内容 =====\n")
+                            _wrote_content_header = True
+                        log_fh.write(event.delta.text)
+                        log_fh.flush()
+        if log_fh:
+            log_fh.close()
+        logger.info("LLM响应接收完成(Anthropic SDK), 长度%d", len(full_text))
+        return full_text
     else:
         from openai import OpenAI, APITimeoutError
         kwargs = {"api_key": api_key}
@@ -409,50 +237,35 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_ret
             import httpx
             kwargs["http_client"] = httpx.Client(verify=verify_ssl, trust_env=trust_env)
         client = OpenAI(**kwargs)
-        for attempt in range(max_retries):
-            try:
-                logger.info("LLM请求发送(OpenAI SDK), 尝试%d/%d", attempt + 1, max_retries)
-                stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.3, timeout=timeout, stream=True)
-                log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
-                _wrote_reasoning_header = False
-                _wrote_content_header = False
-                full_text = ""
-                for chunk in stream:
-                    delta = chunk.choices[0].delta if chunk.choices else None
-                    if delta:
-                        reasoning = getattr(delta, 'reasoning_content', None) or ""
-                        content = delta.content or ""
-                        if reasoning:
-                            if log_fh:
-                                if not _wrote_reasoning_header:
-                                    log_fh.write("===== 思考过程 =====\n")
-                                    _wrote_reasoning_header = True
-                                log_fh.write(reasoning)
-                                log_fh.flush()
-                        if content:
-                            full_text += content
-                            if log_fh:
-                                if not _wrote_content_header:
-                                    log_fh.write("\n===== 返回内容 =====\n")
-                                    _wrote_content_header = True
-                                log_fh.write(content)
-                                log_fh.flush()
-                if log_fh:
-                    log_fh.close()
-                logger.debug("OpenAI SDK流式拼接完成, 总长度: %d", len(full_text))
-                logger.info("LLM响应接收完成(OpenAI SDK), 长度%d", len(full_text))
-                return full_text
-            except APITimeoutError:
-                logger.warning("LLM调用超时(%ds), 第%d次重试", int(timeout), attempt + 1)
-                if attempt < max_retries - 1:
-                    time.sleep(5)
-                else:
-                    raise
-            except Exception:
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                else:
-                    raise
+        stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.7, timeout=timeout, stream=True)
+        log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
+        _wrote_reasoning_header = False
+        _wrote_content_header = False
+        full_text = ""
+        for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta:
+                reasoning = getattr(delta, 'reasoning_content', None) or ""
+                content = delta.content or ""
+                if reasoning:
+                    if log_fh:
+                        if not _wrote_reasoning_header:
+                            log_fh.write("===== 思考过程 =====\n")
+                            _wrote_reasoning_header = True
+                        log_fh.write(reasoning)
+                        log_fh.flush()
+                if content:
+                    full_text += content
+                    if log_fh:
+                        if not _wrote_content_header:
+                            log_fh.write("\n===== 返回内容 =====\n")
+                            _wrote_content_header = True
+                        log_fh.write(content)
+                        log_fh.flush()
+        if log_fh:
+            log_fh.close()
+        logger.info("LLM响应接收完成(OpenAI SDK), 长度%d", len(full_text))
+        return full_text
 
 
 _progress_lock = threading.Lock()
@@ -491,7 +304,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total):
+                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done, _output_dir
 
@@ -514,18 +327,26 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
         prompt = build_batch_prompt(app_name, valid_items, refs)
         logger.debug("批量开始LLM推理, 有效问题数: %d", len(valid_items))
 
-        for parse_attempt in range(max_retries):
-            if runtime == "sdk":
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, log_file=log_file)
-            else:
-                text = call_llm(prompt, provider, api_key, base_url, model, max_tokens, max_retries, timeout, log_file=log_file)
-
-            logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
+        for attempt in range(max_retries):
+            try:
+                logger.info("LLM请求发送, 第%d/%d次", attempt + 1, max_retries)
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy, log_file=log_file)
+                logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
+            except Exception as e:
+                logger.warning("LLM调用失败(第%d/%d次): %s", attempt + 1, max_retries, e)
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue
+                else:
+                    for item in valid_items:
+                        save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2)
+                        results.append((item["num"], 2))
+                    break
 
             parsed = extract_json(text)
             if not parsed or not isinstance(parsed, list):
-                logger.warning("批量LLM推理返回JSON解析失败(第%d次), 原始返回: %s", parse_attempt + 1, text[:300] if text else "空")
-                if parse_attempt < max_retries - 1:
+                logger.warning("JSON解析失败(第%d/%d次), 原始返回: %s", attempt + 1, max_retries, text[:300] if text else "空")
+                if attempt < max_retries - 1:
                     time.sleep(3)
                     continue
                 else:
@@ -544,8 +365,8 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     break
 
             if format_errors:
-                logger.warning("批量LLM推理返回分类格式错误(第%d次)", parse_attempt + 1)
-                if parse_attempt < max_retries - 1:
+                logger.warning("分类格式错误(第%d/%d次)", attempt + 1, max_retries)
+                if attempt < max_retries - 1:
                     time.sleep(3)
                     continue
                 else:
@@ -604,7 +425,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     with _progress_lock:
         _progress_done += len(batch)
         pct = _progress_done * 100 // total
-        logger.debug("[%3d%%] 批量完成 %d条", pct, len(batch))
+        logger.info("[%3d%%] 已完成第%d-%d条 (%d/%d)", pct, start_num, end_num, _progress_done, total)
 
     return results
 
@@ -614,18 +435,17 @@ def main():
 
     # 从环境变量读取LLM配置
     provider = os.environ.get("LLM_PROVIDER", "openai")
-    runtime = os.environ.get("LLM_RUNTIME", "native")
     model = os.environ.get("LLM_MODEL")
     api_key = os.environ.get("LLM_API_KEY")
     base_url = os.environ.get("LLM_BASE_URL")
-    max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "5"))
-    max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "8192"))
+    max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
+    max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
-    timeout = int(os.environ.get("LLM_TIMEOUT", "60"))
+    timeout = int(os.environ.get("LLM_TIMEOUT", "30"))
     verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
     disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
-    log_level = os.environ.get("LLM_LOG_LEVEL", "INFO").upper()
+    log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     if not api_key:
@@ -688,8 +508,8 @@ def main():
     all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                  for i in filtered if (i + 1) > max_id]
 
-    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, runtime=%s, model=%s",
-                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, runtime, model)
+    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s",
+                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model)
 
     global _output_dir
     _output_dir = output_dir
@@ -703,7 +523,7 @@ def main():
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                   runtime, provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total): i
+                                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total): i
                    for i, batch in enumerate(batches)}
         for f in concurrent.futures.as_completed(futures):
             try:

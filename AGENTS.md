@@ -9,7 +9,7 @@ This is a **Claude Code skill** repository, not a standard application. The core
 - Skill definition: `.claude/skills/opinion-analysis/SKILL.md`
 - Scripts: `.claude/skills/opinion-analysis/scripts/` — `classify_data.py` (LLM分类, 含init+verify), `analyze_excel.py` (info+report), `generate_report.py`, `config.py`
 - Per-app knowledge bases: `.claude/skills/opinion-analysis/references/apps/{抖音,微信,淘宝,快手,小红书}/`
-- LLM config: `.env` (gitignored) — LLM_PROVIDER, LLM_RUNTIME(native/sdk), LLM_MODEL, LLM_API_KEY, LLM_BASE_URL
+- LLM config: `.env` (gitignored) — LLM_PROVIDER, LLM_MODEL, LLM_API_KEY, LLM_BASE_URL
 - Test data: `test/` | Output (gitignored): `output/`
 
 ## Dependencies
@@ -25,7 +25,7 @@ Python 3.8+, pandas, openpyxl, python-dotenv. SDK方式额外需要: openai, ant
 ## classify_data.py details
 
 - Each item: 1 LLM call → 1 DB INSERT, no intermediate files
-- LLM client: native=urllib.request (零外部依赖, 跳过SSL校验适配内网), sdk=openai/anthropic SDK
+- LLM client: openai/anthropic SDK
 - Empty descriptions skipped with "空描述" status
 - Progress shown with percentage counter
 - LLM config from `.env` (priority: CLI args > env vars > .env)
