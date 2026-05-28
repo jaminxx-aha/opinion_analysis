@@ -270,6 +270,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
 
 _progress_lock = threading.Lock()
 _progress_done = 0
+_progress_base = 0
 _output_dir = ""
 
 
@@ -313,7 +314,12 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     start_num = batch[0]["num"]
     end_num = batch[-1]["num"]
-    log_file = os.path.join(_output_dir, "log", f"llm_{start_num}_{end_num}.log") if _output_dir else None
+    if start_num == end_num:
+        batch_label = f"{start_num}"
+        log_file = os.path.join(_output_dir, "log", f"llm_{start_num}.log") if _output_dir else None
+    else:
+        batch_label = f"{start_num}-{end_num}"
+        log_file = os.path.join(_output_dir, "log", f"llm_{start_num}_{end_num}.log") if _output_dir else None
 
     if not valid_items:
         for item in batch:
@@ -424,8 +430,8 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     with _progress_lock:
         _progress_done += len(batch)
-        pct = _progress_done * 100 // total
-        logger.info("[%3d%%] 已完成第%d-%d条 (%d/%d)", pct, start_num, end_num, _progress_done, total)
+        pct = (_progress_base + _progress_done) * 100 // (_progress_base + total)
+        logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, batch_label, _progress_base + _progress_done, _progress_base + total)
 
     return results
 
@@ -511,40 +517,53 @@ def main():
     logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s",
                 len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model)
 
-    global _output_dir
+    global _output_dir, _progress_base
     _output_dir = output_dir
+    _progress_base = max_id
 
     total = len(all_data)
+    total_all = len(filtered)
     success = 0
     unknown = 0
     failed = 0
 
     batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total): i
-                   for i, batch in enumerate(batches)}
-        for f in concurrent.futures.as_completed(futures):
-            try:
-                batch_results = f.result()
-                for _, st in batch_results:
-                    if st == 0:
-                        success += 1
-                    elif st == 1:
-                        unknown += 1
-                    else:
-                        failed += 1
-            except Exception:
-                failed += batch_size
+    if max_concurrent == 1:
+        for batch in batches:
+            batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
+                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total_all)
+            for _, st in batch_results:
+                if st == 0:
+                    success += 1
+                elif st == 1:
+                    unknown += 1
+                else:
+                    failed += 1
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
+                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total_all): i
+                       for i, batch in enumerate(batches)}
+            for f in concurrent.futures.as_completed(futures):
+                try:
+                    batch_results = f.result()
+                    for _, st in batch_results:
+                        if st == 0:
+                            success += 1
+                        elif st == 1:
+                            unknown += 1
+                        else:
+                            failed += 1
+                except Exception:
+                    failed += batch_size
 
     conn = sqlite3.connect(db_path)
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
-    total_all = len(filtered)
     db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
-    logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", success + unknown + failed, len(all_data), success, unknown, failed, db_status)
-    print(f"分类完成: {success + unknown + failed}/{len(all_data)}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
+    logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", max_id + success + unknown + failed, total_all, success, unknown, failed, db_status)
+    print(f"分类完成: {max_id + success + unknown + failed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
     # 分类完成后自动生成报告
     from analyze_excel import generate_report
