@@ -18,6 +18,7 @@ LLM配置从项目根目录.env自动加载:
   LLM_BATCH_SIZE    每次LLM调用处理的问题数(默认1)
   LLM_MAX_RETRIES   最大重试次数
   LLM_TIMEOUT      请求超时时间(秒, 默认30)
+  LLM_TEMPERATURE  生成温度(默认0.7)
   LLM_VERIFY_SSL  SDK模式SSL校验(true/false, 默认true)
   LLM_LOG_LEVEL  日志等级(DEBUG/INFO/WARNING/ERROR, 默认DEBUG)
   LLM_DISABLE_PROXY  SDK模式禁用代理(true/false, 默认false)
@@ -179,7 +180,7 @@ def extract_json(text):
 
 # ========== Python SDK客户端 ==========
 
-def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy=False, log_file=None):
+def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy=False, temperature=0.7, log_file=None):
     base_url = base_url.rstrip("/") if base_url else None
     trust_env = not disable_proxy
     if provider == "anthropic":
@@ -190,7 +191,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
             client = Anthropic(api_key=api_key, base_url=base_url, http_client=http_client) if base_url else Anthropic(api_key=api_key, http_client=http_client)
         else:
             client = Anthropic(api_key=api_key, base_url=base_url) if base_url else Anthropic(api_key=api_key)
-        resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=0.7, timeout=timeout, stream=True)
+        resp = client.messages.create(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}], temperature=temperature, timeout=timeout, stream=True)
         log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
         _wrote_reasoning_header = False
         _wrote_content_header = False
@@ -237,7 +238,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
             import httpx
             kwargs["http_client"] = httpx.Client(verify=verify_ssl, trust_env=trust_env)
         client = OpenAI(**kwargs)
-        stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=0.7, timeout=timeout, stream=True)
+        stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=temperature, timeout=timeout, stream=True)
         log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
         _wrote_reasoning_header = False
         _wrote_content_header = False
@@ -305,7 +306,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total):
+                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done, _output_dir
 
@@ -316,10 +317,14 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     end_num = batch[-1]["num"]
     if start_num == end_num:
         batch_label = f"{start_num}"
-        log_file = os.path.join(_output_dir, "log", f"llm_{start_num}.log") if _output_dir else None
+        log_base = f"llm_{start_num}"
     else:
         batch_label = f"{start_num}-{end_num}"
-        log_file = os.path.join(_output_dir, "log", f"llm_{start_num}_{end_num}.log") if _output_dir else None
+        log_base = f"llm_{start_num}_{end_num}"
+
+    def _log_file(attempt):
+        suffix = f"_retry{attempt + 1}" if attempt > 0 else ""
+        return os.path.join(_output_dir, "log", f"{log_base}{suffix}.log") if _output_dir else None
 
     if not valid_items:
         for item in batch:
@@ -336,7 +341,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
         for attempt in range(max_retries):
             try:
                 logger.info("LLM请求发送, 第%d/%d次", attempt + 1, max_retries)
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy, log_file=log_file)
+                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy, temperature=temperature, log_file=_log_file(attempt))
                 logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
             except Exception as e:
                 logger.warning("LLM调用失败(第%d/%d次): %s", attempt + 1, max_retries, e)
@@ -449,6 +454,7 @@ def main():
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
     timeout = int(os.environ.get("LLM_TIMEOUT", "30"))
+    temperature = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
     verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
     disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
@@ -514,8 +520,8 @@ def main():
     all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                  for i in filtered if (i + 1) > max_id]
 
-    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s",
-                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model)
+    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model, temperature)
 
     global _output_dir, _progress_base
     _output_dir = output_dir
@@ -532,7 +538,7 @@ def main():
     if max_concurrent == 1:
         for batch in batches:
             batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total_all)
+                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total_all)
             for _, st in batch_results:
                 if st == 0:
                     success += 1
@@ -543,7 +549,7 @@ def main():
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, total_all): i
+                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total_all): i
                        for i, batch in enumerate(batches)}
             for f in concurrent.futures.as_completed(futures):
                 try:
