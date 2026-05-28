@@ -100,11 +100,14 @@ def init_db(db_path):
 
 def init_output_dir(excel_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.path.join(output_dir, "log"), exist_ok=True)
     shutil.copy2(excel_path, os.path.join(output_dir, os.path.basename(excel_path)))
 
 
 def setup_logging(output_dir):
-    log_path = os.path.join(output_dir, "report.log")
+    log_dir = os.path.join(output_dir, "log")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "report.log")
     handler = logging.FileHandler(log_path, encoding="utf-8", mode="a")
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
@@ -497,7 +500,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     start_num = batch[0]["num"]
     end_num = batch[-1]["num"]
-    log_file = os.path.join(_output_dir, f"llm_{start_num}_{end_num}.log") if _output_dir else None
+    log_file = os.path.join(_output_dir, "log", f"llm_{start_num}_{end_num}.log") if _output_dir else None
 
     if not valid_items:
         for item in batch:

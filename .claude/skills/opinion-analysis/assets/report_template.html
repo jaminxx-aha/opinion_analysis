@@ -87,7 +87,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tbl tbody tr:last-child td { border-bottom: none; }
 
 /* table content helpers */
-.prob { color: var(--primary); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prob { color: var(--primary); cursor: pointer; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
 .prob:hover { text-decoration: underline; }
 .cls { font-size: 13px; }
 .cls .c { color: var(--primary); cursor: pointer; font-weight: 500; }
