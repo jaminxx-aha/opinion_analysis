@@ -148,6 +148,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 </div>
 
 <div class="toolbar">
+  <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option></select>
   <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
   <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
   <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
@@ -192,6 +193,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 <script>
 const allData = JSON.parse(document.getElementById('report-data').textContent);
 let filters = { level1: "", level2: "", level3: "" };
+let depthFilter = "";
 let searchText = "";
 let charts = {};
 let chartsVisible = true;
@@ -232,8 +234,9 @@ function fillSelect(id, options) {
 
 function getFilteredData() {
   return allData.filter(item => {
-    if (item.status === "infer_failed") return true;
+    if (item.status === "infer_failed") return !depthFilter;
     if (item.status === "unknown_issue") {
+      if (depthFilter) return false;
       if (filters.level1 === "未知问题") return true;
       if (filters.level1 || filters.level2 || filters.level3) return false;
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
@@ -241,6 +244,10 @@ function getFilteredData() {
     }
     if (item.status === "classified") {
       const cls = item.classification;
+      if (depthFilter) {
+        const d = cls.level3 ? 3 : (cls.level2 ? 2 : 1);
+        if (d !== parseInt(depthFilter)) return false;
+      }
       if (filters.level1 && cls.level1 !== filters.level1) return false;
       if (filters.level2 && cls.level2 !== filters.level2) return false;
       if (filters.level3 && cls.level3 !== filters.level3) return false;
@@ -283,10 +290,13 @@ function onFilterChange(src) {
 
 function onSearch() { searchText = document.getElementById("search-input").value; currentPage = 1; updateAll(); }
 
+function onDepthChange() { depthFilter = document.getElementById("filter-depth").value; currentPage = 1; updateAll(); }
+
 function clearFilters() {
-  filters = { level1: "", level2: "", level3: "" }; searchText = "";
+  filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = "";
   fillSelect("filter-level1", getAllOptions().level1s);
   document.getElementById("filter-level1").value = "";
+  document.getElementById("filter-depth").value = "";
   const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
   const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
   document.getElementById("search-input").value = "";
@@ -301,8 +311,9 @@ function toggleCharts() {
 
 function updateBreadcrumb() {
   const el = document.getElementById("filter-path");
-  if (!filters.level1 && !filters.level2 && !filters.level3 && !searchText) { el.innerHTML = ""; return; }
+  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
+  if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
   if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");
   if (filters.level3) ps.push("<span class='p' onclick='clearLevel(3)'>" + filters.level3 + "</span>");
