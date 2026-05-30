@@ -313,14 +313,13 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     results = []
     valid_items = [item for item in batch if item["desc"].strip()]
 
-    start_num = batch[0]["num"]
-    end_num = batch[-1]["num"]
-    if start_num == end_num:
-        batch_label = f"{start_num}"
-        log_base = f"response_{start_num}"
+    nums = [it["num"] for it in batch]
+    if len(nums) == 1:
+        batch_label = str(nums[0])
+        log_base = f"response_{nums[0]}"
     else:
-        batch_label = f"{start_num}-{end_num}"
-        log_base = f"response_{start_num}_{end_num}"
+        batch_label = ",".join(str(n) for n in nums)
+        log_base = f"response_{'_'.join(str(n) for n in nums)}"
 
     def _log_file(attempt):
         suffix = f"_retry{attempt + 1}" if attempt > 0 else ""
