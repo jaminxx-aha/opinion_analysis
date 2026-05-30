@@ -35,9 +35,9 @@ python <skill_path>/scripts/classify_data.py \
 
 **执行时间过长时**：分类脚本会持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志文件 `<output_dir>/report.log` 分析原因（如API超时、连接失败等）。
 
-### 步骤3：重试失败或遗漏的数据
+### 步骤3：重试失败或未知问题的数据
 
-多并发场景下脚本中断会导致数据库行缺失，或因超时、解析错误等原因产生推理失败（status=2）和未知问题（status=1）的数据。使用 `--retry` 参数重新推理这些数据：
+因超时、解析错误等原因产生推理失败，或分类为未知问题的数据，可使用 `--retry` 参数重新推理：
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
@@ -49,9 +49,8 @@ python <skill_path>/scripts/classify_data.py \
 
 | 模式 | 重试范围 |
 |------|----------|
-| `failed` | 缺失行（数据库id不连续） + 推理失败（status=2） |
-| `unknown` | 缺失行 + 未知问题（status=1） — 适用于换模型或更新知识库后重新分类 |
-| `all` | 缺失行 + 未知问题 + 推理失败（全部非成功数据） |
+| `failed` | 推理失败|
+| `unknown` | 未知问题 — 适用于换模型或更新知识库后重新分类 |
 
 不带 `--retry` 时为续跑模式，从数据库最大id之后继续处理。
 

@@ -472,8 +472,8 @@ def main():
     parser.add_argument("--problem-index", type=int, required=True)
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--retry", choices=["failed", "unknown", "all"], default=None,
-                        help="重试模式: failed=失败+缺失行, unknown=未知问题+缺失行, all=全部非成功+缺失行")
+    parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
+                        help="重试模式: failed=重试失败数据, unknown=重试未知问题数据")
     args = parser.parse_args()
 
     app_name = args.app_name
@@ -518,11 +518,12 @@ def main():
     global _output_dir, _progress_base
 
     if args.retry:
-        # 重试模式: 找出缺失行和指定状态的行
+        # 重试模式: 找出指定状态及缺失的行
         existing = dict(conn.execute("SELECT id, status FROM report").fetchall())
         retry_ids = set()
         missing_count = 0
-        status_count = {1: 0, 2: 0}
+        failed_count = 0
+        unknown_count = 0
         for i in filtered:
             row_id = i + 1
             if row_id not in existing:
@@ -530,20 +531,17 @@ def main():
                 missing_count += 1
             elif args.retry == "failed" and existing[row_id] == 2:
                 retry_ids.add(row_id)
-                status_count[2] += 1
+                failed_count += 1
             elif args.retry == "unknown" and existing[row_id] == 1:
                 retry_ids.add(row_id)
-                status_count[1] += 1
-            elif args.retry == "all" and existing[row_id] in (1, 2):
-                retry_ids.add(row_id)
-                status_count[existing[row_id]] += 1
+                unknown_count += 1
         conn.close()
 
         all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) in retry_ids]
 
-        logger.info("重试模式(%s): 缺失%d条, 状态1=%d条, 状态2=%d条, 共需重试%d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                    args.retry, missing_count, status_count[1], status_count[2], len(all_data), max_concurrent, batch_size, provider, model, temperature)
+        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                    args.retry, failed_count, unknown_count, missing_count, len(all_data), max_concurrent, batch_size, provider, model, temperature)
 
         _output_dir = output_dir
         _progress_base = 0
