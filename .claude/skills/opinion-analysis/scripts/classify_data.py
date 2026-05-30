@@ -366,6 +366,17 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         results.append((item["num"], 2))
                     break
 
+            if len(parsed) != len(valid_items):
+                logger.warning("结果数量不一致(第%d/%d次): 期望%d条, 返回%d条", attempt + 1, max_retries, len(valid_items), len(parsed))
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue
+                else:
+                    for item in valid_items:
+                        save_item(item["num"], ["未知问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2)
+                        results.append((item["num"], 2))
+                    break
+
             format_errors = False
             for p in parsed:
                 if not isinstance(p, dict):
@@ -383,43 +394,33 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                 else:
                     for i, item in enumerate(valid_items):
                         num = item["num"]
-                        p = parsed[i] if i < len(parsed) and isinstance(parsed[i], dict) else None
-                        if p:
-                            cls = p.get("classification", ["未知问题"])
-                            reason = p.get("reason", "")
-                            if not isinstance(cls, list):
-                                save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2)
-                                results.append((num, 2))
-                            elif cls[0] == "未知问题":
-                                save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
-                                results.append((num, 1))
-                            else:
-                                save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
-                                results.append((num, 0))
-                            logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
-                        else:
-                            save_item(num, ["未知问题"], "批量结果数量不足", app_name, problem_col, df, db_path, 2)
+                        p = parsed[i]
+                        cls = p.get("classification", ["未知问题"])
+                        reason = p.get("reason", "")
+                        if not isinstance(cls, list):
+                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2)
                             results.append((num, 2))
-                            logger.warning("行%d 批量结果数量不足", num)
+                        elif cls[0] == "未知问题":
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                            results.append((num, 1))
+                        else:
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                            results.append((num, 0))
+                        logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
                     break
 
             for i, item in enumerate(valid_items):
                 num = item["num"]
-                p = parsed[i] if i < len(parsed) and isinstance(parsed[i], dict) else None
-                if p:
-                    cls = p.get("classification", ["未知问题"])
-                    reason = p.get("reason", "")
-                    if cls[0] == "未知问题":
-                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
-                        results.append((num, 1))
-                    else:
-                        save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
-                        results.append((num, 0))
-                    logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
+                p = parsed[i]
+                cls = p.get("classification", ["未知问题"])
+                reason = p.get("reason", "")
+                if cls[0] == "未知问题":
+                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                    results.append((num, 1))
                 else:
-                    save_item(num, ["未知问题"], "批量结果数量不足", app_name, problem_col, df, db_path, 2)
-                    results.append((num, 2))
-                    logger.warning("行%d 批量结果数量不足", num)
+                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                    results.append((num, 0))
+                logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
             break
 
     except Exception as e:
