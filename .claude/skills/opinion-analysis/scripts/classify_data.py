@@ -336,7 +336,8 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     try:
         prompt = build_batch_prompt(app_name, valid_items, refs)
-        logger.debug("批量开始LLM推理, 有效问题数: %d", len(valid_items))
+        row_nums = ",".join(str(it["num"]) for it in valid_items)
+        logger.debug("批量开始LLM推理, 行号[%s], 有效问题数: %d", row_nums, len(valid_items))
 
         for attempt in range(max_retries):
             try:
@@ -436,8 +437,8 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     with _progress_lock:
         _progress_done += len(batch)
-        pct = (_progress_base + _progress_done) * 100 // (_progress_base + total)
-        logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, batch_label, _progress_base + _progress_done, _progress_base + total)
+        pct = _progress_done * 100 // total
+        logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, batch_label, _progress_done, total)
 
     return results
 
@@ -574,7 +575,7 @@ def main():
     if max_concurrent == 1:
         for batch in batches:
             batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total_all)
+                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data))
             for _, st in batch_results:
                 if st == 0:
                     success += 1
@@ -585,7 +586,7 @@ def main():
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total_all): i
+                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data)): i
                        for i, batch in enumerate(batches)}
             for f in concurrent.futures.as_completed(futures):
                 try:
@@ -606,7 +607,7 @@ def main():
     db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
     if args.retry:
         mode_label = f"重试-{args.retry}"
-        processed = _progress_base + success + unknown + failed
+        processed = success + unknown + failed
     else:
         mode_label = "续跑"
         processed = max_id + success + unknown + failed
