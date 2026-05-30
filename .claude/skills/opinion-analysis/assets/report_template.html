@@ -37,6 +37,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .summary { display: flex; gap: 0; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .sum-item { flex: 1; padding: 14px 20px; text-align: center; }
 .sum-item + .sum-item { border-left: 1px solid var(--border); }
+.sum-item { cursor: pointer; transition: background .15s; }
+.sum-item:hover { background: var(--bg); }
 .sum-num { font-size: 28px; font-weight: 700; line-height: 1.1; }
 .sum-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .sum-item.total .sum-num { color: var(--text); }
@@ -95,7 +97,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .cls .dot { color: var(--text-muted); margin: 0 2px; }
 .cls .unk { color: var(--orange); cursor: pointer; font-weight: 500; }
 .cls .unk:hover { text-decoration: underline; }
-.cls .fail { color: var(--text-muted); }
+.cls .fail { color: var(--red); cursor: pointer; font-weight: 500; }
+.cls .fail:hover { text-decoration: underline; }
 .rsn { font-size: 12px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: default; }
 
 /* ─── pagination ─── */
@@ -141,10 +144,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 </div>
 
 <div class="summary">
-  <div class="sum-item total"><div class="sum-num">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
-  <div class="sum-item ok"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
-  <div class="sum-item warn"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">未知问题</div></div>
-  <div class="sum-item err"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
+  <div class="sum-item total" onclick="filterByStatus('all')"><div class="sum-num">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
+  <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
+  <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">未知问题</div></div>
+  <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
 </div>
 
 <div class="toolbar">
@@ -197,6 +200,7 @@ let depthFilter = "";
 let searchText = "";
 let charts = {};
 let chartsVisible = true;
+let statusFilter = "";
 let currentPage = 1;
 const pageSize = 50;
 
@@ -204,6 +208,7 @@ function getAllOptions() {
   const level1s = {}, level2s = {}, level3s = {};
   allData.forEach(item => {
     if (item.status === "unknown_issue") { level1s["未知问题"] = true; return; }
+    if (item.status === "infer_failed") { level1s["推理失败"] = true; return; }
     if (item.status === "classified") {
       const cls = item.classification;
       level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
@@ -234,7 +239,17 @@ function fillSelect(id, options) {
 
 function getFilteredData() {
   return allData.filter(item => {
-    if (item.status === "infer_failed") return !depthFilter;
+    if (statusFilter) {
+      if (statusFilter === "classified" && item.status !== "classified") return false;
+      if (statusFilter !== "classified" && item.status !== statusFilter) return false;
+    }
+    if (item.status === "infer_failed") {
+      if (depthFilter) return false;
+      if (filters.level1 === "推理失败") return true;
+      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    }
     if (item.status === "unknown_issue") {
       if (depthFilter) return false;
       if (filters.level1 === "未知问题") return true;
@@ -261,6 +276,7 @@ function calcStats(data) {
   const stats = { level1: {}, level2: {}, level3: {} };
   data.forEach(item => {
     if (item.status === "unknown_issue") { stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1; return; }
+    if (item.status === "infer_failed") { stats.level1["推理失败"] = (stats.level1["推理失败"] || 0) + 1; return; }
     if (item.status !== "classified") return;
     const cls = item.classification;
     stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
@@ -292,8 +308,21 @@ function onSearch() { searchText = document.getElementById("search-input").value
 
 function onDepthChange() { depthFilter = document.getElementById("filter-depth").value; currentPage = 1; updateAll(); }
 
-function clearFilters() {
+function filterByStatus(status) {
+  if (status === "all") { statusFilter = ""; } else { statusFilter = status; }
   filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = "";
+  fillSelect("filter-level1", getAllOptions().level1s); document.getElementById("filter-level1").value = "";
+  document.getElementById("filter-depth").value = "";
+  document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  document.getElementById("search-input").value = "";
+  var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "未知问题" : "推理失败";
+  document.getElementById("filter-path").innerHTML = label ? '<span class="p">' + label + '</span>' : "";
+  currentPage = 1; updateAll();
+}
+
+function clearFilters() {
+  statusFilter = ""; filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = "";
   fillSelect("filter-level1", getAllOptions().level1s);
   document.getElementById("filter-level1").value = "";
   document.getElementById("filter-depth").value = "";
@@ -348,7 +377,7 @@ function updateTable() {
       if (cls.level3) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF3('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "')\">" + cls.level3 + "</span>");
       clsHtml = "<span class='cls'>" + ps.join("") + "</span>";
     } else if (item.status === "infer_failed") {
-      clsHtml = "<span class='cls'><span class='fail'>推理失败</span></span>";
+      clsHtml = "<span class='cls'><span class='fail' onclick=\"setF1('推理失败')\">推理失败</span></span>";
     } else {
       clsHtml = "<span class='cls'><span class='unk' onclick=\"setF1('未知问题')\">未知问题</span></span>";
     }
@@ -450,10 +479,10 @@ function showDetail(i) {
   let h = "<div class='mdl-cls'><div class='l'>分类结果</div><div class='v'>" + cv + "</div></div>";
   if (item.reasoning) h += "<div class='mdl-rsn'><div class='l'>推理过程</div>" + item.reasoning + "</div>";
   const raw = item.raw_data || {};
-  h += "<table class='mdl-tbl'><thead><tr>";
-  for (const k in raw) h += "<th>"+k+"</th>";
-  h += "</tr></thead><tbody><tr>";
-  for (const k in raw) h += "<td>"+raw[k]+"</td>";
+  h += "<table class='mdl-tbl'><thead><tr><th>行号</th>";
+  for (const k in raw) { if (k === "序号") continue; h += "<th>"+k+"</th>"; }
+  h += "</tr></thead><tbody><tr><td>"+(item.row_id||"")+"</td>";
+  for (const k in raw) { if (k === "序号") continue; h += "<td>"+raw[k]+"</td>"; }
   h += "</tr></tbody></table>";
   document.getElementById("modal-body").innerHTML = h;
   document.getElementById("modal-overlay").classList.remove("hidden");

@@ -53,6 +53,7 @@ def read_data_from_db(db_path: str) -> dict:
         if status == 0 and r['level1'] and r['level1'] != '未知问题':
             summary["classified"] += 1
             details.append({
+                'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'classified',
                 'classification': {
@@ -68,6 +69,7 @@ def read_data_from_db(db_path: str) -> dict:
         elif status == 1:
             summary["unknown_issue"] += 1
             details.append({
+                'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'unknown_issue',
                 'classification': {
@@ -83,6 +85,7 @@ def read_data_from_db(db_path: str) -> dict:
         elif status == 2:
             summary["infer_failed"] += 1
             details.append({
+                'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'infer_failed',
                 'reasoning': r['reasoning'] or '',
@@ -90,6 +93,7 @@ def read_data_from_db(db_path: str) -> dict:
             })
         else:
             details.append({
+                'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'pending',
                 'output': '待分类',

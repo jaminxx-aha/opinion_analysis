@@ -472,6 +472,8 @@ def main():
     parser.add_argument("--problem-index", type=int, required=True)
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--retry", choices=["failed", "unknown", "all"], default=None,
+                        help="重试模式: failed=失败+缺失行, unknown=未知问题+缺失行, all=全部非成功+缺失行")
     args = parser.parse_args()
 
     app_name = args.app_name
@@ -512,23 +514,58 @@ def main():
     init_db(db_path)
 
     conn = sqlite3.connect(db_path)
-    max_id = conn.execute("SELECT MAX(id) FROM report").fetchone()[0]
-    conn.close()
-    if max_id is None:
-        max_id = 0
-
-    all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
-                 for i in filtered if (i + 1) > max_id]
-
-    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model, temperature)
 
     global _output_dir, _progress_base
-    _output_dir = output_dir
-    _progress_base = max_id
 
-    total = len(all_data)
-    total_all = len(filtered)
+    if args.retry:
+        # 重试模式: 找出缺失行和指定状态的行
+        existing = dict(conn.execute("SELECT id, status FROM report").fetchall())
+        retry_ids = set()
+        missing_count = 0
+        status_count = {1: 0, 2: 0}
+        for i in filtered:
+            row_id = i + 1
+            if row_id not in existing:
+                retry_ids.add(row_id)
+                missing_count += 1
+            elif args.retry == "failed" and existing[row_id] == 2:
+                retry_ids.add(row_id)
+                status_count[2] += 1
+            elif args.retry == "unknown" and existing[row_id] == 1:
+                retry_ids.add(row_id)
+                status_count[1] += 1
+            elif args.retry == "all" and existing[row_id] in (1, 2):
+                retry_ids.add(row_id)
+                status_count[existing[row_id]] += 1
+        conn.close()
+
+        all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+                     for i in filtered if (i + 1) in retry_ids]
+
+        logger.info("重试模式(%s): 缺失%d条, 状态1=%d条, 状态2=%d条, 共需重试%d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                    args.retry, missing_count, status_count[1], status_count[2], len(all_data), max_concurrent, batch_size, provider, model, temperature)
+
+        _output_dir = output_dir
+        _progress_base = 0
+
+        total_all = len(filtered)
+    else:
+        # 续跑模式: 从最大id之后继续
+        max_id = conn.execute("SELECT MAX(id) FROM report").fetchone()[0]
+        conn.close()
+        if max_id is None:
+            max_id = 0
+
+        all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+                     for i in filtered if (i + 1) > max_id]
+
+        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                    len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model, temperature)
+
+        _output_dir = output_dir
+        _progress_base = max_id
+
+        total_all = len(filtered)
     success = 0
     unknown = 0
     failed = 0
@@ -568,8 +605,14 @@ def main():
     cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
     conn.close()
     db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
-    logger.info("分类完成: %d/%d条 (成功%d, 未知%d, 失败%d) | %s", max_id + success + unknown + failed, total_all, success, unknown, failed, db_status)
-    print(f"分类完成: {max_id + success + unknown + failed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
+    if args.retry:
+        mode_label = f"重试-{args.retry}"
+        processed = _progress_base + success + unknown + failed
+    else:
+        mode_label = "续跑"
+        processed = max_id + success + unknown + failed
+    logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d) | %s", mode_label, processed, total_all, success, unknown, failed, db_status)
+    print(f"分类完成({mode_label}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
     # 分类完成后自动生成报告
     from analyze_excel import generate_report
