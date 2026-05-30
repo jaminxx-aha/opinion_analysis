@@ -317,10 +317,10 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     end_num = batch[-1]["num"]
     if start_num == end_num:
         batch_label = f"{start_num}"
-        log_base = f"llm_{start_num}"
+        log_base = f"response_{start_num}"
     else:
         batch_label = f"{start_num}-{end_num}"
-        log_base = f"llm_{start_num}_{end_num}"
+        log_base = f"response_{start_num}_{end_num}"
 
     def _log_file(attempt):
         suffix = f"_retry{attempt + 1}" if attempt > 0 else ""
