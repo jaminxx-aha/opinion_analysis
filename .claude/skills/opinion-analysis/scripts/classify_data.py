@@ -128,31 +128,32 @@ def load_reference(app_name):
 def build_batch_prompt(app_name, items, refs):
     """构建批量分类prompt，items为[{num, desc}]列表"""
     problems_text = "\n".join([
-        f"[问题{i+1}] {item['desc']}\n"
+        f"---PROBLEM_{i+1}---\n\n{item['desc']}\n\n---PROBLEM_{i+1}_END---\n"
         for i, item in enumerate(items)
     ])
-    return f"""你是一位专业的{app_name}应用性能问题分类专家，精通{app_name}的功能模块、页面结构和各类性能问题的表现特征。你需要根据用户反馈的问题描述，结合{app_name}的应用知识，逐层推导出最准确的分类。
+    return f"""你是一位专业的{app_name}应用问题分类专家，请根据用户的问题描述（以---PROBLEMS---、---PROBLEMS_END---分隔，内部有{len(items)}个问题，每个问题以---PROBLEM_N---，---PROBLEM_N_END---分隔，每个问题可能属于多个分类，只要给出最相关即可），
 
-当前需要分类的{"1个" if len(items) == 1 else f"{len(items)}个"}{app_name}舆情问题描述如下：
+结合应用描述（---APP---、---APP_END---分隔）、问题分类（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），逐层推导出最准确的分类。
 
----DATA---
+---PROBLEMS---
 {problems_text}
----DATA_END---
+---PROBLEMS_END---
 
-请根据以下参考资料推导分类：
-
-【应用描述】
+---APP---
 {refs.get('info', '')}
+---APP_END---
 
-【问题分类树】
+---CLASSIFICATION---
 {refs.get('classification', '')}
+---CLASSIFICATION_END---
 
-【分类推理示例】（注意：问题描述可能不含应用名，但已知为{app_name}的问题）
+---EXAMPLES---
 {refs.get('examples', '')}
+---EXAMPLES_END---
 
 推导规则：参照示例的推理方式逐层推导，无法推导的层级截断（如无法推导二级则只返回一级，无法推导三级则只返回到二级）；不属于性能问题的归为"未知问题"。
 
-必须按照以下json格式返回，不要返回多余数据，json格式被三个反引号分割
+必须返回{len(items)}个元素，禁止多加或遗漏，必须按照以下json格式返回，json格式被三个反引号分割
 ```
 [{{"classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
 ```
@@ -238,7 +239,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
             import httpx
             kwargs["http_client"] = httpx.Client(verify=verify_ssl, trust_env=trust_env)
         client = OpenAI(**kwargs)
-        stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=temperature, timeout=timeout, stream=True)
+        stream = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=max_tokens, temperature=temperature, timeout=timeout, stream=True, extra_body={"enable_thinking": True})
         log_fh = open(log_file, "w", encoding="utf-8") if log_file else None
         _wrote_reasoning_header = False
         _wrote_content_header = False

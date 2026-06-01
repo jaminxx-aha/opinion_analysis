@@ -329,6 +329,7 @@ function clearFilters() {
   const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
   const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
   document.getElementById("search-input").value = "";
+  document.getElementById("filter-path").innerHTML = "";
   currentPage = 1; updateAll();
 }
 
@@ -340,8 +341,9 @@ function toggleCharts() {
 
 function updateBreadcrumb() {
   const el = document.getElementById("filter-path");
-  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText) { el.innerHTML = ""; return; }
+  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
+  if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : "推理失败") + "</span>");
   if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
   if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");
