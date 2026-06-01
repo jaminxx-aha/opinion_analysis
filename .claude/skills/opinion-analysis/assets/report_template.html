@@ -49,7 +49,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 /* ─── toolbar ─── */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.tb-select { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-select:focus { outline: none; border-color: var(--primary); }
 .tb-select:disabled { opacity: .45; cursor: default; }
 .tb-search { margin-left: auto; }
@@ -232,9 +232,18 @@ function getAvailableLevel3(level1, level2) {
 function fillSelect(id, options) {
   const sel = document.getElementById(id);
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部</option>';
-  options.forEach(o => { const e = document.createElement("option"); e.value = o; e.textContent = o; sel.appendChild(e); });
+  sel.innerHTML = '<option value="" title="全部">全部</option>';
+  options.forEach(o => { const e = document.createElement("option"); e.value = o; e.textContent = o; e.title = o; sel.appendChild(e); });
   sel.value = options.includes(cur) ? cur : "";
+  updateSelectTitle(sel);
+}
+
+function updateSelectTitle(sel) {
+  sel.title = sel.selectedIndex >= 0 && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].title : '';
+}
+
+function updateAllSelectTitles() {
+  document.querySelectorAll('.tb-select').forEach(sel => updateSelectTitle(sel));
 }
 
 function getFilteredData() {
@@ -452,7 +461,7 @@ function initCharts() {
   });
 }
 
-function updateAll() { updateCharts(); updateBreadcrumb(); updateTable(); }
+function updateAll() { updateAllSelectTitles(); updateCharts(); updateBreadcrumb(); updateTable(); }
 
 function updatePagination(total, tp) {
   const el = document.getElementById("pagination");
