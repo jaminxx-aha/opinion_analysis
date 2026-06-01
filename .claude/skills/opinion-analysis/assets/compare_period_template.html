@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>舆情周期对比报告</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #fafbfc; --surface: #ffffff; --border: #e8ecf1;
+  --text: #2c3e50; --text-secondary: #7f8c9b; --text-muted: #a3b1bf;
+  --primary: #4a90d9; --primary-light: #e3f0fc;
+  --color-a: #4a90d9; --color-b: #e67e22;
+  --green: #27ae60; --green-bg: #eafaf1;
+  --orange: #e67e22; --orange-bg: #fdf2e9;
+  --red: #c0392b; --red-bg: #fce4e4;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1060px; margin: 32px auto; padding: 0; }
+
+/* header */
+.hdr { padding: 0 0 20px; border-bottom: 2px solid var(--primary); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: baseline; }
+.hdr h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+.hdr-meta { font-size: 13px; color: var(--text-secondary); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.hdr-meta .tag { padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 12px; }
+.hdr-meta .tag-a { background: var(--primary-light); color: var(--color-a); }
+.hdr-meta .tag-b { background: var(--orange-bg); color: var(--color-b); }
+.hdr-meta .time { font-size: 11px; color: var(--text-muted); }
+
+/* summary */
+.cmp-summary { display: flex; gap: 0; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.cmp-sum-item { flex: 1; padding: 14px 16px; text-align: center; }
+.cmp-sum-item + .cmp-sum-item { border-left: 1px solid var(--border); }
+.cmp-sum-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.cmp-sum-vals { display: flex; justify-content: center; align-items: center; gap: 8px; }
+.cmp-val-a { font-size: 20px; font-weight: 700; color: var(--color-a); }
+.cmp-val-b { font-size: 20px; font-weight: 700; color: var(--color-b); }
+.cmp-val-sep { font-size: 12px; color: var(--text-muted); }
+.cmp-sum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.cmp-sum-delta.pos { color: var(--green); }
+.cmp-sum-delta.neg { color: var(--red); }
+.cmp-sum-delta.zero { color: var(--text-muted); }
+
+/* toolbar */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
+.tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+.tb-select { font-size: 13px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+.tb-select:focus { outline: none; border-color: var(--primary); }
+.tb-btn { font-size: 12px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
+.tb-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.tb-path { font-size: 13px; color: var(--text-secondary); }
+.tb-path .p { color: var(--primary); cursor: pointer; }
+.tb-path .p:hover { text-decoration: underline; }
+.tb-path .sep { color: var(--text-muted); margin: 0 4px; }
+
+/* charts */
+.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
+.charts-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.charts-hdr h2 { font-size: 14px; font-weight: 700; }
+.charts-body { padding: 20px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+.ch-wrap { height: 300px; position: relative; }
+
+/* table */
+.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.tbl-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.tbl-hdr h2 { font-size: 14px; font-weight: 700; }
+.tbl-hdr .cnt { font-size: 12px; color: var(--text-secondary); }
+.tbl-scroll { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tbl col:nth-child(1) { width: 25%; }
+.tbl col:nth-child(2) { width: 10%; }
+.tbl col:nth-child(3) { width: 10%; }
+.tbl col:nth-child(4) { width: 10%; }
+.tbl col:nth-child(5) { width: 10%; }
+.tbl col:nth-child(6) { width: 10%; }
+.tbl col:nth-child(7) { width: 10%; }
+.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
+.tbl td { font-size: 13px; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tbody tr:hover { background: var(--primary-light); }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr.drillable { cursor: pointer; }
+.val-a { color: var(--color-a); font-weight: 500; }
+.val-b { color: var(--color-b); font-weight: 500; }
+.delta-pos { color: var(--green); font-weight: 600; }
+.delta-neg { color: var(--red); font-weight: 600; }
+.delta-zero { color: var(--text-muted); }
+
+/* pagination */
+.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid var(--border); }
+.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
+.pgn button:hover:not(:disabled) { background: var(--bg); }
+.pgn button:disabled { opacity: .35; cursor: default; }
+.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pgn .info { font-size: 12px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hdr">
+  <h1>舆情周期对比报告</h1>
+  <div class="hdr-meta">
+    <span class="tag tag-a">{{LABEL_A}}</span>
+    <span>vs</span>
+    <span class="tag tag-b">{{LABEL_B}}</span>
+    <span class="time">{{GENERATED_TIME}}</span>
+  </div>
+</div>
+
+<div class="cmp-summary" id="summary-area"></div>
+
+<div class="toolbar">
+  <span class="tb-label">层级</span>
+  <button class="tb-btn active" id="btn-depth1" onclick="setDepth('level1')">一级</button>
+  <button class="tb-btn" id="btn-depth2" onclick="setDepth('level2')">二级</button>
+  <button class="tb-btn" id="btn-depth3" onclick="setDepth('level3')">三级</button>
+  <span class="tb-label">分类</span>
+  <select class="tb-select" id="filter-level1" onchange="onFilterChange()"><option value="">全部</option></select>
+  <select class="tb-select" id="filter-level2" onchange="onFilterChange()" disabled><option value="">全部</option></select>
+  <span class="tb-label">视图</span>
+  <button class="tb-btn active" id="btn-count" onclick="setView('count')">数量</button>
+  <button class="tb-btn" id="btn-pct" onclick="setView('pct')">占比</button>
+  <button class="tb-btn" id="btn-delta" onclick="setView('delta')">变化量</button>
+  <span id="filter-path" class="tb-path"></span>
+</div>
+
+<div class="charts-card">
+  <div class="charts-hdr"><h2 id="charts-title">一级分类对比</h2></div>
+  <div class="charts-body">
+    <div class="ch-wrap"><canvas id="barChart"></canvas></div>
+    <div class="ch-wrap"><canvas id="deltaChart"></canvas></div>
+  </div>
+</div>
+
+<div class="tbl-card">
+  <div class="tbl-hdr"><h2 id="tbl-title">分类对比明细</h2><span class="cnt" id="table-count">0 项</span></div>
+  <div class="tbl-scroll">
+    <table class="tbl">
+      <colgroup><col><col><col><col><col><col><col></colgroup>
+      <thead><tr><th>分类名称</th><th>{{LABEL_A}}</th><th>{{LABEL_A}}占比</th><th>{{LABEL_B}}</th><th>{{LABEL_B}}占比</th><th>变化量</th><th>占比变化</th></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+  <div class="pgn" id="pagination"></div>
+</div>
+
+</div>
+
+<script id="summary-data" type="application/json">{{SUMMARY_JSON}}</script>
+<script id="level1-data" type="application/json">{{LEVEL1_JSON}}</script>
+<script id="level2-data" type="application/json">{{LEVEL2_JSON}}</script>
+<script id="level3-data" type="application/json">{{LEVEL3_JSON}}</script>
+<script id="meta-data" type="application/json">{{META_JSON}}</script>
+
+<script>
+const LABEL_A = "{{LABEL_A}}";
+const LABEL_B = "{{LABEL_B}}";
+const summaryData = JSON.parse(document.getElementById('summary-data').textContent);
+const level1Data = JSON.parse(document.getElementById('level1-data').textContent);
+const level2Data = JSON.parse(document.getElementById('level2-data').textContent);
+const level3Data = JSON.parse(document.getElementById('level3-data').textContent);
+const metaData = JSON.parse(document.getElementById('meta-data').textContent);
+
+const COLORS_A = "#4a90d9";
+const COLORS_B = "#e67e22";
+const COLOR_POS = "#27ae60";
+const COLOR_NEG = "#c0392b";
+
+let currentDepth = "level1";
+let currentLevel1 = "";
+let currentLevel2 = "";
+let viewMode = "count";
+let currentPage = 1;
+const pageSize = 50;
+let charts = {};
+
+// ─── summary ───
+function renderSummary() {
+  const area = document.getElementById("summary-area");
+  const labels = { total: "总数据", classified: "已分类", unknown_issue: "未知问题", infer_failed: "失败" };
+  let h = "";
+  for (const [k, label] of Object.entries(labels)) {
+    const d = summaryData[k];
+    const deltaStr = d.delta === 0 ? "0" : (d.delta > 0 ? "+" + d.delta : d.delta);
+    const cls = d.delta > 0 ? "pos" : d.delta < 0 ? "neg" : "zero";
+    h += '<div class="cmp-sum-item"><div class="cmp-sum-label">' + label + '</div>'
+       + '<div class="cmp-sum-vals"><span class="cmp-val-a">' + d.a + '</span>'
+       + '<span class="cmp-val-sep">vs</span>'
+       + '<span class="cmp-val-b">' + d.b + '</span></div>'
+       + '<div class="cmp-sum-delta ' + cls + '">' + deltaStr + '</div></div>';
+  }
+  area.innerHTML = h;
+}
+
+// ─── depth & filter ───
+function setDepth(depth) {
+  currentDepth = depth;
+  document.getElementById("btn-depth1").classList.toggle("active", depth === "level1");
+  document.getElementById("btn-depth2").classList.toggle("active", depth === "level2");
+  document.getElementById("btn-depth3").classList.toggle("active", depth === "level3");
+
+  // 根据 depth 启用/禁用筛选下拉框
+  const selL1 = document.getElementById("filter-level1");
+  const selL2 = document.getElementById("filter-level2");
+  if (depth === "level1") {
+    currentLevel1 = ""; currentLevel2 = "";
+    selL1.value = ""; selL2.value = ""; selL2.disabled = true;
+  } else if (depth === "level2") {
+    selL2.disabled = !currentLevel1;
+    if (!currentLevel1) selL2.value = "";
+  } else {
+    selL2.disabled = !currentLevel1;
+  }
+
+  currentPage = 1;
+  updateBreadcrumb();
+  updateCharts();
+  updateTable();
+}
+
+function initFilters() {
+  const selL1 = document.getElementById("filter-level1");
+  selL1.innerHTML = '<option value="">全部</option>';
+  Object.keys(level1Data).forEach(k => {
+    const e = document.createElement("option"); e.value = k; e.textContent = k; selL1.appendChild(e);
+  });
+
+  const selL2 = document.getElementById("filter-level2");
+  selL2.innerHTML = '<option value="">全部</option>';
+}
+
+function updateLevel2Filter() {
+  const selL2 = document.getElementById("filter-level2");
+  selL2.innerHTML = '<option value="">全部</option>';
+  if (currentLevel1 && level2Data[currentLevel1]) {
+    selL2.disabled = false;
+    Object.keys(level2Data[currentLevel1]).forEach(k => {
+      const e = document.createElement("option"); e.value = k; e.textContent = k; selL2.appendChild(e);
+    });
+  } else {
+    selL2.disabled = !currentLevel1;
+  }
+  currentLevel2 = "";
+}
+
+function onFilterChange() {
+  currentLevel1 = document.getElementById("filter-level1").value;
+  currentLevel2 = document.getElementById("filter-level2").value;
+
+  // 自动切换 depth
+  if (currentDepth === "level1" && currentLevel1) {
+    currentDepth = "level2";
+    document.getElementById("btn-depth1").classList.remove("active");
+    document.getElementById("btn-depth2").classList.add("active");
+    document.getElementById("btn-depth3").classList.remove("active");
+  }
+
+  if (currentLevel1) {
+    updateLevel2Filter();
+  } else {
+    document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-level2").disabled = true;
+    currentLevel2 = "";
+  }
+
+  currentPage = 1;
+  updateBreadcrumb();
+  updateCharts();
+  updateTable();
+}
+
+function updateBreadcrumb() {
+  const el = document.getElementById("filter-path");
+  if (!currentLevel1) { el.innerHTML = ""; return; }
+  let h = '<span class="p" onclick="clearFilter()">全部</span>';
+  h += '<span class="sep">›</span><span class="p">' + currentLevel1 + '</span>';
+  if (currentLevel2) {
+    h += '<span class="sep">›</span><span class="p">' + currentLevel2 + '</span>';
+  }
+  el.innerHTML = h;
+}
+
+function clearFilter() {
+  currentLevel1 = ""; currentLevel2 = "";
+  currentDepth = "level1";
+  document.getElementById("btn-depth1").classList.add("active");
+  document.getElementById("btn-depth2").classList.remove("active");
+  document.getElementById("btn-depth3").classList.remove("active");
+  document.getElementById("filter-level1").value = "";
+  document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level2").disabled = true;
+  currentPage = 1;
+  updateBreadcrumb();
+  updateCharts();
+  updateTable();
+}
+
+function setView(mode) {
+  viewMode = mode;
+  document.getElementById("btn-count").classList.toggle("active", mode === "count");
+  document.getElementById("btn-pct").classList.toggle("active", mode === "pct");
+  document.getElementById("btn-delta").classList.toggle("active", mode === "delta");
+  updateCharts();
+  updateTable();
+}
+
+// ─── charts ───
+function getCurrentData() {
+  if (currentDepth === "level3" && currentLevel1 && currentLevel2) {
+    return level3Data[currentLevel1] && level3Data[currentLevel1][currentLevel2] ? level3Data[currentLevel1][currentLevel2] : {};
+  }
+  if (currentDepth === "level2" || (currentDepth === "level3" && currentLevel1 && !currentLevel2)) {
+    if (currentLevel1 && level2Data[currentLevel1]) {
+      return level2Data[currentLevel1];
+    }
+    // 如果选择了 level1 但没有 level2 数据，回退到 level1
+    return level1Data;
+  }
+  return level1Data;
+}
+
+function updateCharts() {
+  const data = getCurrentData();
+  const labels = Object.keys(data);
+
+  // 标题
+  let title;
+  if (currentDepth === "level3" && currentLevel1 && currentLevel2) {
+    title = currentLevel1 + " › " + currentLevel2 + " > 三级分类对比";
+  } else if ((currentDepth === "level2" || currentDepth === "level3") && currentLevel1) {
+    title = currentLevel1 + " > 二级分类对比";
+  } else {
+    title = "一级分类对比";
+  }
+  document.getElementById("charts-title").textContent = title;
+  document.getElementById("tbl-title").textContent = title.replace("对比", "明细");
+
+  // grouped bar chart
+  if (charts.bar) charts.bar.destroy();
+  const barCtx = document.getElementById("barChart").getContext("2d");
+
+  let valsA, valsB, barLabels;
+  if (viewMode === "count") {
+    valsA = labels.map(l => data[l].a);
+    valsB = labels.map(l => data[l].b);
+  } else if (viewMode === "pct") {
+    valsA = labels.map(l => data[l].pct_a);
+    valsB = labels.map(l => data[l].pct_b);
+  } else {
+    // delta view: single series
+    valsA = labels.map(l => data[l].delta);
+    valsB = null;
+  }
+
+  // 缩短过长标签
+  barLabels = labels.map(l => l.length > 10 ? l.slice(0, 10) + '…' : l);
+
+  if (viewMode === "delta") {
+    charts.bar = new Chart(barCtx, {
+      type: "bar",
+      data: { labels: barLabels, datasets: [
+        { label: "变化量", data: valsA, backgroundColor: labels.map(l => data[l].delta >= 0 ? COLOR_POS : COLOR_NEG), borderRadius: 4 }
+      ] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: { callbacks: {
+            title: (items) => labels[items[0].dataIndex],
+            label: (ctx) => "变化量: " + (ctx.raw >= 0 ? "+" : "") + ctx.raw
+          }}
+        },
+        scales: { y: { grid: { color: "#f0f0f0" } }, x: { grid: { display: false } } }
+      }
+    });
+  } else {
+    charts.bar = new Chart(barCtx, {
+      type: "bar",
+      data: { labels: barLabels, datasets: [
+        { label: LABEL_A, data: valsA, backgroundColor: COLORS_A, borderRadius: 4 },
+        { label: LABEL_B, data: valsB, backgroundColor: COLORS_B, borderRadius: 4 }
+      ] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "top", labels: { usePointStyle: true, font: { size: 11 } } },
+          tooltip: { callbacks: {
+            title: (items) => labels[items[0].dataIndex],
+            afterBody: function(items) {
+              const idx = items[0].dataIndex;
+              const d = data[labels[idx]];
+              return "变化量: " + (d.delta > 0 ? "+" : "") + d.delta + "\n占比变化: " + (d.delta_pct > 0 ? "+" : "") + d.delta_pct + "%";
+            }
+          }}
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: "#f0f0f0" },
+            ticks: { callback: v => viewMode === "pct" ? v + "%" : v }
+          },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // delta chart
+  if (charts.delta) charts.delta.destroy();
+  const deltaCtx = document.getElementById("deltaChart").getContext("2d");
+  const deltas = labels.map(l => data[l].delta_pct || data[l].delta);
+  const unit = viewMode === "pct" ? "%" : "";
+  charts.delta = new Chart(deltaCtx, {
+    type: "bar",
+    data: { labels: barLabels, datasets: [
+      { label: "增加", data: deltas.map(d => d > 0 ? d : 0), backgroundColor: COLOR_POS, borderRadius: 4 },
+      { label: "减少", data: deltas.map(d => d < 0 ? d : 0), backgroundColor: COLOR_NEG, borderRadius: 4 }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "top", labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          title: (items) => labels[items[0].dataIndex],
+          label: ctx => ctx.dataset.label + ": " + (ctx.raw > 0 ? "+" : "") + ctx.raw + unit
+        }}
+      },
+      scales: {
+        y: { grid: { color: "#f0f0f0" },
+          ticks: { callback: v => v + unit }
+        },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+// ─── table ───
+function getTableData() {
+  const data = getCurrentData();
+  const keys = Object.keys(data);
+
+  // 按 |delta| 降序排列，变化大的优先
+  return keys.map(k => ({
+    name: k,
+    a: data[k].a,
+    pct_a: data[k].pct_a,
+    b: data[k].b,
+    pct_b: data[k].pct_b,
+    delta: data[k].delta,
+    delta_pct: data[k].delta_pct,
+  })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || Math.abs(y.delta_pct) - Math.abs(x.delta_pct));
+}
+
+function isDrillable(name) {
+  if (currentDepth === "level1") {
+    return level2Data[name] && Object.keys(level2Data[name]).length > 0;
+  }
+  if (currentDepth === "level2" && currentLevel1) {
+    return level3Data[currentLevel1] && level3Data[currentLevel1][name] && Object.keys(level3Data[currentLevel1][name]).length > 0;
+  }
+  return false;
+}
+
+function drillDown(name) {
+  if (currentDepth === "level1") {
+    currentLevel1 = name;
+    currentDepth = "level2";
+    document.getElementById("btn-depth1").classList.remove("active");
+    document.getElementById("btn-depth2").classList.add("active");
+    document.getElementById("btn-depth3").classList.remove("active");
+    document.getElementById("filter-level1").value = name;
+    updateLevel2Filter();
+  } else if (currentDepth === "level2") {
+    currentLevel2 = name;
+    currentDepth = "level3";
+    document.getElementById("btn-depth2").classList.remove("active");
+    document.getElementById("btn-depth3").classList.add("active");
+    document.getElementById("filter-level2").value = name;
+  }
+  currentPage = 1;
+  updateBreadcrumb();
+  updateCharts();
+  updateTable();
+}
+
+function updateTable() {
+  const tableData = getTableData();
+  document.getElementById("table-count").textContent = tableData.length + " 项";
+  const totalPages = Math.ceil(tableData.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages || 1;
+  const start = (currentPage - 1) * pageSize;
+  const pageData = tableData.slice(start, start + pageSize);
+
+  const tbody = document.getElementById("table-body");
+  tbody.innerHTML = "";
+
+  pageData.forEach(item => {
+    const row = document.createElement("tr");
+
+    const drillable = isDrillable(item.name);
+    if (drillable) row.classList.add("drillable");
+
+    const deltaCls = item.delta > 0 ? "delta-pos" : item.delta < 0 ? "delta-neg" : "delta-zero";
+    const deltaStr = item.delta === 0 ? "0" : (item.delta > 0 ? "+" + item.delta : item.delta);
+    const deltaPctCls = item.delta_pct > 0 ? "delta-pos" : item.delta_pct < 0 ? "delta-neg" : "delta-zero";
+    const deltaPctStr = item.delta_pct === 0 ? "0%" : (item.delta_pct > 0 ? "+" + item.delta_pct + "%" : item.delta_pct + "%");
+
+    const nameHtml = drillable
+      ? '<span style="cursor:pointer;color:var(--primary)" title="点击下钻">' + item.name + ' ▸</span>'
+      : item.name;
+
+    row.innerHTML =
+      "<td>" + nameHtml + "</td>" +
+      "<td><span class='val-a'>" + item.a + "</span></td>" +
+      "<td>" + item.pct_a + "%</td>" +
+      "<td><span class='val-b'>" + item.b + "</span></td>" +
+      "<td>" + item.pct_b + "%</td>" +
+      "<td><span class='" + deltaCls + "'>" + deltaStr + "</span></td>" +
+      "<td><span class='" + deltaPctCls + "'>" + deltaPctStr + "</span></td>";
+
+    if (drillable) {
+      row.addEventListener("click", () => drillDown(item.name));
+    }
+    tbody.appendChild(row);
+  });
+
+  updatePagination(tableData.length, totalPages);
+}
+
+function updatePagination(total, totalPages) {
+  const pgn = document.getElementById("pagination");
+  if (totalPages <= 1) { pgn.innerHTML = ""; return; }
+  let h = '<button onclick="goPage(1)" ' + (currentPage === 1 ? 'disabled' : '') + '>首</button>';
+  h += '<button onclick="goPage(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? 'disabled' : '') + '>上一页</button>';
+  const start = Math.max(1, currentPage - 2), end = Math.min(totalPages, currentPage + 2);
+  for (let p = start; p <= end; p++) h += '<button onclick="goPage(' + p + ')" class="' + (p === currentPage ? 'act' : '') + '">' + p + '</button>';
+  h += '<button onclick="goPage(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>下一页</button>';
+  h += '<span class="info">' + currentPage + '/' + totalPages + '</span>';
+  pgn.innerHTML = h;
+}
+
+function goPage(p) { currentPage = p; updateTable(); }
+
+// ─── init ───
+renderSummary();
+initFilters();
+updateCharts();
+updateTable();
+</script>
+</body>
+</html>
