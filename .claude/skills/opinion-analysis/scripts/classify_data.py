@@ -127,7 +127,7 @@ def load_reference(app_name):
 
 def build_batch_prompt(app_name, items, refs):
     """构建批量分类prompt，items为[{num, desc}]列表"""
-    problems_text = "\n".join([
+    problems_text = "\n" + "\n".join([
         f"---PROBLEM_{i+1}---\n\n{item['desc']}\n\n---PROBLEM_{i+1}_END---\n"
         for i, item in enumerate(items)
     ])
