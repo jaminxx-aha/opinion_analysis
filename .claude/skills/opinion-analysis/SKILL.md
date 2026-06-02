@@ -20,6 +20,7 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 
 - **应用名列**：内容为已知应用名（抖音/微信/淘宝/快手/小红书或别名），记 `app_name` 和 `app_index`
 - **问题描述列**：内容为问题描述文本，记 `problem_index` 和 `row_count`
+- **版本号列**（可选）：内容为版本号（如 "3.5.0"、"v1.2.3"），记 `version_index`。若数据中无版本号相关字段则不传此参数
 - 验证 `references/apps/<app_name>/` 存在；不存在的应用所有数据归为"未知问题"，需告知用户
 
 ### 步骤2：分类并生成报告
@@ -28,10 +29,11 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 python <skill_path>/scripts/classify_data.py \
   --app-name <app_name> --app-index <app_index> \
   --problem-index <problem_index> \
-  --excel-path <Excel文件路径> --output-dir <output_dir>
+  --excel-path <Excel文件路径> --output-dir <output_dir> \
+  [--version-index <version_index>]
 ```
 
-分类完成后自动生成HTML报告。输出目录默认 `./output/<excel_name>`，也可用户指定。
+`--version-index` 可选，0 或不传表示无版本号列。分类完成后自动生成HTML报告。输出目录默认 `./output/<excel_name>`，也可用户指定。
 
 **执行时间过长时**：分类脚本会持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志文件 `<output_dir>/report.log` 分析原因（如API超时、连接失败等）。
 
@@ -44,7 +46,8 @@ python <skill_path>/scripts/classify_data.py \
   --app-name <app_name> --app-index <app_index> \
   --problem-index <problem_index> \
   --excel-path <Excel文件路径> --output-dir <output_dir> \
-  --retry <模式>
+  --retry <模式> \
+  [--version-index <version_index>]
 ```
 
 | 模式 | 重试范围 |

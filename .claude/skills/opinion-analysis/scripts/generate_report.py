@@ -35,6 +35,10 @@ def read_data_from_db(db_path: str) -> dict:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    # 兼容旧DB：检查 version 列是否存在
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()]
+    has_version = 'version' in cols
+
     cursor.execute("SELECT * FROM report ORDER BY id")
     rows = cursor.fetchall()
     conn.close()
@@ -50,12 +54,14 @@ def read_data_from_db(db_path: str) -> dict:
     for r in rows:
         raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
         status = r['status']  # 0=成功, 1=未知问题, 2=失败
+        version = r['version'] if has_version else ''
         if status == 0 and r['level1'] and r['level1'] != '未知问题':
             summary["classified"] += 1
             details.append({
                 'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'classified',
+                'version': version or '',
                 'classification': {
                     'app': r['cls_app'] or r['app'],
                     'level1': r['level1'],
@@ -72,6 +78,7 @@ def read_data_from_db(db_path: str) -> dict:
                 'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'unknown_issue',
+                'version': version or '',
                 'classification': {
                     'app': r['app'] or '',
                     'level1': '未知问题',
@@ -88,6 +95,7 @@ def read_data_from_db(db_path: str) -> dict:
                 'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'infer_failed',
+                'version': version or '',
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
@@ -96,6 +104,7 @@ def read_data_from_db(db_path: str) -> dict:
                 'row_id': r['id'],
                 'input': r['problem'],
                 'status': 'pending',
+                'version': version or '',
                 'output': '待分类',
                 'raw_data': raw_data,
             })

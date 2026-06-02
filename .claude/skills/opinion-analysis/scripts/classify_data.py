@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS report (
     level3 TEXT,
     full_path TEXT,
     reasoning TEXT,
-    raw_data TEXT
+    raw_data TEXT,
+    version TEXT DEFAULT ''
 )
 """
 
@@ -93,6 +94,10 @@ def init_db(db_path):
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute(DB_SCHEMA)
+    # 兼容旧DB：自动添加缺失的 version 列
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()]
+    if 'version' not in cols:
+        conn.execute("ALTER TABLE report ADD COLUMN version TEXT DEFAULT ''")
     conn.commit()
     conn.close()
 
@@ -276,7 +281,7 @@ _progress_base = 0
 _output_dir = ""
 
 
-def save_item(num, classification, reason, app_name, problem_col, df, db_path, status):
+def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
     """status: 0=成功, 1=未知问题, 2=失败"""
     try:
         conn = sqlite3.connect(db_path)
@@ -285,19 +290,20 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         row = df.iloc[num - 1]
         problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
+        version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
         if status == 0 and classification and classification[0] != "未知问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
             fp = ".".join(filter(None, [l1, l2, l3]))
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json))
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json, version))
         elif status == 1:
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "未知问题", "", "", "未知问题", reason, raw_json))
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "未知问题", "", "", "未知问题", reason, raw_json, version))
         else:
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data) VALUES (?,?,?,?,?,?)",
-                           (num, app_name, problem, status, reason, raw_json))
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
         conn.close()
         status_label = {0: "成功", 1: "未知问题", 2: "失败"}
@@ -307,7 +313,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total):
+                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done, _output_dir
 
@@ -328,7 +334,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     if not valid_items:
         for item in batch:
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2)
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], False))
         with _progress_lock:
             _progress_done += len(batch)
@@ -351,7 +357,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2)
+                        save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -363,7 +369,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2)
+                        save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -374,7 +380,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2)
+                        save_item(item["num"], ["未知问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -399,13 +405,13 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         cls = p.get("classification", ["未知问题"])
                         reason = p.get("reason", "")
                         if not isinstance(cls, list):
-                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2)
+                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         elif cls[0] == "未知问题":
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
                             results.append((num, 1))
                         else:
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
                             results.append((num, 0))
                         logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
                     break
@@ -416,10 +422,10 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                 cls = p.get("classification", ["未知问题"])
                 reason = p.get("reason", "")
                 if cls[0] == "未知问题":
-                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 1)
+                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
                     results.append((num, 1))
                 else:
-                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 0)
+                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
                     results.append((num, 0))
                 logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
             break
@@ -427,12 +433,12 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     except Exception as e:
         logger.error("批量LLM推理失败: %s", e)
         for item in valid_items:
-            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2)
+            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     for item in batch:
         if not item["desc"].strip():
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2)
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     with _progress_lock:
@@ -472,6 +478,8 @@ def main():
     parser.add_argument("--app-index", type=int, required=True)
     parser.add_argument("--problem-name", default=None)
     parser.add_argument("--problem-index", type=int, required=True)
+    parser.add_argument("--version-index", type=int, default=0,
+                        help="版本号列索引(从1开始, 0表示无版本号)")
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
@@ -497,6 +505,17 @@ def main():
     problem_col = args.problem_name or resolve_column(args.problem_index, columns)
     if problem_col not in columns:
         logger.error("问题描述列 '%s' 不存在", problem_col); sys.exit(1)
+
+    # 解析版本号列
+    version_col = None
+    if args.version_index > 0:
+        version_col = resolve_column(args.version_index, columns)
+        if version_col not in columns:
+            logger.error("版本号列 '%s' 不存在", version_col); sys.exit(1)
+    if version_col:
+        logger.info("版本号列: '%s'", version_col)
+    else:
+        logger.info("无版本号列, version 字段为空")
 
     if args.app_index > 0:
         app_col = resolve_column(args.app_index, columns)
@@ -575,7 +594,7 @@ def main():
     if max_concurrent == 1:
         for batch in batches:
             batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data))
+                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)
             for _, st in batch_results:
                 if st == 0:
                     success += 1
@@ -586,7 +605,7 @@ def main():
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data)): i
+                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col): i
                        for i, batch in enumerate(batches)}
             for f in concurrent.futures.as_completed(futures):
                 try:

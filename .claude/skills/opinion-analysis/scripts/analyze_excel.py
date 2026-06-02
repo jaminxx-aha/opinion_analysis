@@ -208,7 +208,6 @@ def main():
                         print(f"  {app_name}: {info['count']}条 — {status}")
                     print()
 
-            print("请根据以上信息判断应用名列和问题描述列的索引号")
         else:
             print("请指定操作模式:")
             print("  --info            查看Excel字段信息")

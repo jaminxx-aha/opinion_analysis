@@ -78,9 +78,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tbl-scroll { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tbl col:nth-child(1) { width: 36px; }
-.tbl col:nth-child(2) { width: 35%; }
-.tbl col:nth-child(3) { width: 20%; }
-.tbl col:nth-child(4) { width: auto; }
+.tbl col:nth-child(2) { width: 80px; }
+.tbl col:nth-child(3) { width: 30%; }
+.tbl col:nth-child(4) { width: 20%; }
+.tbl col:nth-child(5) { width: auto; }
 .tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
 .tbl td { font-size: 13px; padding: 9px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl td:first-child { text-align: left; }
@@ -155,6 +156,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
   <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
   <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
+  <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
   <span id="filter-path" class="tb-path"></span>
   <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
 </div>
@@ -174,8 +176,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   <div class="tbl-hdr"><h2>详细数据</h2><span class="cnt" id="table-count">0 条</span></div>
   <div class="tbl-scroll">
     <table class="tbl">
-      <colgroup><col><col><col><col></colgroup>
-      <thead><tr><th>序号</th><th>问题描述</th><th>分类</th><th>推理说明</th></tr></thead>
+      <colgroup><col><col><col><col><col></colgroup>
+      <thead><tr><th>序号</th><th>版本号</th><th>问题描述</th><th>分类</th><th>推理说明</th></tr></thead>
       <tbody id="table-body"></tbody>
     </table>
   </div>
@@ -201,12 +203,14 @@ let searchText = "";
 let charts = {};
 let chartsVisible = true;
 let statusFilter = "";
+let versionFilter = "";
 let currentPage = 1;
 const pageSize = 50;
 
 function getAllOptions() {
-  const level1s = {}, level2s = {}, level3s = {};
+  const level1s = {}, level2s = {}, level3s = {}, versions = {};
   allData.forEach(item => {
+    if (item.version) versions[item.version] = true;
     if (item.status === "unknown_issue") { level1s["未知问题"] = true; return; }
     if (item.status === "infer_failed") { level1s["推理失败"] = true; return; }
     if (item.status === "classified") {
@@ -214,7 +218,7 @@ function getAllOptions() {
       level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
     }
   });
-  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort() };
+  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), versions: Object.keys(versions).sort() };
 }
 
 function getAvailableLevel2(level1) {
@@ -248,6 +252,7 @@ function updateAllSelectTitles() {
 
 function getFilteredData() {
   return allData.filter(item => {
+    if (versionFilter && item.version !== versionFilter) return false;
     if (statusFilter) {
       if (statusFilter === "classified" && item.status !== "classified") return false;
       if (statusFilter !== "classified" && item.status !== statusFilter) return false;
@@ -317,13 +322,16 @@ function onSearch() { searchText = document.getElementById("search-input").value
 
 function onDepthChange() { depthFilter = document.getElementById("filter-depth").value; currentPage = 1; updateAll(); }
 
+function onVersionChange() { versionFilter = document.getElementById("filter-version").value; currentPage = 1; updateAll(); }
+
 function filterByStatus(status) {
   if (status === "all") { statusFilter = ""; } else { statusFilter = status; }
-  filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = "";
+  filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
   fillSelect("filter-level1", getAllOptions().level1s); document.getElementById("filter-level1").value = "";
   document.getElementById("filter-depth").value = "";
   document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-version").value = "";
   document.getElementById("search-input").value = "";
   var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "未知问题" : "推理失败";
   document.getElementById("filter-path").innerHTML = label ? '<span class="p">' + label + '</span>' : "";
@@ -331,12 +339,13 @@ function filterByStatus(status) {
 }
 
 function clearFilters() {
-  statusFilter = ""; filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = "";
+  statusFilter = ""; filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
   fillSelect("filter-level1", getAllOptions().level1s);
   document.getElementById("filter-level1").value = "";
   document.getElementById("filter-depth").value = "";
   const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
   const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-version").value = "";
   document.getElementById("search-input").value = "";
   document.getElementById("filter-path").innerHTML = "";
   currentPage = 1; updateAll();
@@ -350,15 +359,21 @@ function toggleCharts() {
 
 function updateBreadcrumb() {
   const el = document.getElementById("filter-path");
-  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter) { el.innerHTML = ""; return; }
+  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
   if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : "推理失败") + "</span>");
+  if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + versionFilter + "</span>");
   if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
   if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");
   if (filters.level3) ps.push("<span class='p' onclick='clearLevel(3)'>" + filters.level3 + "</span>");
   if (searchText) ps.push("<span class='p' onclick='clearFilters()'>搜索:" + searchText + "</span>");
   el.innerHTML = ps.join("<span class='sep'>›</span>");
+}
+
+function clearVersion() {
+  versionFilter = ""; document.getElementById("filter-version").value = "";
+  currentPage = 1; updateAll();
 }
 
 function clearLevel(n) {
@@ -394,6 +409,7 @@ function updateTable() {
     }
     row.innerHTML =
       "<td>" + (gi + 1) + "</td>" +
+      "<td>" + (item.version || "") + "</td>" +
       "<td><span class='prob' onclick='showDetail(" + gi + ")'>" + item.input + "</span></td>" +
       "<td>" + clsHtml + "</td>" +
       "<td><span class='rsn'>" + (item.reasoning || "") + "</span></td>";
@@ -488,6 +504,7 @@ function showDetail(i) {
   else if (item.status === "unknown_issue") cv = "未知问题";
   else cv = "推理失败";
   let h = "<div class='mdl-cls'><div class='l'>分类结果</div><div class='v'>" + cv + "</div></div>";
+  if (item.version) h += "<div class='mdl-cls' style='background:#f7f9fb;margin-bottom:0'><div class='l'>版本号</div><div class='v' style='color:var(--text);font-size:14px'>" + item.version + "</div></div>";
   if (item.reasoning) h += "<div class='mdl-rsn'><div class='l'>推理过程</div>" + item.reasoning + "</div>";
   const raw = item.raw_data || {};
   h += "<table class='mdl-tbl'><thead><tr><th>行号</th>";
@@ -502,7 +519,11 @@ function showDetail(i) {
 function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
 
 document.addEventListener("DOMContentLoaded", () => {
-  fillSelect("filter-level1", getAllOptions().level1s);
+  const opts = getAllOptions();
+  fillSelect("filter-level1", opts.level1s);
+  fillSelect("filter-version", opts.versions);
+  const versionSel = document.getElementById("filter-version");
+  versionSel.disabled = opts.versions.length === 0;
   initCharts(); updateAll();
 });
 </script>
