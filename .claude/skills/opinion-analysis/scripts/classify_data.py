@@ -124,10 +124,63 @@ def load_reference(app_name):
     if not app_dir:
         return None
     refs = {}
-    for fname, key in [("info.md", "info"), ("classification.md", "classification"), ("examples.md", "examples")]:
+    # info.md and examples.md remain as markdown
+    for fname, key in [("info.md", "info"), ("examples.md", "examples")]:
         fpath = os.path.join(app_dir, fname)
         refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
+
+    # classification.json: 直接将JSON字符串传给大模型, 同时保留原始字典用于校验
+    classification_path = os.path.join(app_dir, "classification.json")
+    if os.path.isfile(classification_path):
+        with open(classification_path, "r", encoding="utf-8") as f:
+            classification_data = json.load(f)
+        refs["classification_tree"] = classification_data  # raw dict for validation
+        refs["classification"] = json.dumps(classification_data, ensure_ascii=False, indent=2)  # JSON string for prompt
+    else:
+        refs["classification_tree"] = {}
+        refs["classification"] = ""
+
     return refs
+
+
+def validate_classification(classification, tree_data):
+    """校验分类路径是否存在于分类树中
+
+    Args:
+        classification: 分类列表, 如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
+        tree_data: classification.json的原始JSON字典
+
+    Returns:
+        True if path is valid (or classification is ["未知问题"])
+        False if any level doesn't match the tree
+    """
+    # 特殊情况: "未知问题"是Prompt规则允许的, 不在树中但直接放行
+    if not classification or classification[0] == "未知问题":
+        return True
+
+    level1 = classification[0]
+    if level1 not in tree_data:
+        return False
+
+    # 单级分类 (截断) 合法: 如 ["卡顿"]
+    if len(classification) == 1:
+        return True
+
+    level2_dict = tree_data[level1]
+    level2 = classification[1]
+    if level2 not in level2_dict:
+        return False
+
+    # 双级分类 (截断) 合法: 如 ["卡顿", "滑动卡顿"]
+    if len(classification) == 2:
+        return True
+
+    level3_list = level2_dict[level2]
+    level3 = classification[2]
+    if level3 not in level3_list:
+        return False
+
+    return True
 
 
 def build_batch_prompt(app_name, items, refs):
@@ -416,6 +469,47 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
                     break
 
+            # 分类路径校验: 检查每个classification是否存在于分类树中
+            tree_data = refs.get("classification_tree", {})
+            invalid_paths = []
+            for i, p in enumerate(parsed):
+                if not isinstance(p, dict):
+                    invalid_paths.append((i, "not a dict"))
+                    continue
+                cls = p.get("classification", ["未知问题"])
+                if not isinstance(cls, list):
+                    continue  # 已在format_errors中处理
+                if not validate_classification(cls, tree_data):
+                    invalid_paths.append((i, ".".join(cls)))
+
+            if invalid_paths:
+                for idx, path_str in invalid_paths:
+                    logger.warning("分类路径无效(第%d/%d次), 项目%d: '%s' 不存在于分类树", attempt + 1, max_retries, idx + 1, path_str)
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                    continue  # 重试整个批次
+                else:
+                    # 最后一次重试仍无效, 按条保存
+                    for i, item in enumerate(valid_items):
+                        num = item["num"]
+                        p = parsed[i]
+                        cls = p.get("classification", ["未知问题"])
+                        reason = p.get("reason", "")
+                        if not isinstance(cls, list):
+                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
+                            results.append((num, 2))
+                        elif cls[0] == "未知问题":
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
+                            results.append((num, 1))
+                        elif not validate_classification(cls, tree_data):
+                            invalid_reason = f"分类路径无效: {'.'.join(cls)} 不存在于分类树"
+                            save_item(num, ["未知问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
+                            results.append((num, 2))
+                        else:
+                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
+                            results.append((num, 0))
+                    break
+
             for i, item in enumerate(valid_items):
                 num = item["num"]
                 p = parsed[i]
@@ -489,7 +583,7 @@ def main():
     app_name = args.app_name
     if app_name not in SUPPORTED_APPS:
         logger.warning("' %s' 不在支持列表中, 所有数据归为'未知问题'", app_name)
-        refs = {"info": "", "classification": "", "examples": ""}
+        refs = {"info": "", "classification": "", "examples": "", "classification_tree": {}}
     else:
         refs = load_reference(app_name)
         if not refs:
