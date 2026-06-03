@@ -47,15 +47,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .sum-item.err .sum-num { color: var(--red); }
 
 /* ─── toolbar ─── */
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
 .tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-select:focus { outline: none; border-color: var(--primary); }
 .tb-select:disabled { opacity: .45; cursor: default; }
 .tb-search { margin-left: auto; }
-.tb-search input { font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; width: 180px; transition: width .2s; }
-.tb-search input:focus { outline: none; border-color: var(--primary); width: 220px; }
-.tb-path { font-size: 13px; color: var(--text-secondary); }
+.tb-search input { font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; width: 160px; transition: width .2s; }
+.tb-search input:focus { outline: none; border-color: var(--primary); width: 200px; }
+.tb-path { font-size: 13px; color: var(--text-secondary); flex-basis: 100%; }
 .tb-path .p { color: var(--primary); cursor: pointer; }
 .tb-path .p:hover { text-decoration: underline; }
 .tb-path .sep { color: var(--text-muted); margin: 0 4px; }
@@ -157,8 +157,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
   <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
   <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
-  <span id="filter-path" class="tb-path"></span>
   <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
+  <span id="filter-path" class="tb-path"></span>
 </div>
 
 <div class="charts-card">
@@ -322,7 +322,18 @@ function onSearch() { searchText = document.getElementById("search-input").value
 
 function onDepthChange() { depthFilter = document.getElementById("filter-depth").value; currentPage = 1; updateAll(); }
 
-function onVersionChange() { versionFilter = document.getElementById("filter-version").value; currentPage = 1; updateAll(); }
+function onVersionChange() {
+  const newVer = document.getElementById("filter-version").value;
+  // Reset level1/2/3 filters when version changes
+  if (newVer !== versionFilter) {
+    filters = { level1: "", level2: "", level3: "" };
+    fillSelect("filter-level1", getAllOptions().level1s);
+    document.getElementById("filter-level1").value = "";
+    document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  }
+  versionFilter = newVer; currentPage = 1; updateAll();
+}
 
 function filterByStatus(status) {
   if (status === "all") { statusFilter = ""; } else { statusFilter = status; }

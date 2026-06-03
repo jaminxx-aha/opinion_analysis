@@ -167,6 +167,16 @@ def build_nested_comparison(level_dist_a: dict, level_dist_b: dict,
     return result
 
 
+def extract_versions(details: list) -> list:
+    """提取版本号列表（唯一值，排序，排除空值）"""
+    versions = set()
+    for item in details:
+        ver = item.get('version', '')
+        if ver:
+            versions.add(ver)
+    return sorted(versions)
+
+
 def generate_compare_report(db_path_a: str, db_path_b: str,
                              output_dir: str = None,
                              label_a: str = None, label_b: str = None,
@@ -223,7 +233,12 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
         sub_b = dist_l3_b.get(l1, {})
         level3_comparison[l1] = build_nested_comparison(sub_a, sub_b, total_a, total_b)
 
-    # ─── 5. 元信息 ───
+    # ─── 5. 版本号数据 ───
+    versions_a = extract_versions(details_a)
+    versions_b = extract_versions(details_b)
+    all_versions = sorted(set(versions_a + versions_b))
+
+    # ─── 6. 元信息 ───
     dir_a = os.path.dirname(os.path.abspath(db_path_a))
     dir_b = os.path.dirname(os.path.abspath(db_path_b))
     meta = {
@@ -233,15 +248,7 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
         'time_b': get_db_mtime(db_path_b),
         'source_a': find_xlsx_in_dir(dir_a),
         'source_b': find_xlsx_in_dir(dir_b),
-    }
-
-    # ─── 组装全部数据 ───
-    all_data = {
-        'summary': summary_comparison,
-        'level1': level1_comparison,
-        'level2': level2_comparison,
-        'level3': level3_comparison,
-        'meta': meta,
+        'has_version': len(all_versions) > 0,
     }
 
     # ─── 模板变量 ───
@@ -250,10 +257,14 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
         'LEVEL1_JSON': json.dumps(level1_comparison, ensure_ascii=False),
         'LEVEL2_JSON': json.dumps(level2_comparison, ensure_ascii=False),
         'LEVEL3_JSON': json.dumps(level3_comparison, ensure_ascii=False),
+        'DETAILS_A_JSON': json.dumps(details_a, ensure_ascii=False),
+        'DETAILS_B_JSON': json.dumps(details_b, ensure_ascii=False),
+        'ALL_VERSIONS_JSON': json.dumps(all_versions, ensure_ascii=False),
         'META_JSON': json.dumps(meta, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'LABEL_A': meta['label_a'],
         'LABEL_B': meta['label_b'],
+        'HAS_VERSION': meta['has_version'],
     }
 
     # ─── 渲染模板 ───
