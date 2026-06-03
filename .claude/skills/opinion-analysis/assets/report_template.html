@@ -209,8 +209,10 @@ const pageSize = 50;
 
 function getAllOptions() {
   const level1s = {}, level2s = {}, level3s = {}, versions = {};
+  let hasEmptyVer = false;
   allData.forEach(item => {
     if (item.version) versions[item.version] = true;
+    else hasEmptyVer = true;
     if (item.status === "unknown_issue") { level1s["未知问题"] = true; return; }
     if (item.status === "infer_failed") { level1s["推理失败"] = true; return; }
     if (item.status === "classified") {
@@ -218,7 +220,9 @@ function getAllOptions() {
       level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
     }
   });
-  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), versions: Object.keys(versions).sort() };
+  const verList = Object.keys(versions).sort();
+  if (hasEmptyVer) verList.push("");  // 空版本号作为可选项
+  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), versions: verList };
 }
 
 function getAvailableLevel2(level1) {
@@ -237,7 +241,12 @@ function fillSelect(id, options) {
   const sel = document.getElementById(id);
   const cur = sel.value;
   sel.innerHTML = '<option value="" title="全部">全部</option>';
-  options.forEach(o => { const e = document.createElement("option"); e.value = o; e.textContent = o; e.title = o; sel.appendChild(e); });
+  options.forEach(o => {
+    const e = document.createElement("option");
+    if (id === "filter-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
+    else { e.value = o; e.textContent = o; e.title = o; }
+    sel.appendChild(e);
+  });
   sel.value = options.includes(cur) ? cur : "";
   updateSelectTitle(sel);
 }
@@ -252,7 +261,10 @@ function updateAllSelectTitles() {
 
 function getFilteredData() {
   return allData.filter(item => {
-    if (versionFilter && item.version !== versionFilter) return false;
+    if (versionFilter) {
+      const filterVer = versionFilter === "__empty__" ? "" : versionFilter;
+      if (item.version !== filterVer) return false;
+    }
     if (statusFilter) {
       if (statusFilter === "classified" && item.status !== "classified") return false;
       if (statusFilter !== "classified" && item.status !== statusFilter) return false;
@@ -373,7 +385,7 @@ function updateBreadcrumb() {
   if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
   if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : "推理失败") + "</span>");
-  if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + versionFilter + "</span>");
+  if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter) + "</span>");
   if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
   if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");

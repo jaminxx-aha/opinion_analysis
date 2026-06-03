@@ -254,8 +254,10 @@ function sortedUnique(arr) { return [...new Set(arr)].sort(); }
 function round2(n) { return Math.round(n * 100) / 100; }
 
 function recomputeComparison(ver) {
-  const listA = ver ? detailsA.filter(d => d.version === ver) : detailsA;
-  const listB = ver ? detailsB.filter(d => d.version === ver) : detailsB;
+  // ver="__empty__" means filter for items with empty version; ver="" means show all
+  const filterVer = ver === "__empty__" ? "" : (ver ? ver : null);
+  const listA = filterVer !== null ? detailsA.filter(d => d.version === filterVer) : detailsA;
+  const listB = filterVer !== null ? detailsB.filter(d => d.version === filterVer) : detailsB;
   const totalA = listA.length, totalB = listB.length;
 
   const d1A = countByLevel(listA, "level1"), d1B = countByLevel(listB, "level1");
@@ -324,7 +326,12 @@ function fillSelect(id, options) {
   const sel = document.getElementById(id);
   const cur = sel.value;
   sel.innerHTML = '<option value="" title="全部">全部</option>';
-  options.forEach(o => { const e = document.createElement("option"); e.value = o; e.textContent = o; e.title = o; sel.appendChild(e); });
+  options.forEach(o => {
+    const e = document.createElement("option");
+    if (id === "filter-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
+    else { e.value = o; e.textContent = o; e.title = o; }
+    sel.appendChild(e);
+  });
   sel.value = options.includes(cur) ? cur : "";
 }
 
@@ -421,7 +428,7 @@ function updateBreadcrumb() {
   if (l1) { addSeg(" › ", "sep"); addSeg(l1, "p", () => clearLevel(1)); }
   if (l2) { addSeg(" › ", "sep"); addSeg(l2, "p", () => clearLevel(2)); }
   if (l3) { addSeg(" › ", "sep"); addSeg(l3, "p", () => clearLevel(3)); }
-  if (versionFilter) { addSeg(" › ", "sep"); addSeg("版本:" + versionFilter, "p", clearVersion); }
+  if (versionFilter) { addSeg(" › ", "sep"); addSeg("版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter), "p", clearVersion); }
 }
 
 function clearLevel(n) {

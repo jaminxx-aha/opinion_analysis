@@ -168,13 +168,19 @@ def build_nested_comparison(level_dist_a: dict, level_dist_b: dict,
 
 
 def extract_versions(details: list) -> list:
-    """提取版本号列表（唯一值，排序，排除空值）"""
+    """提取版本号列表（唯一值，排序，包含空版本标记）"""
     versions = set()
+    has_empty = False
     for item in details:
         ver = item.get('version', '')
         if ver:
             versions.add(ver)
-    return sorted(versions)
+        else:
+            has_empty = True
+    result = sorted(versions)
+    if has_empty:
+        result.append('')  # 空版本号作为可选项
+    return result
 
 
 def generate_compare_report(db_path_a: str, db_path_b: str,
