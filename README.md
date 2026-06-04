@@ -28,13 +28,6 @@
 闪退/崩溃 > 播放闪退 > 首页推荐视频播放闪退
 ```
 
-示例分类路径（微信）：
-
-```
-卡顿 > 聊天卡顿 > 聊天消息列表滑动卡顿
-响应慢/延迟 > 搜索延迟 > 聊天搜索响应慢
-```
-
 ## 快速开始
 
 ### 1. 环境配置
@@ -100,11 +93,7 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
     ├── assets/
     │   └── report_template.html         # HTML 报告模板
     ├── references/apps/                 # 应用知识库
-    │   ├── 抖音/ { info.md, classification.md, examples.md }
-    │   ├── 微信/ { info.md, classification.md, examples.md }
-    │   ├── 淘宝/ { info.md, classification.md, examples.md }
-    │   ├── 快手/ { info.md, classification.md, examples.md }
-    │   └── 小红书/ { info.md, classification.md, examples.md }
+    │   └── 抖音/ { info.md, classification.json, examples.md }
     └── scripts/
         ├── config.py                    # 配置、应用别名、列解析
         ├── classify_data.py             # LLM 分类核心脚本
@@ -117,12 +106,8 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
 | 应用 | 知识库 | 别名示例 |
 |------|--------|----------|
 | 抖音 | ✅ 完整分类 | douyin、字节、头条 |
-| 微信 | ✅ 完整分类 | wechat、鹅厂、腾讯 |
-| 淘宝 | ✅ 完整分类 | taobao、阿里 |
-| 快手 | ✅ 完整分类 | kuaishou |
-| 小红书 | ✅ 完整分类 | xiaohongshu、red、红书 |
 
-其他应用（哔哩哩哩、京东、美团、拼多多等）会保留应用名称但标记为"未知问题"。
+其他应用会保留应用名称但标记为"未知问题"。
 
 ## 环境变量
 
