@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-fix_invalid_classifications.py - 修复DB中分类路径不属于JSON分类树的数据
+fix_invalid_classifications.py - 修复DB中分类路径不属于编码→路径字典的数据
 
-遍历DB中的数据，若分类路径不存在于分类树中，且不是未知问题(status=1)或失败(status=2)，
+遍历DB中的数据，若分类路径不存在于编码→路径字典中，且不是未知问题(status=1)或失败(status=2)，
 则将其status修改为2(失败)，并在reasoning中追加原因说明。
 
 用法:
@@ -21,7 +21,7 @@ SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 
 sys.path.insert(0, SCRIPT_DIR)
 from config import SUPPORTED_APPS, get_app_dir
-from classify_data import validate_classification
+from classify_data import validate_classification, parse_classification_md
 
 logger = logging.getLogger("fix_invalid")
 logger.setLevel(logging.INFO)
@@ -31,17 +31,18 @@ logger.addHandler(handler)
 
 
 def load_classification_tree(app_name):
-    """加载应用的JSON分类树"""
+    """加载应用的分类编码→路径字典"""
     app_dir = get_app_dir(SKILL_DIR, app_name)
     if not app_dir:
-        logger.error("应用 '%s' 不在支持列表中, 无法加载分类树", app_name)
+        logger.error("应用 '%s' 不在支持列表中, 无法加载分类字典", app_name)
         return None
-    classification_path = os.path.join(app_dir, "classification.json")
+    classification_path = os.path.join(app_dir, "classification.md")
     if not os.path.isfile(classification_path):
-        logger.error("分类树文件不存在: %s", classification_path)
+        logger.error("分类文件不存在: %s", classification_path)
         return None
     with open(classification_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        md_content = f.read()
+    return parse_classification_md(md_content)
 
 
 def fix_invalid(db_path, app_name):

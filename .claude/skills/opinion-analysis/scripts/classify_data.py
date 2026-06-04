@@ -119,6 +119,62 @@ def setup_logging(output_dir):
     logger.info("日志初始化完成, 日志文件: %s", log_path)
 
 
+def parse_classification_md(md_content):
+    """解析编号大纲格式的classification.md，生成编码→路径字典。
+
+    Returns:
+        dict: 编码字符串到名称路径列表的映射，
+        如 {"0": ["未知问题"], "1": ["卡顿"], "1.1": ["卡顿","滑动卡顿"], "1.1.1": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"]}
+    """
+    code_to_path = {"0": ["未知问题"]}
+
+    lines = md_content.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # 二级/三级: "1.1 滑动卡顿" 或 "1.1.1 首页推荐视频流上下滑动卡顿"
+        # 编码含至少两个数字段(1.1或1.1.1)，后面是空格+标签
+        match = re.match(r'^(\d+\.\d+(?:\.\d+)*?)\s+(.+)$', line)
+        if match:
+            code, label = match.group(1), match.group(2)
+            parts = code.split('.')
+            parent_code = '.'.join(parts[:-1])
+            parent_path = code_to_path.get(parent_code, [])
+            code_to_path[code] = parent_path + [label]
+            continue
+
+        # 一级: "1.卡顿" (单数字+点+标签，无空格分隔)
+        match = re.match(r'^(\d+)\.(.+)$', line)
+        if match:
+            code, label = match.group(1), match.group(2)
+            code_to_path[code] = [label]
+            continue
+
+    return code_to_path
+
+
+def code_to_classification(code, code_to_path):
+    """将分类编码转换为名称路径列表，用于存库。
+
+    Args:
+        code: 分类编码字符串，如 "1.1.1" 或 "0"
+        code_to_path: 编码→路径字典
+
+    Returns:
+        名称路径列表，如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
+        编码"0"返回["未知问题"]
+    """
+    if not code or code == "0":
+        return ["未知问题"]
+    # 容错: 若LLM返回"1.1 滑动卡顿"格式，提取编码部分
+    code_match = re.match(r'^(\d+(?:\.\d+)*)', str(code).strip())
+    if code_match:
+        code = code_match.group(1)
+    return code_to_path.get(code, ["未知问题"])
+
+
 def load_reference(app_name):
     app_dir = get_app_dir(SKILL_DIR, app_name)
     if not app_dir:
@@ -129,58 +185,38 @@ def load_reference(app_name):
         fpath = os.path.join(app_dir, fname)
         refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
 
-    # classification.json: 直接将JSON字符串传给大模型, 同时保留原始字典用于校验
-    classification_path = os.path.join(app_dir, "classification.json")
+    # classification.md: 解析编号大纲生成编码→路径字典
+    classification_path = os.path.join(app_dir, "classification.md")
     if os.path.isfile(classification_path):
         with open(classification_path, "r", encoding="utf-8") as f:
-            classification_data = json.load(f)
-        refs["classification_tree"] = classification_data  # raw dict for validation
-        refs["classification"] = json.dumps(classification_data, ensure_ascii=False, indent=2)  # JSON string for prompt
+            md_content = f.read()
+        refs["classification_tree"] = parse_classification_md(md_content)  # 编码→路径字典(用于校验和转换)
+        refs["classification"] = md_content  # md原文(用于prompt注入)
     else:
-        refs["classification_tree"] = {}
+        refs["classification_tree"] = {"0": ["未知问题"]}
         refs["classification"] = ""
 
     return refs
 
 
-def validate_classification(classification, tree_data):
-    """校验分类路径是否存在于分类树中
+def validate_classification(classification, code_to_path):
+    """校验分类路径是否存在于编码→路径字典中
 
     Args:
-        classification: 分类列表, 如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
-        tree_data: classification.json的原始JSON字典
+        classification: 分类名称列表, 如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
+        code_to_path: 编码→路径字典 (来自 parse_classification_md)
 
     Returns:
         True if path is valid (or classification is ["未知问题"])
-        False if any level doesn't match the tree
+        False if any path doesn't match any registered code path
     """
-    # 特殊情况: "未知问题"是Prompt规则允许的, 不在树中但直接放行
+    # 特殊情况: "未知问题"是Prompt规则允许的, 不在字典中但直接放行
     if not classification or classification[0] == "未知问题":
         return True
 
-    level1 = classification[0]
-    if level1 not in tree_data:
-        return False
-
-    # 单级分类 (截断) 合法: 如 ["卡顿"]
-    if len(classification) == 1:
-        return True
-
-    level2_dict = tree_data[level1]
-    level2 = classification[1]
-    if level2 not in level2_dict:
-        return False
-
-    # 双级分类 (截断) 合法: 如 ["卡顿", "滑动卡顿"]
-    if len(classification) == 2:
-        return True
-
-    level3_list = level2_dict[level2]
-    level3 = classification[2]
-    if level3 not in level3_list:
-        return False
-
-    return True
+    # 检查名称路径是否与字典中某个编码对应的路径完全匹配
+    valid_paths = set(tuple(v) for v in code_to_path.values())
+    return tuple(classification) in valid_paths
 
 
 def build_batch_prompt(app_name, items, refs):
@@ -191,7 +227,7 @@ def build_batch_prompt(app_name, items, refs):
     ])
     return f"""你是一位专业的{app_name}应用问题分类专家，请根据用户的问题描述（以---PROBLEMS---、---PROBLEMS_END---分隔，内部有{len(items)}个问题，每个问题以---PROBLEM_N---，---PROBLEM_N_END---分隔，每个问题可能属于多个分类，只要给出最相关即可），
 
-结合应用描述（---APP---、---APP_END---分隔）、问题分类（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），逐层推导出最准确的分类。
+结合应用描述（---APP---、---APP_END---分隔）、问题分类编码表（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），推导出最准确的分类编码。
 
 ---PROBLEMS---
 {problems_text}
@@ -209,11 +245,11 @@ def build_batch_prompt(app_name, items, refs):
 {refs.get('examples', '')}
 ---EXAMPLES_END---
 
-推导规则：参照示例的推理方式逐层推导，无法推导的层级截断（如无法推导二级则只返回一级，无法推导三级则只返回到二级）；不属于性能问题的归为"未知问题"。
+推导规则：参照示例的推理方式，对照编码表逐层推导，返回分类编码；无法推导的层级截断编码（如无法推导二级则只返回一级编码如"1"，无法推导三级则只返回到二级编码如"1.1"）；不属于编码表问题的返回"0"。
 
 必须返回{len(items)}个元素，禁止多加或遗漏，必须按照以下json格式返回，json格式被三个反引号分割
 ```
-[{{"classification": ["一级分类", "二级分类", "三级分类"], "reason": "推理过程"}}]
+[{{"classification": "编码", "reason": "推理过程"}}]
 ```
 """
 
@@ -437,17 +473,19 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         results.append((item["num"], 2))
                     break
 
+            # 格式检查: classification应为字符串编码
+            code_to_path = refs.get("classification_tree", {})
             format_errors = False
             for p in parsed:
                 if not isinstance(p, dict):
                     continue
-                cls = p.get("classification", ["未知问题"])
-                if not isinstance(cls, list):
+                cls = p.get("classification", "0")
+                if not isinstance(cls, str):
                     format_errors = True
                     break
 
             if format_errors:
-                logger.warning("分类格式错误(第%d/%d次)", attempt + 1, max_retries)
+                logger.warning("分类格式错误(第%d/%d次): classification应为字符串编码", attempt + 1, max_retries)
                 if attempt < max_retries - 1:
                     time.sleep(3)
                     continue
@@ -455,36 +493,39 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     for i, item in enumerate(valid_items):
                         num = item["num"]
                         p = parsed[i]
-                        cls = p.get("classification", ["未知问题"])
-                        reason = p.get("reason", "")
-                        if not isinstance(cls, list):
-                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
+                        code = p.get("classification", "0") if isinstance(p, dict) else "0"
+                        reason = p.get("reason", "") if isinstance(p, dict) else ""
+                        classification = code_to_classification(code, code_to_path)
+                        if not isinstance(code, str):
+                            save_item(num, ["未知问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
-                        elif cls[0] == "未知问题":
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
+                        elif code == "0":
+                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
                             results.append((num, 1))
                         else:
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
+                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
                             results.append((num, 0))
-                        logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls) if isinstance(cls, list) else "格式错误")
+                        logger.info("行%d 批量推理成功, 编码: %s, 分类: %s", num, code, ".".join(classification))
                     break
 
-            # 分类路径校验: 检查每个classification是否存在于分类树中
-            tree_data = refs.get("classification_tree", {})
-            invalid_paths = []
+            # 分类编码校验: 检查每个编码是否存在于编码→路径字典中
+            invalid_codes = []
             for i, p in enumerate(parsed):
                 if not isinstance(p, dict):
-                    invalid_paths.append((i, "not a dict"))
+                    invalid_codes.append((i, "not a dict"))
                     continue
-                cls = p.get("classification", ["未知问题"])
-                if not isinstance(cls, list):
+                code = p.get("classification", "0")
+                if not isinstance(code, str):
                     continue  # 已在format_errors中处理
-                if not validate_classification(cls, tree_data):
-                    invalid_paths.append((i, ".".join(cls)))
+                # 容错: 提取编码部分(如"1.1 滑动卡顿" → "1.1")
+                code_clean = re.match(r'^(\d+(?:\.\d+)*)', str(code).strip())
+                code_str = code_clean.group(1) if code_clean else str(code).strip()
+                if code_str != "0" and code_str not in code_to_path:
+                    invalid_codes.append((i, code_str))
 
-            if invalid_paths:
-                for idx, path_str in invalid_paths:
-                    logger.warning("分类路径无效(第%d/%d次), 项目%d: '%s' 不存在于分类树", attempt + 1, max_retries, idx + 1, path_str)
+            if invalid_codes:
+                for idx, invalid_code in invalid_codes:
+                    logger.warning("分类编码无效(第%d/%d次), 项目%d: '%s' 不存在于编码表", attempt + 1, max_retries, idx + 1, invalid_code)
                 if attempt < max_retries - 1:
                     time.sleep(3)
                     continue  # 重试整个批次
@@ -493,35 +534,38 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     for i, item in enumerate(valid_items):
                         num = item["num"]
                         p = parsed[i]
-                        cls = p.get("classification", ["未知问题"])
-                        reason = p.get("reason", "")
-                        if not isinstance(cls, list):
+                        code = p.get("classification", "0") if isinstance(p, dict) else "0"
+                        reason = p.get("reason", "") if isinstance(p, dict) else ""
+                        classification = code_to_classification(code, code_to_path)
+                        if not isinstance(code, str):
                             save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
-                        elif cls[0] == "未知问题":
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
+                        elif code == "0":
+                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
                             results.append((num, 1))
-                        elif not validate_classification(cls, tree_data):
-                            invalid_reason = f"分类路径无效: {'.'.join(cls)} 不存在于分类树"
+                        elif classification[0] == "未知问题":
+                            # 编码不在字典中, 转换后为未知问题
+                            invalid_reason = f"分类编码无效: {code} 不存在于编码表"
                             save_item(num, ["未知问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         else:
-                            save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
+                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
                             results.append((num, 0))
                     break
 
             for i, item in enumerate(valid_items):
                 num = item["num"]
                 p = parsed[i]
-                cls = p.get("classification", ["未知问题"])
+                code = p.get("classification", "0")
                 reason = p.get("reason", "")
-                if cls[0] == "未知问题":
-                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 1, version_col)
+                classification = code_to_classification(code, code_to_path)
+                if code == "0":
+                    save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
                     results.append((num, 1))
                 else:
-                    save_item(num, cls, reason, app_name, problem_col, df, db_path, 0, version_col)
+                    save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
                     results.append((num, 0))
-                logger.info("行%d 批量推理成功, 分类: %s", num, ".".join(cls))
+                logger.info("行%d 批量推理成功, 编码: %s, 分类: %s", num, code, ".".join(classification))
             break
 
     except Exception as e:
@@ -583,7 +627,7 @@ def main():
     app_name = args.app_name
     if app_name not in SUPPORTED_APPS:
         logger.warning("' %s' 不在支持列表中, 所有数据归为'未知问题'", app_name)
-        refs = {"info": "", "classification": "", "examples": "", "classification_tree": {}}
+        refs = {"info": "", "classification": "", "examples": "", "classification_tree": {"0": ["未知问题"]}}
     else:
         refs = load_reference(app_name)
         if not refs:
