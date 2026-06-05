@@ -4,7 +4,7 @@ classify_data.py - 使用LLM API自动分类舆情数据
 
 用法:
   python classify_data.py \
-    --app-name 抖音 --app-index 2 --problem-index 5 \
+    --app-name 抖音 --problem-index 5 \
     --excel-path test/douyin_100.xlsx \
     --output-dir output/douyin_100
 
@@ -69,7 +69,7 @@ def _load_env():
 
 
 sys.path.insert(0, SCRIPT_DIR)
-from config import resolve_column, app_alias_map, SUPPORTED_APPS, get_app_dir
+from config import resolve_column, SUPPORTED_APPS, get_app_dir
 
 
 DB_SCHEMA = """
@@ -613,7 +613,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="使用LLM API自动分类舆情数据")
     parser.add_argument("--app-name", required=True)
-    parser.add_argument("--app-index", type=int, required=True)
     parser.add_argument("--problem-name", default=None)
     parser.add_argument("--problem-index", type=int, required=True)
     parser.add_argument("--version-index", type=int, default=0,
@@ -655,19 +654,8 @@ def main():
     else:
         logger.info("无版本号列, version 字段为空")
 
-    if args.app_index > 0:
-        app_col = resolve_column(args.app_index, columns)
-        if app_col not in columns:
-            logger.error("应用名列 '%s' 不存在", app_col); sys.exit(1)
-        filtered = [idx for idx, row in df.iterrows()
-                     if app_alias_map.get(str(row[app_col]).strip() if not pd.isna(row[app_col]) else "", str(row[app_col]).strip() if not pd.isna(row[app_col]) else "") == app_name]
-        logger.info("总行数: %d, 筛选 '%s': %d条", len(df), app_name, len(filtered))
-        if not filtered:
-            logger.warning("未找到 '%s' 数据, 处理全部行", app_name)
-            filtered = list(range(len(df)))
-    else:
-        filtered = list(range(len(df)))
-        logger.info("总行数: %d (无应用名列筛选)", len(df))
+    filtered = list(range(len(df)))
+    logger.info("总行数: %d (无应用名列筛选)", len(df))
 
     db_path = os.path.join(output_dir, "report.db")
     init_db(db_path)

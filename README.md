@@ -70,12 +70,12 @@ python .claude/skills/opinion-analysis/scripts/analyze_excel.py test/douyin_100.
 
 # 步骤2：分类并生成报告
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
-  --app-name 抖音 --app-index 2 --problem-index 5 \
+  --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
 
 # 步骤3（可选）：重试失败或未知问题
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
-  --app-name 抖音 --app-index 2 --problem-index 5 \
+  --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100 \
   --retry [failed/unknow]    # 重试推理【失败/未知】的数据
 ```

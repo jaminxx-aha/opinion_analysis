@@ -18,7 +18,7 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 
 根据输出判断：
 
-- **应用名列**：内容为已知应用名（抖音或别名），记 `app_name` 和 `app_index`
+- **应用名**：内容为已知应用名（抖音或别名），记 `app_name`
 - **问题描述列**：内容为问题描述文本，记 `problem_index` 和 `row_count`
 - **版本号列**（可选）：内容为版本号（如 "3.5.0"、"v1.2.3"），记 `version_index`。若数据中无版本号相关字段则不传此参数
 - 验证 `references/apps/<app_name>/` 存在；不存在的应用所有数据归为"未知问题"，需告知用户
@@ -27,7 +27,7 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
-  --app-name <app_name> --app-index <app_index> \
+  --app-name <app_name> \
   --problem-index <problem_index> \
   --excel-path <Excel文件路径> --output-dir <output_dir> \
   [--version-index <version_index>]
@@ -43,7 +43,7 @@ python <skill_path>/scripts/classify_data.py \
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
-  --app-name <app_name> --app-index <app_index> \
+  --app-name <app_name> \
   --problem-index <problem_index> \
   --excel-path <Excel文件路径> --output-dir <output_dir> \
   --retry <模式> \
