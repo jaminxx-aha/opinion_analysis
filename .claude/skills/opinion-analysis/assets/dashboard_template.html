@@ -8,97 +8,105 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
-  --bg: #fafbfc; --surface: #ffffff; --border: #e8ecf1;
-  --text: #2c3e50; --text-secondary: #7f8c9b; --text-muted: #a3b1bf;
-  --primary: #4a90d9; --primary-light: #e3f0fc;
-  --color-a: #4a90d9; --color-b: #e67e22;
-  --green: #27ae60; --green-bg: #eafaf1;
-  --orange: #e67e22; --orange-bg: #fdf2e9;
-  --red: #c0392b; --red-bg: #fce4e4;
+  --bg: #f4f6f9; --surface: #ffffff; --border: #e4e8ed;
+  --text: #1f2937; --text-secondary: #6b7280; --text-muted: #9ca3af;
+  --primary: #3b82f6; --primary-hover: #2563eb; --primary-light: #eff6ff; --primary-glow: rgba(59,130,246,.12);
+  --color-a: #3b82f6; --color-b: #f59e0b;
+  --green: #10b981; --green-bg: #ecfdf5;
+  --orange: #f59e0b; --orange-bg: #fffbeb;
+  --red: #ef4444; --red-bg: #fef2f2;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,.08), 0 4px 6px rgba(0,0,0,.04);
+  --radius: 10px; --radius-sm: 6px;
+  --transition: .18s ease;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 1060px; margin: 32px auto; padding: 0 16px; }
+.wrap { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
 
 /* ─── header ─── */
-.hdr { padding: 0 0 20px; border-bottom: 2px solid var(--primary); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: baseline; }
-.hdr h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
-.hdr-meta { font-size: 13px; color: var(--text-secondary); }
+.hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
+.hdr h1 { font-size: 22px; font-weight: 800; letter-spacing: .5px; color: #fff; }
+.hdr-meta { font-size: 13px; color: rgba(255,255,255,.8); }
 
 /* ─── report selector ─── */
-.rpt-bar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
-.rpt-bar-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.rpt-bar-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 200px; }
-.rpt-bar-select:focus { outline: none; border-color: var(--primary); }
-.rpt-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.rpt-bar { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; box-shadow: var(--shadow); transition: box-shadow var(--transition); }
+.rpt-bar:hover { box-shadow: var(--shadow-md); }
+.rpt-bar-label { font-size: 12px; color: var(--text-secondary); font-weight: 700; white-space: nowrap; letter-spacing: .5px; }
+.rpt-bar-select { font-size: 13px; padding: 6px 28px 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; width: 220px; transition: border-color var(--transition); }
+.rpt-bar-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.rpt-detail { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
 .rpt-detail-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
 .rpt-detail-date { font-size: 12px; color: var(--text-secondary); }
 .rpt-detail-source { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .rpt-detail-stats { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
-.rpt-stat { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.rpt-stat { padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
 .rpt-stat.total { background: var(--bg); color: var(--text); }
 .rpt-stat.ok { background: var(--green-bg); color: var(--green); }
 .rpt-stat.warn { background: var(--orange-bg); color: var(--orange); }
 .rpt-stat.err { background: var(--red-bg); color: var(--red); }
-.rpt-detail-link { display: inline-block; font-size: 13px; color: var(--primary); text-decoration: none; padding: 4px 12px; border: 1px solid var(--primary); border-radius: 6px; margin-top: 4px; }
-.rpt-detail-link:hover { background: var(--primary-light); }
+.rpt-detail-link { display: inline-block; font-size: 13px; color: var(--primary); text-decoration: none; padding: 6px 16px; border: 1px solid var(--primary); border-radius: var(--radius-sm); margin-top: 4px; transition: all var(--transition); }
+.rpt-detail-link:hover { background: var(--primary-light); box-shadow: var(--shadow-sm); }
 .rpt-detail-link.disabled { opacity: .4; cursor: default; border-color: var(--border); color: var(--text-muted); }
 
 /* ─── empty ─── */
 .empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* ─── section divider ─── */
-.section { margin-bottom: 24px; }
+.section { margin-bottom: 20px; }
 
 /* ─── comparison toolbar ─── */
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
-.tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tb-select:focus { outline: none; border-color: var(--primary); }
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 0; padding: 10px 16px; background: var(--primary-light); border-bottom: 1px solid rgba(59,130,246,.15); flex-wrap: wrap; }
+.tb-label { font-size: 11px; color: var(--primary-hover); font-weight: 700; white-space: nowrap; letter-spacing: .3px; }
+.tb-select { font-size: 13px; padding: 5px 26px 5px 8px; border: 1px solid rgba(59,130,246,.2); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all var(--transition); }
+.tb-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 .tb-select:disabled { opacity: .45; cursor: default; }
-.tb-btn { font-size: 12px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
-.tb-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-.tb-btn:hover:not(.active) { background: var(--bg); }
+.tb-btn { font-size: 12px; padding: 5px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: all var(--transition); }
+.tb-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 2px 4px rgba(59,130,246,.25); }
+.tb-btn:hover:not(.active) { background: var(--bg); border-color: var(--primary); color: var(--primary); }
 .tb-path { font-size: 13px; color: var(--text-secondary); flex-basis: 100%; }
-.tb-path .p { color: var(--primary); cursor: pointer; }
-.tb-path .p:hover { text-decoration: underline; }
+.tb-path .p { color: var(--primary); cursor: pointer; transition: color var(--transition); }
+.tb-path .p:hover { color: var(--primary-hover); text-decoration: underline; }
 .tb-path .sep { color: var(--text-muted); margin: 0 4px; }
 
 /* ─── pagination ─── */
-.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid var(--border); }
-.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
-.pgn button:hover:not(:disabled) { background: var(--bg); }
+.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: all var(--transition); }
+.pgn button:hover:not(:disabled) { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
 .pgn button:disabled { opacity: .35; cursor: default; }
-.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 2px 4px rgba(59,130,246,.25); }
 .pgn .info { font-size: 12px; color: var(--text-muted); }
 
-.tbl tbody tr.drillable { cursor: pointer; }
+.tbl tbody tr.drillable { cursor: pointer; transition: background var(--transition); }
 
 /* ─── charts ─── */
-.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
-.charts-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-.charts-hdr h2 { font-size: 14px; font-weight: 700; }
-.charts-body { padding: 20px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.charts-hdr { padding: 14px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.charts-hdr h2 { font-size: 15px; font-weight: 700; }
+.charts-body { padding: 24px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
 .ch-wrap { height: 300px; position: relative; }
 .ch-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
 
 /* ─── comparison summary ─── */
-.cmp-summary { display: flex; gap: 0; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.cmp-sum-item { flex: 1; padding: 14px 16px; text-align: center; }
+.cmp-summary { display: flex; gap: 0; margin: 0; background: var(--surface); overflow: hidden; }
+.cmp-sum-item { flex: 1; padding: 16px 20px; text-align: center; transition: background var(--transition); }
+.cmp-sum-item:hover { background: var(--primary-light); }
 .cmp-sum-item + .cmp-sum-item { border-left: 1px solid var(--border); }
-.cmp-sum-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.cmp-sum-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; letter-spacing: .3px; font-weight: 700; }
 .cmp-sum-vals { display: flex; justify-content: center; align-items: center; gap: 8px; }
-.cmp-val-a { font-size: 20px; font-weight: 700; color: var(--color-a); }
-.cmp-val-b { font-size: 20px; font-weight: 700; color: var(--color-b); }
-.cmp-val-sep { font-size: 12px; color: var(--text-muted); }
-.cmp-sum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.cmp-val-a { font-size: 22px; font-weight: 800; color: var(--color-a); }
+.cmp-val-b { font-size: 22px; font-weight: 800; color: var(--color-b); }
+.cmp-val-sep { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.cmp-sum-delta { font-size: 13px; font-weight: 700; margin-top: 4px; }
 .cmp-sum-delta.pos { color: var(--green); }
 .cmp-sum-delta.neg { color: var(--red); }
 .cmp-sum-delta.zero { color: var(--text-muted); }
 
 /* ─── comparison table ─── */
-.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
-.tbl-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-.tbl-hdr h2 { font-size: 14px; font-weight: 700; }
+.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow); }
+.tbl-hdr { padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.tbl-hdr h2 { font-size: 15px; font-weight: 700; }
 .tbl-hdr .cnt { font-size: 12px; color: var(--text-secondary); }
 .tbl-scroll { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -109,14 +117,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tbl col:nth-child(5) { width: 10%; }
 .tbl col:nth-child(6) { width: 10%; }
 .tbl col:nth-child(7) { width: 10%; }
-.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
-.tbl td { font-size: 13px; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl th { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
+.tbl td { font-size: 13px; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; transition: background var(--transition); }
 .tbl tbody tr:hover { background: var(--primary-light); }
 .tbl tbody tr:last-child td { border-bottom: none; }
-.val-a { color: var(--color-a); font-weight: 500; }
-.val-b { color: var(--color-b); font-weight: 500; }
-.delta-pos { color: var(--green); font-weight: 600; }
-.delta-neg { color: var(--red); font-weight: 600; }
+.val-a { color: var(--color-a); font-weight: 600; }
+.val-b { color: var(--color-b); font-weight: 600; }
+.delta-pos { color: var(--green); font-weight: 700; }
+.delta-neg { color: var(--red); font-weight: 700; }
 .delta-zero { color: var(--text-muted); }
 </style>
 </head>
@@ -124,7 +132,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 <div class="wrap">
 
 <div class="hdr">
-  <h1>报告管理中心</h1>
+  <h1>📊 报告管理中心</h1>
   <div class="hdr-meta"><span>{{GENERATED_TIME}}</span></div>
 </div>
 
@@ -139,27 +147,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 <div class="section">
   <div class="charts-card">
     <div class="charts-hdr">
-      <h2 id="trend-title">数量趋势</h2>
+      <h2 id="trend-title">📈 数量趋势</h2>
       <div style="display:flex;gap:6px;">
         <button class="tb-btn active" id="trend-mode-count" onclick="setTrendMode('count')">数量</button>
         <button class="tb-btn" id="trend-mode-pct" onclick="setTrendMode('pct')">百分比</button>
       </div>
     </div>
-    <div class="toolbar" id="trend-toolbar" style="border-radius:0;border-left:none;border-right:none;border-bottom:1px solid var(--border);margin:0;">
+    <div class="toolbar" id="trend-toolbar">
       <span class="tb-label">一级</span><select class="tb-select" id="trend-level1" onchange="onTrendFilterChange('level1')"><option value="">全部</option></select>
       <span class="tb-label">二级</span><select class="tb-select" id="trend-level2" onchange="onTrendFilterChange('level2')" disabled><option value="">全部</option></select>
       <span class="tb-label">三级</span><select class="tb-select" id="trend-level3" onchange="onTrendFilterChange('level3')" disabled><option value="">全部</option></select>
       <span class="tb-label">版本</span><select class="tb-select" id="trend-version" onchange="onTrendVersionChange()" disabled><option value="">全部</option></select>
       <span id="trend-path" class="tb-path"></span>
     </div>
-    <div style="padding:20px;"><div class="ch-wrap"><canvas id="trendChart"></canvas></div></div>
+    <div style="padding:24px;"><div class="ch-wrap"><canvas id="trendChart"></canvas></div></div>
   </div>
 </div>
 
 <div class="section">
   <div class="charts-card">
     <div class="charts-hdr">
-      <h2>报告对比</h2>
+      <h2>⚖️ 报告对比</h2>
       <div style="display:flex;gap:6px;align-items:center;">
         <span class="tb-label">报告A</span><select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
         <span class="tb-label">报告B</span><select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
@@ -167,7 +175,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
     </div>
 
     <div class="cmp-summary" id="cmp-summary-area" style="display:none"></div>
-    <div class="toolbar" id="cmp-filter-bar" style="display:none;border-radius:0;border-left:none;border-right:none;border-bottom:1px solid var(--border);">
+    <div class="toolbar" id="cmp-filter-bar" style="display:none">
       <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
       <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
       <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
@@ -218,11 +226,11 @@ const level1Keys = JSON.parse(document.getElementById('level1-keys-data').textCo
 const level1Trend = JSON.parse(document.getElementById('level1-trend-data').textContent);
 const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
 
-const COLORS = ['#4a90d9','#e67e22','#27ae60','#c0392b','#8e44ad','#16a085','#2c3e50','#d35400','#7f8c8d','#f39c12','#1abc9c','#3498db','#9b59b6','#34495e','#e74c3c','#2980b9'];
-const COLOR_A = '#4a90d9';
-const COLOR_B = '#e67e22';
-const COLOR_POS = '#27ae60';
-const COLOR_NEG = '#c0392b';
+const COLORS = ['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#14b8a6','#1f2937','#d97706','#6b7280','#f97316','#06b6d4','#0ea5e9','#a855f7','#334155','#dc2626','#1d4ed8'];
+const COLOR_A = '#3b82f6';
+const COLOR_B = '#f59e0b';
+const COLOR_POS = '#10b981';
+const COLOR_NEG = '#ef4444';
 
 let trendMetric = 'all';
 let trendCharts = {};
@@ -339,7 +347,8 @@ function buildTrendData() {
   else if (trendFilters.level2) title = trendFilters.level1 + " › " + trendFilters.level2;
   else if (trendFilters.level1) title = trendFilters.level1;
   if (trendVersion) title += (trendVersion === "__empty__" ? " (无版本号)" : " (" + trendVersion + ")");
-  document.getElementById("trend-title").textContent = title;
+  const emoji = trendMode === "pct" ? "📊" : "📈";
+  document.getElementById("trend-title").textContent = emoji + " " + title;
 
   // 百分比模式下返回占比值
   if (trendMode === "pct") {
@@ -354,8 +363,8 @@ function initTrendCharts() {
   trendCharts.mixed = new Chart(document.getElementById('trendChart'), {
     type: 'bar',
     data: { labels: trendLabels, datasets: [
-      { type: 'bar', label: isPct ? '占比' : '数量', data: trendData, backgroundColor: '#4a90d9', borderRadius: 4, order: 2, barPercentage: 0.7, categoryPercentage: 0.7 },
-      { type: 'line', label: isPct ? '占比趋势' : '数量趋势', data: trendData, borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.1)', fill: false, tension: 0.3, pointRadius: 4, borderWidth: 2, order: 1 }
+      { type: 'bar', label: isPct ? '占比' : '数量', data: trendData, backgroundColor: '#3b82f6', borderRadius: 4, order: 2, barPercentage: 0.7, categoryPercentage: 0.7 },
+      { type: 'line', label: isPct ? '占比趋势' : '数量趋势', data: trendData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', fill: false, tension: 0.3, pointRadius: 4, borderWidth: 2, order: 1 }
     ] },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -843,7 +852,7 @@ function updateCmpCharts() {
   else if (cmpFilters.level1 && cmpFilters.level2) title = cmpFilters.level1 + ' › ' + cmpFilters.level2;
   else if (cmpFilters.level1) title = cmpFilters.level1;
   else title = "全部";
-  document.getElementById("cmp-table-title").textContent = title;
+  document.getElementById("cmp-table-title").textContent = "📋 " + title;
 
   const barLabels = labels.map(l => l.length > 10 ? l.slice(0, 10) + '…' : l);
 

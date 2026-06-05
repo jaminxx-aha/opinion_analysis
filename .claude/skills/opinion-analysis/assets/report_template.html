@@ -8,72 +8,70 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
-  --bg: #fafbfc;
-  --surface: #ffffff;
-  --border: #e8ecf1;
-  --text: #2c3e50;
-  --text-secondary: #7f8c9b;
-  --text-muted: #a3b1bf;
-  --primary: #4a90d9;
-  --primary-light: #e3f0fc;
-  --green: #27ae60;
-  --green-bg: #eafaf1;
-  --orange: #e67e22;
-  --orange-bg: #fdf2e9;
-  --red: #c0392b;
-  --red-bg: #fce4e4;
+  --bg: #f4f6f9; --surface: #ffffff; --border: #e4e8ed;
+  --text: #1f2937; --text-secondary: #6b7280; --text-muted: #9ca3af;
+  --primary: #3b82f6; --primary-hover: #2563eb; --primary-light: #eff6ff; --primary-glow: rgba(59,130,246,.12);
+  --green: #10b981; --green-bg: #ecfdf5;
+  --orange: #f59e0b; --orange-bg: #fffbeb;
+  --red: #ef4444; --red-bg: #fef2f2;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,.08), 0 4px 6px rgba(0,0,0,.04);
+  --radius: 10px; --radius-sm: 6px;
+  --transition: .18s ease;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 1060px; margin: 32px auto; padding: 0; }
+.wrap { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
 
 /* ─── header ─── */
-.hdr { padding: 0 0 20px; border-bottom: 2px solid var(--primary); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: baseline; }
-.hdr h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: 1px; }
-.hdr-meta { font-size: 13px; color: var(--text-secondary); display: flex; gap: 16px; align-items: center; }
-.hdr-meta a { color: var(--primary); text-decoration: none; }
-.hdr-meta a:hover { text-decoration: underline; }
+.hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
+.hdr h1 { font-size: 22px; font-weight: 800; letter-spacing: .5px; color: #fff; }
+.hdr-meta { font-size: 13px; color: rgba(255,255,255,.85); display: flex; gap: 16px; align-items: center; }
+.hdr-meta a { color: rgba(255,255,255,.9); text-decoration: none; transition: color var(--transition); }
+.hdr-meta a:hover { color: #fff; text-decoration: underline; }
 
 /* ─── summary ─── */
-.summary { display: flex; gap: 0; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.sum-item { flex: 1; padding: 14px 20px; text-align: center; }
+.summary { display: flex; gap: 0; margin-bottom: 0; background: var(--surface); overflow: hidden; }
+.sum-item { flex: 1; padding: 16px 20px; text-align: center; cursor: pointer; transition: background var(--transition); }
+.sum-item:hover { background: var(--primary-light); }
 .sum-item + .sum-item { border-left: 1px solid var(--border); }
-.sum-item { cursor: pointer; transition: background .15s; }
-.sum-item:hover { background: var(--bg); }
-.sum-num { font-size: 28px; font-weight: 700; line-height: 1.1; }
-.sum-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.sum-num { font-size: 28px; font-weight: 800; line-height: 1.1; }
+.sum-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; letter-spacing: .3px; font-weight: 700; }
 .sum-item.total .sum-num { color: var(--text); }
 .sum-item.ok .sum-num { color: var(--green); }
 .sum-item.warn .sum-num { color: var(--orange); }
 .sum-item.err .sum-num { color: var(--red); }
 
 /* ─── toolbar ─── */
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
-.tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tb-select:focus { outline: none; border-color: var(--primary); }
+.toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--primary-light); border-bottom: 1px solid rgba(59,130,246,.15); flex-wrap: wrap; }
+.tb-label { font-size: 11px; color: var(--primary-hover); font-weight: 700; white-space: nowrap; letter-spacing: .3px; }
+.tb-select { font-size: 13px; padding: 5px 26px 5px 8px; border: 1px solid rgba(59,130,246,.2); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: all var(--transition); }
+.tb-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
 .tb-select:disabled { opacity: .45; cursor: default; }
 .tb-search { margin-left: auto; }
-.tb-search input { font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; width: 160px; transition: width .2s; }
-.tb-search input:focus { outline: none; border-color: var(--primary); width: 200px; }
+.tb-search input { font-size: 13px; padding: 6px 12px; border: 1px solid rgba(59,130,246,.2); border-radius: var(--radius-sm); width: 160px; transition: all .2s; background: var(--surface); }
+.tb-search input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); width: 220px; }
 .tb-path { font-size: 13px; color: var(--text-secondary); flex-basis: 100%; }
-.tb-path .p { color: var(--primary); cursor: pointer; }
-.tb-path .p:hover { text-decoration: underline; }
+.tb-path .p { color: var(--primary); cursor: pointer; transition: color var(--transition); }
+.tb-path .p:hover { color: var(--primary-hover); text-decoration: underline; }
 .tb-path .sep { color: var(--text-muted); margin: 0 4px; }
 
 /* ─── charts ─── */
-.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px; }
-.charts-hdr { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--border); }
-.charts-hdr h2 { font-size: 14px; font-weight: 700; }
-.charts-hdr .tog { font-size: 13px; color: var(--primary); cursor: pointer; }
-.charts-body { padding: 20px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); }
+.charts-hdr { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); }
+.charts-hdr h2 { font-size: 15px; font-weight: 700; }
+.charts-hdr .tog { font-size: 13px; color: var(--primary); cursor: pointer; transition: color var(--transition); }
+.charts-hdr .tog:hover { color: var(--primary-hover); }
+.charts-body { padding: 24px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
 .charts-body.hide { display: none; }
 .ch-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
 .ch-wrap { height: 300px; position: relative; }
 
 /* ─── table ─── */
-.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.tbl-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-.tbl-hdr h2 { font-size: 14px; font-weight: 700; }
+.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.tbl-hdr { padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.tbl-hdr h2 { font-size: 15px; font-weight: 700; }
 .tbl-hdr .cnt { font-size: 12px; color: var(--text-secondary); }
 .tbl-scroll { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -82,32 +80,32 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tbl col:nth-child(3) { width: 30%; }
 .tbl col:nth-child(4) { width: 20%; }
 .tbl col:nth-child(5) { width: auto; }
-.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
-.tbl td { font-size: 13px; padding: 9px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl th { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-align: left; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
+.tbl td { font-size: 13px; padding: 9px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; transition: background var(--transition); }
 .tbl td:first-child { text-align: left; }
 .tbl th:first-child { text-align: left; padding: 10px 4px 10px 20px; }
 .tbl tbody tr:hover { background: var(--primary-light); }
 .tbl tbody tr:last-child td { border-bottom: none; }
 
 /* table content helpers */
-.prob { color: var(--primary); cursor: pointer; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
-.prob:hover { text-decoration: underline; }
+.prob { color: var(--primary); cursor: pointer; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; transition: color var(--transition); }
+.prob:hover { color: var(--primary-hover); text-decoration: underline; }
 .cls { font-size: 13px; }
-.cls .c { color: var(--primary); cursor: pointer; font-weight: 500; }
-.cls .c:hover { text-decoration: underline; }
+.cls .c { color: var(--primary); cursor: pointer; font-weight: 600; transition: color var(--transition); }
+.cls .c:hover { color: var(--primary-hover); text-decoration: underline; }
 .cls .dot { color: var(--text-muted); margin: 0 2px; }
-.cls .unk { color: var(--orange); cursor: pointer; font-weight: 500; }
+.cls .unk { color: var(--orange); cursor: pointer; font-weight: 600; transition: color var(--transition); }
 .cls .unk:hover { text-decoration: underline; }
-.cls .fail { color: var(--red); cursor: pointer; font-weight: 500; }
+.cls .fail { color: var(--red); cursor: pointer; font-weight: 600; transition: color var(--transition); }
 .cls .fail:hover { text-decoration: underline; }
 .rsn { font-size: 12px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: default; }
 
 /* ─── pagination ─── */
-.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid var(--border); }
-.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
-.pgn button:hover:not(:disabled) { background: var(--bg); }
+.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: all var(--transition); }
+.pgn button:hover:not(:disabled) { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
 .pgn button:disabled { opacity: .35; cursor: default; }
-.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); box-shadow: 0 2px 4px rgba(59,130,246,.25); }
 .pgn .info { font-size: 12px; color: var(--text-muted); }
 
 /* ─── empty ─── */
@@ -115,21 +113,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .empty.hidden { display: none; }
 
 /* ─── modal ─── */
-.mdl-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.mdl-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 999; backdrop-filter: blur(2px); }
 .mdl-bg.hidden { display: none; }
-.mdl { background: var(--surface); border-radius: 12px; width: 760px; max-width: 90vw; max-height: 80vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.15); }
+.mdl { background: var(--surface); border-radius: var(--radius); width: 760px; max-width: 90vw; max-height: 80vh; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,.2); }
 .mdl-top { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 .mdl-top h3 { font-size: 15px; font-weight: 700; }
-.mdl-x { font-size: 16px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; }
-.mdl-x:hover { background: var(--bg); color: var(--text); }
+.mdl-x { font-size: 16px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: var(--radius-sm); transition: all var(--transition); }
+.mdl-x:hover { background: var(--red-bg); color: var(--red); }
 .mdl-in { padding: 24px; overflow-y: auto; max-height: calc(80vh - 52px); }
-.mdl-cls { padding: 14px 18px; background: var(--primary-light); border-radius: 8px; margin-bottom: 16px; }
-.mdl-cls .l { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+.mdl-cls { padding: 16px 20px; background: var(--primary-light); border-radius: var(--radius-sm); margin-bottom: 16px; }
+.mdl-cls .l { font-size: 11px; color: var(--text-secondary); font-weight: 700; letter-spacing: .3px; }
 .mdl-cls .v { font-size: 15px; color: var(--primary); font-weight: 700; margin-top: 2px; }
-.mdl-rsn { padding: 14px 18px; background: #f7f9fb; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
-.mdl-rsn .l { font-size: 11px; color: var(--text-secondary); font-weight: 600; margin-bottom: 4px; }
+.mdl-rsn { padding: 16px 20px; background: var(--bg); border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+.mdl-rsn .l { font-size: 11px; color: var(--text-secondary); font-weight: 700; margin-bottom: 4px; letter-spacing: .3px; }
 .mdl-tbl { width: 100%; border-collapse: collapse; }
-.mdl-tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); }
+.mdl-tbl th { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-align: left; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); }
 .mdl-tbl td { font-size: 13px; padding: 8px 12px; border: 1px solid var(--border); }
 </style>
 </head>
@@ -137,33 +135,33 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 <div class="wrap">
 
 <div class="hdr">
-  <h1>舆情分析报告</h1>
+  <h1>📋 舆情分析报告</h1>
   <div class="hdr-meta">
     <span>{{GENERATED_TIME}}</span>
-    {{IF_EXCEL_FILENAME}}<a href="{{EXCEL_FILENAME}}" download>下载原始数据</a>{{ENDIF_EXCEL_FILENAME}}
+    {{IF_EXCEL_FILENAME}}<a href="{{EXCEL_FILENAME}}" download>⬇ 下载原始数据</a>{{ENDIF_EXCEL_FILENAME}}
   </div>
 </div>
 
-<div class="summary">
-  <div class="sum-item total" onclick="filterByStatus('all')"><div class="sum-num">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
-  <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
-  <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">未知问题</div></div>
-  <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
-</div>
-
-<div class="toolbar">
-  <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option></select>
-  <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
-  <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
-  <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
-  <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
-  <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
-  <span id="filter-path" class="tb-path"></span>
-</div>
-
 <div class="charts-card">
+  <div class="summary">
+    <div class="sum-item total" onclick="filterByStatus('all')"><div class="sum-num">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
+    <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
+    <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">未知问题</div></div>
+    <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option></select>
+    <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
+    <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
+    <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
+    <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
+    <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
+    <span id="filter-path" class="tb-path"></span>
+  </div>
+
   <div class="charts-hdr">
-    <h2>数据分布</h2>
+    <h2>📊 数据分布</h2>
     <span class="tog" onclick="toggleCharts()">收起</span>
   </div>
   <div class="charts-body" id="charts-body">
@@ -173,7 +171,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 </div>
 
 <div class="tbl-card">
-  <div class="tbl-hdr"><h2>详细数据</h2><span class="cnt" id="table-count">0 条</span></div>
+  <div class="tbl-hdr"><h2>📑 详细数据</h2><span class="cnt" id="table-count">0 条</span></div>
   <div class="tbl-scroll">
     <table class="tbl">
       <colgroup><col><col><col><col><col></colgroup>
@@ -484,19 +482,19 @@ function updateCharts() {
   charts.bar.update(); charts.pie.update();
 }
 
-const COLORS = ["#4a90d9","#8e44ad","#e74c3c","#27ae60","#e67e22","#3498db","#1abc9c","#f39c12","#2c3e50","#d35400","#16a085","#c0392b","#7f8c8d","#2980b9","#9b59b6","#34495e"];
+const COLORS = ["#3b82f6","#8b5cf6","#ef4444","#10b981","#f59e0b","#0ea5e9","#14b8a6","#f97316","#1f2937","#d97706","#06b6d4","#dc2626","#6b7280","#1d4ed8","#a855f7","#334155"];
 
 function initCharts() {
   const stats = calcStats(allData);
   charts.bar = new Chart(document.getElementById("level1Chart"), {
     type: "bar",
     data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#2c3e50", cornerRadius: 4, padding: 8 } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => { if (els.length) { const v = charts.bar.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 } } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => { if (els.length) { const v = charts.bar.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
   });
   charts.pie = new Chart(document.getElementById("pieChart"), {
     type: "doughnut",
     data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#2c3e50", cornerRadius: 4, padding: 8, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + Math.round(ctx.raw/t*100) + "%)"; } } } }, onClick: (_, els) => { if (els.length) { const v = charts.pie.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
+    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 }, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + Math.round(ctx.raw/t*100) + "%)"; } } } }, onClick: (_, els) => { if (els.length) { const v = charts.pie.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
   });
 }
 
