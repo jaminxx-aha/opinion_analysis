@@ -29,33 +29,19 @@ python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-c
 python <skill_path>/scripts/classify_data.py \
   --app-name <app_name> \
   --problem-index <problem_index> \
-  --excel-path <Excel文件路径> --output-dir <output_dir> \
-  [--version-index <version_index>]
+  --excel-path <Excel文件路径> \
+  --output-dir <output_dir> \
+  [--version-index <version_index>] \
+  [--retry <retry_mode>]
 ```
 
-`--version-index` 可选，0 或不传表示无版本号列。分类完成后自动生成HTML报告。输出目录默认 `./output/<excel_name>`，也可用户指定。
+`--output-dir` 输出路径，如果用户指定了输出路径，output_dir=用户指定路径，否则out_dir=`./output/<excel_name>`。
+
+`--version-index` 可选，0 或不传表示无版本号列。分类完成后自动生成HTML报告。
+
+`--retry` 可选，当用户需要分析未知问题或推理失败的问题时添加。retry_mode=`failed`继续分析推理失败的数据，retry_mode=`unknown`继续分析未知数据
 
 **执行时间过长时**：分类脚本会持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志文件 `<output_dir>/report.log` 分析原因（如API超时、连接失败等）。
-
-### 步骤3：重试失败或未知问题的数据
-
-因超时、解析错误等原因产生推理失败，或分类为未知问题的数据，可使用 `--retry` 参数重新推理：
-
-```bash
-python <skill_path>/scripts/classify_data.py \
-  --app-name <app_name> \
-  --problem-index <problem_index> \
-  --excel-path <Excel文件路径> --output-dir <output_dir> \
-  --retry <模式> \
-  [--version-index <version_index>]
-```
-
-| 模式 | 重试范围 |
-|------|----------|
-| `failed` | 推理失败|
-| `unknown` | 未知问题 — 适用于换模型或更新知识库后重新分类 |
-
-不带 `--retry` 时为续跑模式，从数据库最大id之后继续处理。
 
 ## 资源文件
 

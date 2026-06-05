@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告管理中心</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #fafbfc; --surface: #ffffff; --border: #e8ecf1;
+  --text: #2c3e50; --text-secondary: #7f8c9b; --text-muted: #a3b1bf;
+  --primary: #4a90d9; --primary-light: #e3f0fc;
+  --color-a: #4a90d9; --color-b: #e67e22;
+  --green: #27ae60; --green-bg: #eafaf1;
+  --orange: #e67e22; --orange-bg: #fdf2e9;
+  --red: #c0392b; --red-bg: #fce4e4;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1060px; margin: 32px auto; padding: 0 16px; }
+
+/* ─── header ─── */
+.hdr { padding: 0 0 20px; border-bottom: 2px solid var(--primary); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: baseline; }
+.hdr h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+.hdr-meta { font-size: 13px; color: var(--text-secondary); }
+
+/* ─── report cards ─── */
+.rpt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.rpt-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: box-shadow .15s; }
+.rpt-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.rpt-card-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.rpt-card-date { font-size: 12px; color: var(--text-secondary); }
+.rpt-card-source { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.rpt-card-stats { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+.rpt-stat { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.rpt-stat.total { background: var(--bg); color: var(--text); }
+.rpt-stat.ok { background: var(--green-bg); color: var(--green); }
+.rpt-stat.warn { background: var(--orange-bg); color: var(--orange); }
+.rpt-stat.err { background: var(--red-bg); color: var(--red); }
+.rpt-card-link { display: inline-block; font-size: 13px; color: var(--primary); text-decoration: none; padding: 4px 12px; border: 1px solid var(--primary); border-radius: 6px; margin-top: 4px; }
+.rpt-card-link:hover { background: var(--primary-light); }
+.rpt-card-link.disabled { opacity: .4; cursor: default; border-color: var(--border); color: var(--text-muted); }
+
+/* ─── empty ─── */
+.empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* ─── section divider ─── */
+.section { margin-bottom: 24px; }
+
+/* ─── toolbar ─── */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
+.tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-select:focus { outline: none; border-color: var(--primary); }
+.tb-btn { font-size: 12px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
+.tb-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.tb-btn:hover:not(.active) { background: var(--bg); }
+
+/* ─── charts ─── */
+.charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.charts-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.charts-hdr h2 { font-size: 14px; font-weight: 700; }
+.charts-body { padding: 20px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+.ch-wrap { height: 300px; position: relative; }
+.ch-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+
+/* ─── comparison summary ─── */
+.cmp-summary { display: flex; gap: 0; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.cmp-sum-item { flex: 1; padding: 14px 16px; text-align: center; }
+.cmp-sum-item + .cmp-sum-item { border-left: 1px solid var(--border); }
+.cmp-sum-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.cmp-sum-vals { display: flex; justify-content: center; align-items: center; gap: 8px; }
+.cmp-val-a { font-size: 20px; font-weight: 700; color: var(--color-a); }
+.cmp-val-b { font-size: 20px; font-weight: 700; color: var(--color-b); }
+.cmp-val-sep { font-size: 12px; color: var(--text-muted); }
+.cmp-sum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.cmp-sum-delta.pos { color: var(--green); }
+.cmp-sum-delta.neg { color: var(--red); }
+.cmp-sum-delta.zero { color: var(--text-muted); }
+
+/* ─── comparison table ─── */
+.tbl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+.tbl-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.tbl-hdr h2 { font-size: 14px; font-weight: 700; }
+.tbl-hdr .cnt { font-size: 12px; color: var(--text-secondary); }
+.tbl-scroll { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tbl col:nth-child(1) { width: 25%; }
+.tbl col:nth-child(2) { width: 10%; }
+.tbl col:nth-child(3) { width: 10%; }
+.tbl col:nth-child(4) { width: 10%; }
+.tbl col:nth-child(5) { width: 10%; }
+.tbl col:nth-child(6) { width: 10%; }
+.tbl col:nth-child(7) { width: 10%; }
+.tbl th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
+.tbl td { font-size: 13px; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tbody tr:hover { background: var(--primary-light); }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.val-a { color: var(--color-a); font-weight: 500; }
+.val-b { color: var(--color-b); font-weight: 500; }
+.delta-pos { color: var(--green); font-weight: 600; }
+.delta-neg { color: var(--red); font-weight: 600; }
+.delta-zero { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hdr">
+  <h1>报告管理中心</h1>
+  <div class="hdr-meta"><span>{{GENERATED_TIME}}</span></div>
+</div>
+
+{{IF_REPORTS}}
+<div class="section">
+  <div class="rpt-grid" id="report-grid"></div>
+</div>
+
+<div class="section">
+  <div class="charts-card">
+    <div class="charts-hdr">
+      <h2>趋势分析</h2>
+      <div style="display:flex;gap:6px;">
+        <button class="tb-btn active" data-metric="all" onclick="setTrendMetric('all')">全部</button>
+        <button class="tb-btn" data-metric="classified" onclick="setTrendMetric('classified')">已分类</button>
+        <button class="tb-btn" data-metric="unknown" onclick="setTrendMetric('unknown')">未知问题</button>
+        <button class="tb-btn" data-metric="failed" onclick="setTrendMetric('failed')">失败</button>
+      </div>
+    </div>
+    <div class="charts-body">
+      <div><div class="ch-sub" id="trend-line-title">数量趋势</div><div class="ch-wrap"><canvas id="trendLineChart"></canvas></div></div>
+      <div><div class="ch-sub" id="trend-stacked-title">一级分类分布趋势</div><div class="ch-wrap"><canvas id="trendStackedChart"></canvas></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="toolbar" id="cmp-toolbar">
+    <span class="tb-label">报告A</span>
+    <select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
+    <span class="tb-label">报告B</span>
+    <select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
+    <span class="tb-label">层级</span>
+    <select class="tb-select" id="cmp-level" onchange="onCmpLevelChange()"><option value="level1">一级分类</option><option value="level2">二级分类</option></select>
+  </div>
+
+  <div id="cmp-summary-area" style="display:none"></div>
+  <div class="charts-card" id="cmp-charts-card" style="display:none">
+    <div class="charts-hdr"><h2 id="cmp-charts-title">一级分类对比</h2></div>
+    <div class="charts-body">
+      <div class="ch-wrap"><canvas id="cmpBarChart"></canvas></div>
+      <div class="ch-wrap"><canvas id="cmpDeltaChart"></canvas></div>
+    </div>
+  </div>
+  <div class="tbl-card" id="cmp-table-card" style="display:none">
+    <div class="tbl-hdr"><h2>对比明细</h2><span class="cnt" id="cmp-table-count">0 项</span></div>
+    <div class="tbl-scroll">
+      <table class="tbl">
+        <colgroup><col><col><col><col><col><col><col></colgroup>
+        <thead><tr><th>分类名称</th><th id="cmp-th-a">报告A</th><th>报告A占比</th><th id="cmp-th-b">报告B</th><th>报告B占比</th><th>变化量</th><th>占比变化</th></tr></thead>
+        <tbody id="cmp-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="empty" id="cmp-empty">请选择两份报告进行对比</div>
+</div>
+{{ENDIF_REPORTS}}
+{{IF_NO_REPORTS}}
+<div class="empty">没有找到任何报告数据。请先运行舆情分析生成报告后，再生成仪表盘。</div>
+{{ENDIF_NO_REPORTS}}
+
+</div>
+
+<script id="reports-data" type="application/json">{{REPORTS_JSON}}</script>
+<script id="trend-labels-data" type="application/json">{{TREND_LABELS_JSON}}</script>
+<script id="trend-total-data" type="application/json">{{TREND_TOTAL_JSON}}</script>
+<script id="trend-classified-data" type="application/json">{{TREND_CLASSIFIED_JSON}}</script>
+<script id="trend-unknown-data" type="application/json">{{TREND_UNKNOWN_JSON}}</script>
+<script id="trend-failed-data" type="application/json">{{TREND_FAILED_JSON}}</script>
+<script id="level1-keys-data" type="application/json">{{LEVEL1_KEYS_JSON}}</script>
+<script id="level1-trend-data" type="application/json">{{LEVEL1_TREND_JSON}}</script>
+<script id="comparison-data" type="application/json">{{COMPARISON_DATA_JSON}}</script>
+
+<script>
+const reports = JSON.parse(document.getElementById('reports-data').textContent);
+const trendLabels = JSON.parse(document.getElementById('trend-labels-data').textContent);
+const trendTotal = JSON.parse(document.getElementById('trend-total-data').textContent);
+const trendClassified = JSON.parse(document.getElementById('trend-classified-data').textContent);
+const trendUnknown = JSON.parse(document.getElementById('trend-unknown-data').textContent);
+const trendFailed = JSON.parse(document.getElementById('trend-failed-data').textContent);
+const level1Keys = JSON.parse(document.getElementById('level1-keys-data').textContent);
+const level1Trend = JSON.parse(document.getElementById('level1-trend-data').textContent);
+const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
+
+const COLORS = ['#4a90d9','#e67e22','#27ae60','#c0392b','#8e44ad','#16a085','#2c3e50','#d35400','#7f8c8d','#f39c12','#1abc9c','#3498db','#9b59b6','#34495e','#e74c3c','#2980b9'];
+const COLOR_A = '#4a90d9';
+const COLOR_B = '#e67e22';
+const COLOR_POS = '#27ae60';
+const COLOR_NEG = '#c0392b';
+
+let trendMetric = 'all';
+let trendCharts = {};
+let cmpCharts = {};
+
+// ─── report list ───
+function renderReportList() {
+  const grid = document.getElementById('report-grid');
+  grid.innerHTML = '';
+  reports.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'rpt-card';
+    const linkHtml = r.has_html
+      ? '<a class="rpt-card-link" href="./' + r.name + '/report.html">查看报告</a>'
+      : '<span class="rpt-card-link disabled">未生成</span>';
+    card.innerHTML =
+      '<div class="rpt-card-name">' + r.name + '</div>' +
+      '<div class="rpt-card-date">' + r.mtime + '</div>' +
+      (r.xlsx_name ? '<div class="rpt-card-source">数据源: ' + r.xlsx_name + '</div>' : '') +
+      '<div class="rpt-card-stats">' +
+        '<span class="rpt-stat total">总 ' + r.total + '</span>' +
+        '<span class="rpt-stat ok">分类 ' + r.classified + '</span>' +
+        '<span class="rpt-stat warn">未知 ' + r.unknown_issue + '</span>' +
+        '<span class="rpt-stat err">失败 ' + r.infer_failed + '</span>' +
+      '</div>' +
+      linkHtml;
+    grid.appendChild(card);
+  });
+}
+
+// ─── trend charts ───
+function buildLineDatasets(metric) {
+  const base = { fill: false, tension: 0.3, pointRadius: 4, borderWidth: 2 };
+  if (metric === 'all') {
+    return [
+      { ...base, label: '总数据', data: trendTotal, borderColor: '#2c3e50' },
+      { ...base, label: '已分类', data: trendClassified, borderColor: '#27ae60' },
+      { ...base, label: '未知问题', data: trendUnknown, borderColor: '#e67e22' },
+      { ...base, label: '失败', data: trendFailed, borderColor: '#c0392b' },
+    ];
+  }
+  const map = {
+    classified: { label: '已分类', data: trendClassified, borderColor: '#27ae60' },
+    unknown:    { label: '未知问题', data: trendUnknown, borderColor: '#e67e22' },
+    failed:     { label: '失败', data: trendFailed, borderColor: '#c0392b' },
+  };
+  return [{ ...base, ...map[metric] }];
+}
+
+function initTrendCharts() {
+  trendCharts.line = new Chart(document.getElementById('trendLineChart'), {
+    type: 'line',
+    data: { labels: trendLabels, datasets: buildLineDatasets(trendMetric) },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } } },
+      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
+    }
+  });
+
+  const stackedDatasets = level1Keys.map((key, i) => ({
+    label: key,
+    data: level1Trend[key],
+    backgroundColor: COLORS[i % COLORS.length],
+    borderRadius: 2,
+  }));
+  trendCharts.stacked = new Chart(document.getElementById('trendStackedChart'), {
+    type: 'bar',
+    data: { labels: trendLabels, datasets: stackedDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } } },
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f0f0f0' } } }
+    }
+  });
+}
+
+function setTrendMetric(metric) {
+  trendMetric = metric;
+  document.querySelectorAll('.charts-hdr .tb-btn[data-metric]').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-metric') === metric);
+  });
+  trendCharts.line.data.datasets = buildLineDatasets(metric);
+  trendCharts.line.update();
+}
+
+// ─── comparison ───
+function onCmpSelectChange() {
+  const a = document.getElementById('cmp-select-a').value;
+  const b = document.getElementById('cmp-select-b').value;
+  if (a && b && a !== b) {
+    renderComparison();
+  } else {
+    hideComparison();
+  }
+}
+
+function onCmpLevelChange() {
+  const a = document.getElementById('cmp-select-a').value;
+  const b = document.getElementById('cmp-select-b').value;
+  if (a && b && a !== b) renderComparison();
+}
+
+function sortedUnique(arr) { return [...new Set(arr)].sort(); }
+function round2(n) { return Math.round(n * 100) / 100; }
+
+function buildComparison(distA, distB, totalA, totalB) {
+  const keys = sortedUnique(Object.keys(distA).concat(Object.keys(distB)));
+  const r = {};
+  keys.forEach(k => {
+    const a = distA[k] || 0, b = distB[k] || 0;
+    const pa = totalA > 0 ? round2(a / totalA * 100) : 0;
+    const pb = totalB > 0 ? round2(b / totalB * 100) : 0;
+    r[k] = { a, b, pct_a: pa, pct_b: pb, delta: b - a, delta_pct: round2(pb - pa) };
+  });
+  return r;
+}
+
+function buildNestedComparison(distA, distB, totalA, totalB) {
+  const groups = sortedUnique(Object.keys(distA).concat(Object.keys(distB)));
+  const r = {};
+  groups.forEach(g => {
+    const sA = distA[g] || {}, sB = distB[g] || {};
+    r[g] = buildComparison(sA, sB, totalA, totalB);
+  });
+  return r;
+}
+
+function renderComparison() {
+  const nameA = document.getElementById('cmp-select-a').value;
+  const nameB = document.getElementById('cmp-select-b').value;
+  const dataA = comparisonData[nameA];
+  const dataB = comparisonData[nameB];
+  const totalA = dataA.summary.total;
+  const totalB = dataB.summary.total;
+  const level = document.getElementById('cmp-level').value;
+
+  // Update table headers
+  document.getElementById('cmp-th-a').textContent = nameA;
+  document.getElementById('cmp-th-b').textContent = nameB;
+
+  // Summary cards
+  renderCmpSummary(dataA.summary, dataB.summary);
+
+  // Comparison data
+  let cmpData;
+  let title;
+  if (level === 'level2') {
+    cmpData = buildNestedComparison(dataA.level2_dist, dataB.level2_dist, totalA, totalB);
+    title = '二级分类对比';
+  } else {
+    cmpData = buildComparison(dataA.level1_dist, dataB.level1_dist, totalA, totalB);
+    title = '一级分类对比';
+  }
+  document.getElementById('cmp-charts-title').textContent = title;
+
+  // Charts
+  renderCmpCharts(cmpData, nameA, nameB, level);
+
+  // Table
+  renderCmpTable(cmpData, level);
+
+  // Show UI
+  document.getElementById('cmp-summary-area').style.display = '';
+  document.getElementById('cmp-charts-card').style.display = '';
+  document.getElementById('cmp-table-card').style.display = '';
+  document.getElementById('cmp-empty').style.display = 'none';
+}
+
+function renderCmpSummary(summaryA, summaryB) {
+  const labels = { total: '总数据', classified: '已分类', unknown_issue: '未知问题', infer_failed: '失败' };
+  let h = '';
+  for (const [k, label] of Object.entries(labels)) {
+    const a = summaryA[k] || 0, b = summaryB[k] || 0;
+    const delta = b - a;
+    const deltaStr = delta === 0 ? '0' : (delta > 0 ? '+' + delta : delta);
+    const cls = delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'zero';
+    h += '<div class="cmp-sum-item"><div class="cmp-sum-label">' + label + '</div>'
+       + '<div class="cmp-sum-vals"><span class="cmp-val-a">' + a + '</span>'
+       + '<span class="cmp-val-sep">vs</span>'
+       + '<span class="cmp-val-b">' + b + '</span></div>'
+       + '<div class="cmp-sum-delta ' + cls + '">' + deltaStr + '</div></div>';
+  }
+  document.getElementById('cmp-summary-area').innerHTML = '<div class="cmp-summary">' + h + '</div>';
+}
+
+function flattenComparison(cmpData, level) {
+  // For level1, cmpData is { key: {a,b,...} }
+  // For level2, cmpData is { level1: { level2: {a,b,...} } }
+  if (level === 'level1') {
+    return { labels: Object.keys(cmpData), data: cmpData };
+  }
+  // Flatten level2: prefix with level1 name
+  const labels = [];
+  const data = {};
+  for (const [l1, sub] of Object.entries(cmpData)) {
+    for (const [l2, d] of Object.entries(sub)) {
+      const key = l1 + ' ‒ ' + l2;
+      labels.push(key);
+      data[key] = d;
+    }
+  }
+  return { labels, data };
+}
+
+function renderCmpCharts(cmpData, nameA, nameB, level) {
+  const flat = flattenComparison(cmpData, level);
+  const labels = flat.labels;
+  const data = flat.data;
+  const shortLabels = labels.map(l => l.length > 12 ? l.slice(0, 12) + '…' : l);
+
+  // Grouped bar chart
+  if (cmpCharts.bar) cmpCharts.bar.destroy();
+  cmpCharts.bar = new Chart(document.getElementById('cmpBarChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: shortLabels,
+      datasets: [
+        { label: nameA, data: labels.map(l => data[l].a), backgroundColor: COLOR_A, borderRadius: 4 },
+        { label: nameB, data: labels.map(l => data[l].b), backgroundColor: COLOR_B, borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            title: items => labels[items[0].dataIndex],
+            afterBody: items => {
+              const d = data[labels[items[0].dataIndex]];
+              return '变化量: ' + (d.delta > 0 ? '+' : '') + d.delta + '\n占比变化: ' + (d.delta_pct > 0 ? '+' : '') + d.delta_pct + '%';
+            }
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
+    }
+  });
+
+  // Delta chart
+  if (cmpCharts.delta) cmpCharts.delta.destroy();
+  const deltas = labels.map(l => data[l].delta_pct);
+  cmpCharts.delta = new Chart(document.getElementById('cmpDeltaChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: shortLabels,
+      datasets: [
+        { label: '增加', data: deltas.map(d => d > 0 ? d : 0), backgroundColor: COLOR_POS, borderRadius: 4 },
+        { label: '减少', data: deltas.map(d => d < 0 ? d : 0), backgroundColor: COLOR_NEG, borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            title: items => labels[items[0].dataIndex],
+            label: ctx => ctx.dataset.label + ': ' + (ctx.raw > 0 ? '+' : '') + ctx.raw + '%'
+          }
+        }
+      },
+      scales: { y: { grid: { color: '#f0f0f0' }, ticks: { callback: v => v + '%' } }, x: { grid: { display: false } } }
+    }
+  });
+}
+
+function renderCmpTable(cmpData, level) {
+  const flat = flattenComparison(cmpData, level);
+  const labels = flat.labels;
+  const data = flat.data;
+  const tableData = labels.map(k => ({
+    name: k, a: data[k].a, pct_a: data[k].pct_a,
+    b: data[k].b, pct_b: data[k].pct_b,
+    delta: data[k].delta, delta_pct: data[k].delta_pct,
+  })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || Math.abs(y.delta_pct) - Math.abs(x.delta_pct));
+
+  document.getElementById('cmp-table-count').textContent = tableData.length + ' 项';
+  const tbody = document.getElementById('cmp-table-body');
+  tbody.innerHTML = '';
+  tableData.forEach(item => {
+    const row = document.createElement('tr');
+    const deltaCls = item.delta > 0 ? 'delta-pos' : item.delta < 0 ? 'delta-neg' : 'delta-zero';
+    const deltaStr = item.delta === 0 ? '0' : (item.delta > 0 ? '+' + item.delta : item.delta);
+    const deltaPctCls = item.delta_pct > 0 ? 'delta-pos' : item.delta_pct < 0 ? 'delta-neg' : 'delta-zero';
+    const deltaPctStr = item.delta_pct === 0 ? '0%' : (item.delta_pct > 0 ? '+' + item.delta_pct + '%' : item.delta_pct + '%');
+    row.innerHTML =
+      '<td>' + item.name + '</td>' +
+      '<td><span class="val-a">' + item.a + '</span></td>' +
+      '<td>' + item.pct_a + '%</td>' +
+      '<td><span class="val-b">' + item.b + '</span></td>' +
+      '<td>' + item.pct_b + '%</td>' +
+      '<td><span class="' + deltaCls + '">' + deltaStr + '</span></td>' +
+      '<td><span class="' + deltaPctCls + '">' + deltaPctStr + '</span></td>';
+    tbody.appendChild(row);
+  });
+}
+
+function hideComparison() {
+  document.getElementById('cmp-summary-area').style.display = 'none';
+  document.getElementById('cmp-charts-card').style.display = 'none';
+  document.getElementById('cmp-table-card').style.display = 'none';
+  const a = document.getElementById('cmp-select-a').value;
+  const b = document.getElementById('cmp-select-b').value;
+  if (a === b && a) {
+    document.getElementById('cmp-empty').textContent = '请选择两份不同的报告进行对比';
+  } else if (!a || !b) {
+    document.getElementById('cmp-empty').textContent = '请选择两份报告进行对比';
+  }
+  document.getElementById('cmp-empty').style.display = '';
+}
+
+// ─── init ───
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    renderReportList();
+
+    if (reports.length === 0) {
+      document.getElementById('trend-section')?.style.display = 'none';
+      document.getElementById('comparison-section')?.style.display = 'none';
+      return;
+    }
+
+    initTrendCharts();
+
+    // Fill comparison dropdowns
+    const selA = document.getElementById('cmp-select-a');
+    const selB = document.getElementById('cmp-select-b');
+    reports.forEach(r => {
+      selA.appendChild(new Option(r.name + ' (' + r.mtime + ')', r.name));
+      selB.appendChild(new Option(r.name + ' (' + r.mtime + ')', r.name));
+    });
+  } catch (err) {
+    document.body.innerHTML += '<div style="margin:20px;padding:16px;background:#fce4e4;color:#c0392b;border-radius:8px;font-size:14px;"><strong>JS Error:</strong> ' + err.message + '<br><pre>' + err.stack + '</pre></div>';
+  }
+});
+</script>
+</body>
+</html>
