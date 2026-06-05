@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>报告管理中心</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="chart.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -24,22 +24,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .hdr h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
 .hdr-meta { font-size: 13px; color: var(--text-secondary); }
 
-/* ─── report cards ─── */
-.rpt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.rpt-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: box-shadow .15s; }
-.rpt-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
-.rpt-card-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-.rpt-card-date { font-size: 12px; color: var(--text-secondary); }
-.rpt-card-source { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.rpt-card-stats { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+/* ─── report selector ─── */
+.rpt-bar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; }
+.rpt-bar-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+.rpt-bar-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 200px; }
+.rpt-bar-select:focus { outline: none; border-color: var(--primary); }
+.rpt-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.rpt-detail-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.rpt-detail-date { font-size: 12px; color: var(--text-secondary); }
+.rpt-detail-source { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.rpt-detail-stats { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
 .rpt-stat { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
 .rpt-stat.total { background: var(--bg); color: var(--text); }
 .rpt-stat.ok { background: var(--green-bg); color: var(--green); }
 .rpt-stat.warn { background: var(--orange-bg); color: var(--orange); }
 .rpt-stat.err { background: var(--red-bg); color: var(--red); }
-.rpt-card-link { display: inline-block; font-size: 13px; color: var(--primary); text-decoration: none; padding: 4px 12px; border: 1px solid var(--primary); border-radius: 6px; margin-top: 4px; }
-.rpt-card-link:hover { background: var(--primary-light); }
-.rpt-card-link.disabled { opacity: .4; cursor: default; border-color: var(--border); color: var(--text-muted); }
+.rpt-detail-link { display: inline-block; font-size: 13px; color: var(--primary); text-decoration: none; padding: 4px 12px; border: 1px solid var(--primary); border-radius: 6px; margin-top: 4px; }
+.rpt-detail-link:hover { background: var(--primary-light); }
+.rpt-detail-link.disabled { opacity: .4; cursor: default; border-color: var(--border); color: var(--text-muted); }
 
 /* ─── empty ─── */
 .empty { padding: 40px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -47,14 +49,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 /* ─── section divider ─── */
 .section { margin-bottom: 24px; }
 
-/* ─── toolbar ─── */
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
+/* ─── comparison toolbar ─── */
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
 .tb-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-select { font-size: 13px; padding: 5px 24px 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-select:focus { outline: none; border-color: var(--primary); }
+.tb-select:disabled { opacity: .45; cursor: default; }
 .tb-btn { font-size: 12px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
 .tb-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .tb-btn:hover:not(.active) { background: var(--bg); }
+.tb-path { font-size: 13px; color: var(--text-secondary); flex-basis: 100%; }
+.tb-path .p { color: var(--primary); cursor: pointer; }
+.tb-path .p:hover { text-decoration: underline; }
+.tb-path .sep { color: var(--text-muted); margin: 0 4px; }
+
+/* ─── pagination ─── */
+.pgn { display: flex; justify-content: center; align-items: center; gap: 6px; padding: 12px; border-top: 1px solid var(--border); }
+.pgn button { font-size: 12px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); cursor: pointer; }
+.pgn button:hover:not(:disabled) { background: var(--bg); }
+.pgn button:disabled { opacity: .35; cursor: default; }
+.pgn button.act { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pgn .info { font-size: 12px; color: var(--text-muted); }
+
+.tbl tbody tr.drillable { cursor: pointer; }
 
 /* ─── charts ─── */
 .charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
@@ -113,7 +130,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 {{IF_REPORTS}}
 <div class="section">
-  <div class="rpt-grid" id="report-grid"></div>
+  <div class="rpt-bar">
+    <span class="rpt-bar-label">选择报告</span>
+    <select class="rpt-bar-select" id="rpt-select" onchange="onReportSelect()"></select>
+  </div>
+  <div class="rpt-detail" id="rpt-detail"></div>
 </div>
 
 <div class="section">
@@ -127,24 +148,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
         <button class="tb-btn" data-metric="failed" onclick="setTrendMetric('failed')">失败</button>
       </div>
     </div>
-    <div class="charts-body">
-      <div><div class="ch-sub" id="trend-line-title">数量趋势</div><div class="ch-wrap"><canvas id="trendLineChart"></canvas></div></div>
-      <div><div class="ch-sub" id="trend-stacked-title">一级分类分布趋势</div><div class="ch-wrap"><canvas id="trendStackedChart"></canvas></div></div>
+    <div style="padding:20px;">
+      <div class="ch-sub" id="trend-line-title">数量趋势</div>
+      <div class="ch-wrap"><canvas id="trendLineChart"></canvas></div>
     </div>
   </div>
 </div>
 
 <div class="section">
   <div class="toolbar" id="cmp-toolbar">
-    <span class="tb-label">报告A</span>
-    <select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
-    <span class="tb-label">报告B</span>
-    <select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
-    <span class="tb-label">层级</span>
-    <select class="tb-select" id="cmp-level" onchange="onCmpLevelChange()"><option value="level1">一级分类</option><option value="level2">二级分类</option></select>
+    <span class="tb-label">报告A</span><select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
+    <span class="tb-label">报告B</span><select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
   </div>
 
-  <div id="cmp-summary-area" style="display:none"></div>
+  <div class="cmp-summary" id="cmp-summary-area" style="display:none"></div>
+  <div class="toolbar" id="cmp-filter-bar" style="display:none">
+    <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
+    <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
+    <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
+    <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
+    <span id="filter-path" class="tb-path"></span>
+  </div>
   <div class="charts-card" id="cmp-charts-card" style="display:none">
     <div class="charts-hdr"><h2 id="cmp-charts-title">一级分类对比</h2></div>
     <div class="charts-body">
@@ -153,7 +177,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
     </div>
   </div>
   <div class="tbl-card" id="cmp-table-card" style="display:none">
-    <div class="tbl-hdr"><h2>对比明细</h2><span class="cnt" id="cmp-table-count">0 项</span></div>
+    <div class="tbl-hdr"><h2 id="cmp-table-title">分类对比明细</h2><span class="cnt" id="cmp-table-count">0 项</span></div>
     <div class="tbl-scroll">
       <table class="tbl">
         <colgroup><col><col><col><col><col><col><col></colgroup>
@@ -161,6 +185,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
         <tbody id="cmp-table-body"></tbody>
       </table>
     </div>
+    <div class="pgn" id="cmp-pagination"></div>
   </div>
   <div class="empty" id="cmp-empty">请选择两份报告进行对比</div>
 </div>
@@ -202,29 +227,40 @@ let trendMetric = 'all';
 let trendCharts = {};
 let cmpCharts = {};
 
-// ─── report list ───
-function renderReportList() {
-  const grid = document.getElementById('report-grid');
-  grid.innerHTML = '';
+// ─── report selector ───
+function populateReportSelect() {
+  const sel = document.getElementById('rpt-select');
   reports.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'rpt-card';
-    const linkHtml = r.has_html
-      ? '<a class="rpt-card-link" href="./' + r.name + '/report.html">查看报告</a>'
-      : '<span class="rpt-card-link disabled">未生成</span>';
-    card.innerHTML =
-      '<div class="rpt-card-name">' + r.name + '</div>' +
-      '<div class="rpt-card-date">' + r.mtime + '</div>' +
-      (r.xlsx_name ? '<div class="rpt-card-source">数据源: ' + r.xlsx_name + '</div>' : '') +
-      '<div class="rpt-card-stats">' +
-        '<span class="rpt-stat total">总 ' + r.total + '</span>' +
-        '<span class="rpt-stat ok">分类 ' + r.classified + '</span>' +
-        '<span class="rpt-stat warn">未知 ' + r.unknown_issue + '</span>' +
-        '<span class="rpt-stat err">失败 ' + r.infer_failed + '</span>' +
-      '</div>' +
-      linkHtml;
-    grid.appendChild(card);
+    sel.appendChild(new Option(r.name + '  (' + r.mtime.slice(0, 10) + ')', r.name));
   });
+  if (reports.length > 0) {
+    sel.value = reports[0].name;
+    renderReportDetail(reports[0]);
+  }
+}
+
+function onReportSelect() {
+  const name = document.getElementById('rpt-select').value;
+  const r = reports.find(x => x.name === name);
+  if (r) renderReportDetail(r);
+}
+
+function renderReportDetail(r) {
+  const detail = document.getElementById('rpt-detail');
+  const linkHtml = r.has_html
+    ? '<a class="rpt-detail-link" href="./' + r.name + '/report.html">查看报告</a>'
+    : '<span class="rpt-detail-link disabled">未生成</span>';
+  detail.innerHTML =
+    '<div class="rpt-detail-name">' + r.name + '</div>' +
+    '<div class="rpt-detail-date">' + r.mtime + '</div>' +
+    (r.xlsx_name ? '<div class="rpt-detail-source">数据源: ' + r.xlsx_name + '</div>' : '') +
+    '<div class="rpt-detail-stats">' +
+      '<span class="rpt-stat total">总 ' + r.total + '</span>' +
+      '<span class="rpt-stat ok">分类 ' + r.classified + '</span>' +
+      '<span class="rpt-stat warn">未知 ' + r.unknown_issue + '</span>' +
+      '<span class="rpt-stat err">失败 ' + r.infer_failed + '</span>' +
+    '</div>' +
+    linkHtml;
 }
 
 // ─── trend charts ───
@@ -256,22 +292,6 @@ function initTrendCharts() {
       scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
     }
   });
-
-  const stackedDatasets = level1Keys.map((key, i) => ({
-    label: key,
-    data: level1Trend[key],
-    backgroundColor: COLORS[i % COLORS.length],
-    borderRadius: 2,
-  }));
-  trendCharts.stacked = new Chart(document.getElementById('trendStackedChart'), {
-    type: 'bar',
-    data: { labels: trendLabels, datasets: stackedDatasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } } },
-      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f0f0f0' } } }
-    }
-  });
 }
 
 function setTrendMetric(metric) {
@@ -284,21 +304,24 @@ function setTrendMetric(metric) {
 }
 
 // ─── comparison ───
-function onCmpSelectChange() {
-  const a = document.getElementById('cmp-select-a').value;
-  const b = document.getElementById('cmp-select-b').value;
-  if (a && b && a !== b) {
-    renderComparison();
-  } else {
-    hideComparison();
-  }
-}
-
-function onCmpLevelChange() {
-  const a = document.getElementById('cmp-select-a').value;
-  const b = document.getElementById('cmp-select-b').value;
-  if (a && b && a !== b) renderComparison();
-}
+let cmpFilters = { level1: "", level2: "", level3: "" };
+let cmpVersion = "";
+let cmpPage = 1;
+const cmpPageSize = 50;
+let cmpLevel1Data = {};
+let cmpLevel2Data = {};
+let cmpLevel3Data = {};
+let cmpLevel1DataOrig = {};
+let cmpLevel2DataOrig = {};
+let cmpLevel3DataOrig = {};
+let cmpDetailsA = [];
+let cmpDetailsB = [];
+let cmpAllVersions = [];
+let cmpTotalA = 0;
+let cmpTotalB = 0;
+let cmpNameA = "";
+let cmpNameB = "";
+let cmpSelected = false;
 
 function sortedUnique(arr) { return [...new Set(arr)].sort(); }
 function round2(n) { return Math.round(n * 100) / 100; }
@@ -325,48 +348,277 @@ function buildNestedComparison(distA, distB, totalA, totalB) {
   return r;
 }
 
-function renderComparison() {
-  const nameA = document.getElementById('cmp-select-a').value;
-  const nameB = document.getElementById('cmp-select-b').value;
-  const dataA = comparisonData[nameA];
-  const dataB = comparisonData[nameB];
-  const totalA = dataA.summary.total;
-  const totalB = dataB.summary.total;
-  const level = document.getElementById('cmp-level').value;
-
-  // Update table headers
-  document.getElementById('cmp-th-a').textContent = nameA;
-  document.getElementById('cmp-th-b').textContent = nameB;
-
-  // Summary cards
-  renderCmpSummary(dataA.summary, dataB.summary);
-
-  // Comparison data
-  let cmpData;
-  let title;
-  if (level === 'level2') {
-    cmpData = buildNestedComparison(dataA.level2_dist, dataB.level2_dist, totalA, totalB);
-    title = '二级分类对比';
-  } else {
-    cmpData = buildComparison(dataA.level1_dist, dataB.level1_dist, totalA, totalB);
-    title = '一级分类对比';
-  }
-  document.getElementById('cmp-charts-title').textContent = title;
-
-  // Charts
-  renderCmpCharts(cmpData, nameA, nameB, level);
-
-  // Table
-  renderCmpTable(cmpData, level);
-
-  // Show UI
-  document.getElementById('cmp-summary-area').style.display = '';
-  document.getElementById('cmp-charts-card').style.display = '';
-  document.getElementById('cmp-table-card').style.display = '';
-  document.getElementById('cmp-empty').style.display = 'none';
+function initCmpData() {
+  const dataA = comparisonData[cmpNameA];
+  const dataB = comparisonData[cmpNameB];
+  cmpTotalA = dataA.summary.total;
+  cmpTotalB = dataB.summary.total;
+  cmpDetailsA = dataA.details;
+  cmpDetailsB = dataB.details;
+  cmpAllVersions = sortedUnique(dataA.versions.concat(dataB.versions));
+  cmpLevel1DataOrig = buildComparison(dataA.level1_dist, dataB.level1_dist, cmpTotalA, cmpTotalB);
+  cmpLevel2DataOrig = buildNestedComparison(dataA.level2_dist, dataB.level2_dist, cmpTotalA, cmpTotalB);
+  cmpLevel3DataOrig = {};
+  const l1s3 = sortedUnique(Object.keys(dataA.level3_dist).concat(Object.keys(dataB.level3_dist)));
+  l1s3.forEach(l1 => {
+    cmpLevel3DataOrig[l1] = buildNestedComparison(dataA.level3_dist[l1] || {}, dataB.level3_dist[l1] || {}, cmpTotalA, cmpTotalB);
+  });
+  cmpLevel1Data = cmpLevel1DataOrig;
+  cmpLevel2Data = cmpLevel2DataOrig;
+  cmpLevel3Data = cmpLevel3DataOrig;
+  cmpFilters = { level1: "", level2: "", level3: "" };
+  cmpVersion = "";
+  cmpPage = 1;
+  fillCmpSelect("filter-level1", Object.keys(cmpLevel1Data).sort());
+  document.getElementById("filter-level1").disabled = false;
+  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  fillCmpSelect("filter-version", cmpAllVersions);
+  document.getElementById("filter-version").disabled = cmpAllVersions.length === 0;
 }
 
-function renderCmpSummary(summaryA, summaryB) {
+// ─── dynamic recomputation by version ───
+function countByLevel(list, level) {
+  const c = {};
+  list.forEach(item => {
+    if (item.status === "classified" && item.classification) {
+      const v = item.classification[level] || "";
+      if (v) c[v] = (c[v] || 0) + 1;
+    } else if (item.status === "unknown_issue" && level === "level1") {
+      c["未知问题"] = (c["未知问题"] || 0) + 1;
+    }
+  });
+  return c;
+}
+
+function countByLevel2(list) {
+  const c = {};
+  list.forEach(item => {
+    if (item.status === "classified" && item.classification) {
+      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "";
+      if (l1 && l2) { if (!c[l1]) c[l1] = {}; c[l1][l2] = (c[l1][l2] || 0) + 1; }
+    }
+  });
+  return c;
+}
+
+function countByLevel3(list) {
+  const c = {};
+  list.forEach(item => {
+    if (item.status === "classified" && item.classification) {
+      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "", l3 = item.classification.level3 || "";
+      if (l1 && l2 && l3) { if (!c[l1]) c[l1] = {}; if (!c[l1][l2]) c[l1][l2] = {}; c[l1][l2][l3] = (c[l1][l2][l3] || 0) + 1; }
+    }
+  });
+  return c;
+}
+
+function recomputeCmpByVersion(ver) {
+  const filterVer = ver === "__empty__" ? "" : (ver ? ver : null);
+  const listA = filterVer !== null ? cmpDetailsA.filter(d => d.version === filterVer) : cmpDetailsA;
+  const listB = filterVer !== null ? cmpDetailsB.filter(d => d.version === filterVer) : cmpDetailsB;
+  cmpTotalA = listA.length;
+  cmpTotalB = listB.length;
+  const d1A = countByLevel(listA, "level1"), d1B = countByLevel(listB, "level1");
+  cmpLevel1Data = buildComparison(d1A, d1B, cmpTotalA, cmpTotalB);
+  const d2A = countByLevel2(listA), d2B = countByLevel2(listB);
+  cmpLevel2Data = buildNestedComparison(d2A, d2B, cmpTotalA, cmpTotalB);
+  const d3A = countByLevel3(listA), d3B = countByLevel3(listB);
+  const l1s3 = sortedUnique(Object.keys(d3A).concat(Object.keys(d3B)));
+  cmpLevel3Data = {};
+  l1s3.forEach(l1 => { cmpLevel3Data[l1] = buildNestedComparison(d3A[l1] || {}, d3B[l1] || {}, cmpTotalA, cmpTotalB); });
+  // Refill dropdowns after recomputation
+  fillCmpSelect("filter-level1", Object.keys(cmpLevel1Data).sort());
+  document.getElementById("filter-level1").value = cmpFilters.level1;
+  if (cmpFilters.level1) {
+    fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1));
+    document.getElementById("filter-level2").value = cmpFilters.level2;
+    document.getElementById("filter-level2").disabled = false;
+    if (cmpFilters.level2) {
+      fillCmpSelect("filter-level3", getAvailableLevel3(cmpFilters.level1, cmpFilters.level2));
+      document.getElementById("filter-level3").value = cmpFilters.level3;
+      document.getElementById("filter-level3").disabled = false;
+    }
+  }
+}
+
+// ─── filter helpers ───
+function getAvailableLevel2(l1) {
+  if (l1 && cmpLevel2Data[l1]) return sortedUnique(Object.keys(cmpLevel2Data[l1]));
+  return sortedUnique(Object.values(cmpLevel2Data).flatMap(sub => Object.keys(sub)));
+}
+
+function getAvailableLevel3(l1, l2) {
+  if (l1 && l2 && cmpLevel3Data[l1] && cmpLevel3Data[l1][l2]) return sortedUnique(Object.keys(cmpLevel3Data[l1][l2]));
+  if (l1 && cmpLevel3Data[l1]) return sortedUnique(Object.values(cmpLevel3Data[l1]).flatMap(sub => Object.keys(sub)));
+  return sortedUnique(Object.values(cmpLevel3Data).flatMap(l2s => Object.values(l2s).flatMap(sub => Object.keys(sub))));
+}
+
+function fillCmpSelect(id, options) {
+  const sel = document.getElementById(id);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="" title="全部">全部</option>';
+  options.forEach(o => {
+    const e = document.createElement("option");
+    if (id === "filter-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
+    else { e.value = o; e.textContent = o; e.title = o; }
+    sel.appendChild(e);
+  });
+  sel.value = options.includes(cur) ? cur : "";
+}
+
+// ─── filter handlers ───
+function onFilterChange(src) {
+  const s1 = document.getElementById("filter-level1"), s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3");
+  cmpFilters.level1 = s1.value;
+  cmpFilters.level2 = s2.value;
+  cmpFilters.level3 = s3.value;
+  if (src === "level1") {
+    if (cmpFilters.level1) { fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1)); s2.disabled = false; }
+    else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
+    cmpFilters.level2 = ""; cmpFilters.level3 = "";
+  } else if (src === "level2") {
+    if (cmpFilters.level2) { fillCmpSelect("filter-level3", getAvailableLevel3(cmpFilters.level1, cmpFilters.level2)); s3.disabled = false; }
+    else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
+    cmpFilters.level3 = "";
+  }
+  cmpPage = 1; updateCmpAll();
+}
+
+function onVersionChange() {
+  const newVer = document.getElementById("filter-version").value;
+  if (newVer !== cmpVersion) {
+    cmpFilters = { level1: "", level2: "", level3: "" };
+    fillCmpSelect("filter-level1", Object.keys(cmpLevel1Data).sort());
+    document.getElementById("filter-level1").value = "";
+    document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  }
+  cmpVersion = newVer;
+  if (cmpVersion) recomputeCmpByVersion(cmpVersion);
+  else { cmpLevel1Data = cmpLevel1DataOrig; cmpLevel2Data = cmpLevel2DataOrig; cmpLevel3Data = cmpLevel3DataOrig; cmpTotalA = comparisonData[cmpNameA].summary.total; cmpTotalB = comparisonData[cmpNameB].summary.total; }
+  cmpPage = 1; updateCmpAll();
+}
+
+function setCmpF1(val) {
+  cmpFilters.level1 = val; cmpFilters.level2 = ""; cmpFilters.level3 = "";
+  document.getElementById("filter-level1").value = val;
+  fillCmpSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false;
+  document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  cmpPage = 1; updateCmpAll();
+}
+
+function setCmpF2(l1, l2) {
+  cmpFilters.level1 = l1; cmpFilters.level2 = l2; cmpFilters.level3 = "";
+  document.getElementById("filter-level1").value = l1;
+  fillCmpSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
+  fillCmpSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false;
+  cmpPage = 1; updateCmpAll();
+}
+
+function setCmpF3(l1, l2, l3) {
+  cmpFilters.level1 = l1; cmpFilters.level2 = l2; cmpFilters.level3 = l3;
+  document.getElementById("filter-level1").value = l1;
+  fillCmpSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
+  fillCmpSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
+  cmpPage = 1; updateCmpAll();
+}
+
+function clearCmpFilters() {
+  cmpFilters = { level1: "", level2: "", level3: "" }; cmpVersion = "";
+  cmpLevel1Data = cmpLevel1DataOrig; cmpLevel2Data = cmpLevel2DataOrig; cmpLevel3Data = cmpLevel3DataOrig;
+  cmpTotalA = comparisonData[cmpNameA].summary.total; cmpTotalB = comparisonData[cmpNameB].summary.total;
+  fillCmpSelect("filter-level1", Object.keys(cmpLevel1Data).sort());
+  document.getElementById("filter-level1").value = "";
+  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-version").value = "";
+  cmpPage = 1; updateCmpAll();
+}
+
+function clearCmpLevel(n) {
+  if (n === 1) { cmpFilters.level2 = ""; cmpFilters.level3 = ""; fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1)); document.getElementById("filter-level2").disabled = !cmpFilters.level1; document.getElementById("filter-level2").value = ""; document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>'; }
+  else if (n === 2) { cmpFilters.level3 = ""; fillCmpSelect("filter-level3", getAvailableLevel3(cmpFilters.level1, cmpFilters.level2)); document.getElementById("filter-level3").disabled = !cmpFilters.level2; document.getElementById("filter-level3").value = ""; }
+  cmpPage = 1; updateCmpAll();
+}
+
+function clearCmpVersion() {
+  cmpVersion = ""; document.getElementById("filter-version").value = "";
+  cmpLevel1Data = cmpLevel1DataOrig; cmpLevel2Data = cmpLevel2DataOrig; cmpLevel3Data = cmpLevel3DataOrig;
+  cmpTotalA = comparisonData[cmpNameA].summary.total; cmpTotalB = comparisonData[cmpNameB].summary.total;
+  fillCmpSelect("filter-level1", Object.keys(cmpLevel1Data).sort());
+  if (cmpFilters.level1) {
+    document.getElementById("filter-level1").value = cmpFilters.level1;
+    fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1));
+    if (cmpFilters.level2) {
+      document.getElementById("filter-level2").value = cmpFilters.level2;
+      fillCmpSelect("filter-level3", getAvailableLevel3(cmpFilters.level1, cmpFilters.level2));
+    }
+  }
+  cmpPage = 1; updateCmpAll();
+}
+
+// ─── breadcrumb ───
+function updateCmpBreadcrumb() {
+  const el = document.getElementById("filter-path");
+  const l1 = cmpFilters.level1, l2 = cmpFilters.level2, l3 = cmpFilters.level3;
+  if (!l1 && !l2 && !l3 && !cmpVersion) { el.textContent = ""; return; }
+  el.textContent = "";
+  function addSeg(text, cls, clickFn) {
+    if (cls) {
+      const s = document.createElement("span");
+      s.className = cls; s.textContent = text;
+      if (clickFn) s.onclick = clickFn;
+      el.appendChild(s);
+    } else {
+      el.appendChild(document.createTextNode(text));
+    }
+  }
+  addSeg("全部", "p", clearCmpFilters);
+  if (l1) { addSeg(" › ", "sep"); addSeg(l1, "p", () => clearCmpLevel(1)); }
+  if (l2) { addSeg(" › ", "sep"); addSeg(l2, "p", () => clearCmpLevel(2)); }
+  if (l3) { addSeg(" › ", "sep"); addSeg(l3, "p", () => clearCmpLevel(3)); }
+  if (cmpVersion) { addSeg(" › ", "sep"); addSeg("版本:" + (cmpVersion === "__empty__" ? "无版本号" : cmpVersion), "p", clearCmpVersion); }
+}
+
+// ─── report selection ───
+function onCmpSelectChange() {
+  const a = document.getElementById("cmp-select-a").value;
+  const b = document.getElementById("cmp-select-b").value;
+  if (a && b && a !== b) {
+    cmpNameA = a; cmpNameB = b;
+    document.getElementById("cmp-th-a").textContent = a;
+    document.getElementById("cmp-th-b").textContent = b;
+    initCmpData();
+    cmpSelected = true;
+    renderCmpSummary();
+    updateCmpAll();
+    document.getElementById("cmp-summary-area").style.display = '';
+    document.getElementById("cmp-filter-bar").style.display = '';
+    document.getElementById("cmp-charts-card").style.display = '';
+    document.getElementById("cmp-table-card").style.display = '';
+    document.getElementById("cmp-empty").style.display = 'none';
+  } else {
+    cmpSelected = false;
+    document.getElementById("cmp-summary-area").style.display = 'none';
+    document.getElementById("cmp-filter-bar").style.display = 'none';
+    document.getElementById("cmp-charts-card").style.display = 'none';
+    document.getElementById("cmp-table-card").style.display = 'none';
+    if (a === b && a) document.getElementById("cmp-empty").textContent = '请选择两份不同的报告进行对比';
+    else document.getElementById("cmp-empty").textContent = '请选择两份报告进行对比';
+    document.getElementById("cmp-empty").style.display = '';
+    const s1 = document.getElementById("filter-level1"); s1.disabled = true; s1.innerHTML = '<option value="">全部</option>';
+    const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+    const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+    const sv = document.getElementById("filter-version"); sv.disabled = true; sv.innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-path").textContent = "";
+  }
+}
+
+// ─── summary ───
+function renderCmpSummary() {
+  const summaryA = comparisonData[cmpNameA].summary;
+  const summaryB = comparisonData[cmpNameB].summary;
   const labels = { total: '总数据', classified: '已分类', unknown_issue: '未知问题', infer_failed: '失败' };
   let h = '';
   for (const [k, label] of Object.entries(labels)) {
@@ -380,155 +632,169 @@ function renderCmpSummary(summaryA, summaryB) {
        + '<span class="cmp-val-b">' + b + '</span></div>'
        + '<div class="cmp-sum-delta ' + cls + '">' + deltaStr + '</div></div>';
   }
-  document.getElementById('cmp-summary-area').innerHTML = '<div class="cmp-summary">' + h + '</div>';
+  document.getElementById("cmp-summary-area").innerHTML = h;
 }
 
-function flattenComparison(cmpData, level) {
-  // For level1, cmpData is { key: {a,b,...} }
-  // For level2, cmpData is { level1: { level2: {a,b,...} } }
-  if (level === 'level1') {
-    return { labels: Object.keys(cmpData), data: cmpData };
+// ─── charts ───
+function getCurrentCmpData() {
+  if (cmpFilters.level1 && cmpFilters.level2 && cmpLevel3Data[cmpFilters.level1] && cmpLevel3Data[cmpFilters.level1][cmpFilters.level2]) {
+    return cmpLevel3Data[cmpFilters.level1][cmpFilters.level2];
   }
-  // Flatten level2: prefix with level1 name
-  const labels = [];
-  const data = {};
-  for (const [l1, sub] of Object.entries(cmpData)) {
-    for (const [l2, d] of Object.entries(sub)) {
-      const key = l1 + ' ‒ ' + l2;
-      labels.push(key);
-      data[key] = d;
-    }
+  if (cmpFilters.level1 && cmpLevel2Data[cmpFilters.level1]) {
+    return cmpLevel2Data[cmpFilters.level1];
   }
-  return { labels, data };
+  return cmpLevel1Data;
 }
 
-function renderCmpCharts(cmpData, nameA, nameB, level) {
-  const flat = flattenComparison(cmpData, level);
-  const labels = flat.labels;
-  const data = flat.data;
-  const shortLabels = labels.map(l => l.length > 12 ? l.slice(0, 12) + '…' : l);
+function updateCmpCharts() {
+  const data = getCurrentCmpData();
+  const labels = Object.keys(data);
 
-  // Grouped bar chart
+  let title;
+  if (cmpFilters.level1 && cmpFilters.level2 && cmpFilters.level3) title = cmpFilters.level1 + ' › ' + cmpFilters.level2 + ' › ' + cmpFilters.level3;
+  else if (cmpFilters.level1 && cmpFilters.level2) title = cmpFilters.level1 + ' › ' + cmpFilters.level2;
+  else if (cmpFilters.level1) title = cmpFilters.level1;
+  else title = "全部";
+  document.getElementById("cmp-charts-title").textContent = title;
+  document.getElementById("cmp-table-title").textContent = title;
+
+  const barLabels = labels.map(l => l.length > 10 ? l.slice(0, 10) + '…' : l);
+
+  const onClickHandler = (_, els) => {
+    if (!els.length) return;
+    const v = labels[els[0].index];
+    if (cmpFilters.level1 && cmpFilters.level2) setCmpF3(cmpFilters.level1, cmpFilters.level2, v);
+    else if (cmpFilters.level1) setCmpF2(cmpFilters.level1, v);
+    else setCmpF1(v);
+  };
+
   if (cmpCharts.bar) cmpCharts.bar.destroy();
-  cmpCharts.bar = new Chart(document.getElementById('cmpBarChart').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels: shortLabels,
-      datasets: [
-        { label: nameA, data: labels.map(l => data[l].a), backgroundColor: COLOR_A, borderRadius: 4 },
-        { label: nameB, data: labels.map(l => data[l].b), backgroundColor: COLOR_B, borderRadius: 4 },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
-        tooltip: {
-          callbacks: {
-            title: items => labels[items[0].dataIndex],
-            afterBody: items => {
-              const d = data[labels[items[0].dataIndex]];
-              return '变化量: ' + (d.delta > 0 ? '+' : '') + d.delta + '\n占比变化: ' + (d.delta_pct > 0 ? '+' : '') + d.delta_pct + '%';
-            }
+  const barCtx = document.getElementById("cmpBarChart").getContext("2d");
+  cmpCharts.bar = new Chart(barCtx, {
+    type: "bar",
+    data: { labels: barLabels, datasets: [
+      { label: cmpNameA, data: labels.map(l => data[l].a), backgroundColor: COLOR_A, borderRadius: 4 },
+      { label: cmpNameB, data: labels.map(l => data[l].b), backgroundColor: COLOR_B, borderRadius: 4 },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "top", labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          title: items => labels[items[0].dataIndex],
+          afterBody: items => {
+            const d = data[labels[items[0].dataIndex]];
+            return "变化量: " + (d.delta > 0 ? "+" : "") + d.delta + "\n占比变化: " + (d.delta_pct > 0 ? "+" : "") + d.delta_pct + "%";
           }
-        }
+        }}
       },
-      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
+      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } },
+      onClick: onClickHandler
     }
   });
 
-  // Delta chart
   if (cmpCharts.delta) cmpCharts.delta.destroy();
+  const deltaCtx = document.getElementById("cmpDeltaChart").getContext("2d");
   const deltas = labels.map(l => data[l].delta_pct);
-  cmpCharts.delta = new Chart(document.getElementById('cmpDeltaChart').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels: shortLabels,
-      datasets: [
-        { label: '增加', data: deltas.map(d => d > 0 ? d : 0), backgroundColor: COLOR_POS, borderRadius: 4 },
-        { label: '减少', data: deltas.map(d => d < 0 ? d : 0), backgroundColor: COLOR_NEG, borderRadius: 4 },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
-        tooltip: {
-          callbacks: {
-            title: items => labels[items[0].dataIndex],
-            label: ctx => ctx.dataset.label + ': ' + (ctx.raw > 0 ? '+' : '') + ctx.raw + '%'
-          }
-        }
+  cmpCharts.delta = new Chart(deltaCtx, {
+    type: "bar",
+    data: { labels: barLabels, datasets: [
+      { label: "增加", data: deltas.map(d => d > 0 ? d : 0), backgroundColor: COLOR_POS, borderRadius: 4 },
+      { label: "减少", data: deltas.map(d => d < 0 ? d : 0), backgroundColor: COLOR_NEG, borderRadius: 4 },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "top", labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: { callbacks: { title: items => labels[items[0].dataIndex], label: ctx => ctx.dataset.label + ": " + (ctx.raw > 0 ? "+" : "") + ctx.raw + "%" } }
       },
-      scales: { y: { grid: { color: '#f0f0f0' }, ticks: { callback: v => v + '%' } }, x: { grid: { display: false } } }
+      scales: { y: { grid: { color: '#f0f0f0' }, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
+      onClick: onClickHandler
     }
   });
 }
 
-function renderCmpTable(cmpData, level) {
-  const flat = flattenComparison(cmpData, level);
-  const labels = flat.labels;
-  const data = flat.data;
-  const tableData = labels.map(k => ({
+// ─── table ───
+function getCmpTableData() {
+  const data = getCurrentCmpData();
+  const keys = Object.keys(data);
+  return keys.map(k => ({
     name: k, a: data[k].a, pct_a: data[k].pct_a,
     b: data[k].b, pct_b: data[k].pct_b,
     delta: data[k].delta, delta_pct: data[k].delta_pct,
   })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || Math.abs(y.delta_pct) - Math.abs(x.delta_pct));
+}
 
-  document.getElementById('cmp-table-count').textContent = tableData.length + ' 项';
-  const tbody = document.getElementById('cmp-table-body');
-  tbody.innerHTML = '';
-  tableData.forEach(item => {
-    const row = document.createElement('tr');
-    const deltaCls = item.delta > 0 ? 'delta-pos' : item.delta < 0 ? 'delta-neg' : 'delta-zero';
-    const deltaStr = item.delta === 0 ? '0' : (item.delta > 0 ? '+' + item.delta : item.delta);
-    const deltaPctCls = item.delta_pct > 0 ? 'delta-pos' : item.delta_pct < 0 ? 'delta-neg' : 'delta-zero';
-    const deltaPctStr = item.delta_pct === 0 ? '0%' : (item.delta_pct > 0 ? '+' + item.delta_pct + '%' : item.delta_pct + '%');
-    row.innerHTML =
-      '<td>' + item.name + '</td>' +
-      '<td><span class="val-a">' + item.a + '</span></td>' +
-      '<td>' + item.pct_a + '%</td>' +
-      '<td><span class="val-b">' + item.b + '</span></td>' +
-      '<td>' + item.pct_b + '%</td>' +
-      '<td><span class="' + deltaCls + '">' + deltaStr + '</span></td>' +
-      '<td><span class="' + deltaPctCls + '">' + deltaPctStr + '</span></td>';
+function isCmpDrillable(name) {
+  if (!cmpFilters.level1) return cmpLevel2Data[name] && Object.keys(cmpLevel2Data[name]).length > 0;
+  if (cmpFilters.level1 && !cmpFilters.level2) return cmpLevel3Data[cmpFilters.level1] && cmpLevel3Data[cmpFilters.level1][name] && Object.keys(cmpLevel3Data[cmpFilters.level1][name]).length > 0;
+  return false;
+}
+
+function updateCmpTable() {
+  const tableData = getCmpTableData();
+  document.getElementById("cmp-table-count").textContent = tableData.length + " 项";
+  const totalPages = Math.ceil(tableData.length / cmpPageSize);
+  if (cmpPage > totalPages) cmpPage = totalPages || 1;
+  const start = (cmpPage - 1) * cmpPageSize;
+  const pageData = tableData.slice(start, start + cmpPageSize);
+  const tbody = document.getElementById("cmp-table-body");
+  tbody.innerHTML = "";
+  pageData.forEach(item => {
+    const row = document.createElement("tr");
+    const drillable = isCmpDrillable(item.name);
+    if (drillable) row.classList.add("drillable");
+    const deltaCls = item.delta > 0 ? "delta-pos" : item.delta < 0 ? "delta-neg" : "delta-zero";
+    const deltaStr = item.delta === 0 ? "0" : (item.delta > 0 ? "+" + item.delta : item.delta);
+    const deltaPctCls = item.delta_pct > 0 ? "delta-pos" : item.delta_pct < 0 ? "delta-neg" : "delta-zero";
+    const deltaPctStr = item.delta_pct === 0 ? "0%" : (item.delta_pct > 0 ? "+" + item.delta_pct + "%" : item.delta_pct + "%");
+    const nameHtml = drillable ? '<span style="cursor:pointer;color:var(--primary)">' + item.name + ' ▸</span>' : item.name;
+    row.innerHTML = "<td>" + nameHtml + "</td>" +
+      "<td><span class='val-a'>" + item.a + "</span></td>" +
+      "<td>" + item.pct_a + "%</td>" +
+      "<td><span class='val-b'>" + item.b + "</span></td>" +
+      "<td>" + item.pct_b + "%</td>" +
+      "<td><span class='" + deltaCls + "'>" + deltaStr + "</span></td>" +
+      "<td><span class='" + deltaPctCls + "'>" + deltaPctStr + "</span></td>";
+    if (drillable) {
+      row.addEventListener("click", () => {
+        if (!cmpFilters.level1) setCmpF1(item.name);
+        else if (cmpFilters.level1 && !cmpFilters.level2) setCmpF2(cmpFilters.level1, item.name);
+      });
+    }
     tbody.appendChild(row);
   });
+  updateCmpPagination(tableData.length, totalPages);
 }
 
-function hideComparison() {
-  document.getElementById('cmp-summary-area').style.display = 'none';
-  document.getElementById('cmp-charts-card').style.display = 'none';
-  document.getElementById('cmp-table-card').style.display = 'none';
-  const a = document.getElementById('cmp-select-a').value;
-  const b = document.getElementById('cmp-select-b').value;
-  if (a === b && a) {
-    document.getElementById('cmp-empty').textContent = '请选择两份不同的报告进行对比';
-  } else if (!a || !b) {
-    document.getElementById('cmp-empty').textContent = '请选择两份报告进行对比';
-  }
-  document.getElementById('cmp-empty').style.display = '';
+function updateCmpPagination(total, totalPages) {
+  const pgn = document.getElementById("cmp-pagination");
+  if (totalPages <= 1) { pgn.innerHTML = ""; return; }
+  let h = '<button onclick="goCmpPage(1)" ' + (cmpPage === 1 ? 'disabled' : '') + '>首</button>';
+  h += '<button onclick="goCmpPage(' + (cmpPage-1) + ')" ' + (cmpPage === 1 ? 'disabled' : '') + '>上一页</button>';
+  const start = Math.max(1, cmpPage - 2), end = Math.min(totalPages, cmpPage + 2);
+  for (let p = start; p <= end; p++) h += '<button onclick="goCmpPage(' + p + ')" class="' + (p === cmpPage ? 'act' : '') + '">' + p + '</button>';
+  h += '<button onclick="goCmpPage(' + (cmpPage+1) + ')" ' + (cmpPage === totalPages ? 'disabled' : '') + '>下一页</button>';
+  h += '<span class="info">' + cmpPage + '/' + totalPages + '</span>';
+  pgn.innerHTML = h;
 }
+
+function goCmpPage(p) { cmpPage = p; updateCmpTable(); }
+
+function updateCmpAll() { updateCmpCharts(); updateCmpBreadcrumb(); updateCmpTable(); }
 
 // ─── init ───
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    renderReportList();
+    populateReportSelect();
 
     if (reports.length === 0) {
-      document.getElementById('trend-section')?.style.display = 'none';
-      document.getElementById('comparison-section')?.style.display = 'none';
       return;
     }
 
     initTrendCharts();
 
-    // Fill comparison dropdowns
-    const selA = document.getElementById('cmp-select-a');
-    const selB = document.getElementById('cmp-select-b');
+    const selA = document.getElementById("cmp-select-a");
+    const selB = document.getElementById("cmp-select-b");
     reports.forEach(r => {
-      selA.appendChild(new Option(r.name + ' (' + r.mtime + ')', r.name));
-      selB.appendChild(new Option(r.name + ' (' + r.mtime + ')', r.name));
+      selA.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
+      selB.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
     });
   } catch (err) {
     document.body.innerHTML += '<div style="margin:20px;padding:16px;background:#fce4e4;color:#c0392b;border-radius:8px;font-size:14px;"><strong>JS Error:</strong> ' + err.message + '<br><pre>' + err.stack + '</pre></div>';

@@ -29,7 +29,7 @@ DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "dashboard_template.html")
 
 sys.path.insert(0, SCRIPT_DIR)
 from generate_report import read_data_from_db, render_template
-from compare_period import compute_distribution, compute_level2_by_level1, find_xlsx_in_dir, get_db_mtime
+from compare_period import compute_distribution, compute_level2_by_level1, compute_level3_by_level1_level2, find_xlsx_in_dir, get_db_mtime, extract_versions
 
 
 def scan_reports(output_dir: str) -> list:
@@ -70,12 +70,12 @@ def scan_reports(output_dir: str) -> list:
             'has_html': has_html,
         })
 
-    reports.sort(key=lambda r: r['mtime'])
+    reports.sort(key=lambda r: r['name'])
     return reports
 
 
 def build_comparison_data(output_dir: str, reports: list) -> dict:
-    """构建客户端对比所需的分布数据"""
+    """构建客户端对比所需的分布数据（含三级钻取和版本筛选）"""
     comparison_data = {}
     for r in reports:
         db_path = os.path.join(output_dir, r['name'], 'report.db')
@@ -87,6 +87,9 @@ def build_comparison_data(output_dir: str, reports: list) -> dict:
             'summary': data['summary'],
             'level1_dist': compute_distribution(details, total, 'level1'),
             'level2_dist': compute_level2_by_level1(details),
+            'level3_dist': compute_level3_by_level1_level2(details),
+            'details': details,
+            'versions': extract_versions(details),
         }
     return comparison_data
 
@@ -131,6 +134,14 @@ def generate_dashboard(output_dir: str = None, template_path: str = None) -> str
     }
 
     html = render_template(template_path, variables)
+
+    # 内联 Chart.js 到 HTML，避免浏览器 file:// 安全策略阻止加载外部脚本
+    chart_js_src = os.path.join(SKILL_DIR, 'assets', 'chart.js')
+    if os.path.isfile(chart_js_src):
+        with open(chart_js_src, 'r', encoding='utf-8') as f:
+            chart_js_content = f.read()
+        html = html.replace('<script src="chart.js"></script>',
+                            '<script>\n' + chart_js_content + '\n</script>')
 
     dashboard_path = os.path.join(output_dir, 'dashboard.html')
     os.makedirs(output_dir, exist_ok=True)
