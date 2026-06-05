@@ -131,63 +131,64 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 {{IF_REPORTS}}
 <div class="section">
   <div class="rpt-bar">
-    <span class="rpt-bar-label">选择报告</span>
-    <select class="rpt-bar-select" id="rpt-select" onchange="onReportSelect()"></select>
+    <span class="rpt-bar-label">查看报告</span>
+    <select class="rpt-bar-select" id="rpt-select" onchange="onReportSelect()"><option value="">选择报告</option></select>
   </div>
-  <div class="rpt-detail" id="rpt-detail"></div>
 </div>
 
 <div class="section">
   <div class="charts-card">
     <div class="charts-hdr">
-      <h2>趋势分析</h2>
+      <h2 id="trend-title">数量趋势</h2>
       <div style="display:flex;gap:6px;">
-        <button class="tb-btn active" data-metric="all" onclick="setTrendMetric('all')">全部</button>
-        <button class="tb-btn" data-metric="classified" onclick="setTrendMetric('classified')">已分类</button>
-        <button class="tb-btn" data-metric="unknown" onclick="setTrendMetric('unknown')">未知问题</button>
-        <button class="tb-btn" data-metric="failed" onclick="setTrendMetric('failed')">失败</button>
+        <button class="tb-btn active" id="trend-mode-count" onclick="setTrendMode('count')">数量</button>
+        <button class="tb-btn" id="trend-mode-pct" onclick="setTrendMode('pct')">百分比</button>
       </div>
     </div>
-    <div style="padding:20px;">
-      <div class="ch-sub" id="trend-line-title">数量趋势</div>
-      <div class="ch-wrap"><canvas id="trendLineChart"></canvas></div>
+    <div class="toolbar" id="trend-toolbar" style="border-radius:0;border-left:none;border-right:none;border-bottom:1px solid var(--border);margin:0;">
+      <span class="tb-label">一级</span><select class="tb-select" id="trend-level1" onchange="onTrendFilterChange('level1')"><option value="">全部</option></select>
+      <span class="tb-label">二级</span><select class="tb-select" id="trend-level2" onchange="onTrendFilterChange('level2')" disabled><option value="">全部</option></select>
+      <span class="tb-label">三级</span><select class="tb-select" id="trend-level3" onchange="onTrendFilterChange('level3')" disabled><option value="">全部</option></select>
+      <span class="tb-label">版本</span><select class="tb-select" id="trend-version" onchange="onTrendVersionChange()" disabled><option value="">全部</option></select>
+      <span id="trend-path" class="tb-path"></span>
     </div>
+    <div style="padding:20px;"><div class="ch-wrap"><canvas id="trendChart"></canvas></div></div>
   </div>
 </div>
 
 <div class="section">
-  <div class="toolbar" id="cmp-toolbar">
-    <span class="tb-label">报告A</span><select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
-    <span class="tb-label">报告B</span><select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
-  </div>
+  <div class="charts-card">
+    <div class="charts-hdr">
+      <h2>报告对比</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span class="tb-label">报告A</span><select class="tb-select" id="cmp-select-a" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
+        <span class="tb-label">报告B</span><select class="tb-select" id="cmp-select-b" onchange="onCmpSelectChange()"><option value="">选择报告</option></select>
+      </div>
+    </div>
 
-  <div class="cmp-summary" id="cmp-summary-area" style="display:none"></div>
-  <div class="toolbar" id="cmp-filter-bar" style="display:none">
-    <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
-    <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
-    <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
-    <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
-    <span id="filter-path" class="tb-path"></span>
-  </div>
-  <div class="charts-card" id="cmp-charts-card" style="display:none">
-    <div class="charts-hdr"><h2 id="cmp-charts-title">一级分类对比</h2></div>
-    <div class="charts-body">
+    <div class="cmp-summary" id="cmp-summary-area" style="display:none"></div>
+    <div class="toolbar" id="cmp-filter-bar" style="display:none;border-radius:0;border-left:none;border-right:none;border-bottom:1px solid var(--border);">
+      <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
+      <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
+      <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
+      <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
+      <span id="filter-path" class="tb-path"></span>
+    </div>
+    <div class="charts-body" id="cmp-charts-body" style="display:none">
       <div class="ch-wrap"><canvas id="cmpBarChart"></canvas></div>
       <div class="ch-wrap"><canvas id="cmpDeltaChart"></canvas></div>
     </div>
-  </div>
-  <div class="tbl-card" id="cmp-table-card" style="display:none">
-    <div class="tbl-hdr"><h2 id="cmp-table-title">分类对比明细</h2><span class="cnt" id="cmp-table-count">0 项</span></div>
-    <div class="tbl-scroll">
-      <table class="tbl">
+    <div style="padding:0 20px;display:none;border-top:1px solid var(--border);" id="cmp-table-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 8px;"><h2 id="cmp-table-title" style="font-size:14px;font-weight:700;">分类对比明细</h2><span class="cnt" id="cmp-table-count">0 项</span></div>
+      <table class="tbl" style="width:100%;">
         <colgroup><col><col><col><col><col><col><col></colgroup>
         <thead><tr><th>分类名称</th><th id="cmp-th-a">报告A</th><th>报告A占比</th><th id="cmp-th-b">报告B</th><th>报告B占比</th><th>变化量</th><th>占比变化</th></tr></thead>
         <tbody id="cmp-table-body"></tbody>
       </table>
     </div>
     <div class="pgn" id="cmp-pagination"></div>
+    <div class="empty" id="cmp-empty">请选择两份报告进行对比</div>
   </div>
-  <div class="empty" id="cmp-empty">请选择两份报告进行对比</div>
 </div>
 {{ENDIF_REPORTS}}
 {{IF_NO_REPORTS}}
@@ -233,74 +234,250 @@ function populateReportSelect() {
   reports.forEach(r => {
     sel.appendChild(new Option(r.name + '  (' + r.mtime.slice(0, 10) + ')', r.name));
   });
-  if (reports.length > 0) {
-    sel.value = reports[0].name;
-    renderReportDetail(reports[0]);
-  }
 }
 
 function onReportSelect() {
   const name = document.getElementById('rpt-select').value;
+  if (!name) return;
   const r = reports.find(x => x.name === name);
-  if (r) renderReportDetail(r);
-}
-
-function renderReportDetail(r) {
-  const detail = document.getElementById('rpt-detail');
-  const linkHtml = r.has_html
-    ? '<a class="rpt-detail-link" href="./' + r.name + '/report.html">查看报告</a>'
-    : '<span class="rpt-detail-link disabled">未生成</span>';
-  detail.innerHTML =
-    '<div class="rpt-detail-name">' + r.name + '</div>' +
-    '<div class="rpt-detail-date">' + r.mtime + '</div>' +
-    (r.xlsx_name ? '<div class="rpt-detail-source">数据源: ' + r.xlsx_name + '</div>' : '') +
-    '<div class="rpt-detail-stats">' +
-      '<span class="rpt-stat total">总 ' + r.total + '</span>' +
-      '<span class="rpt-stat ok">分类 ' + r.classified + '</span>' +
-      '<span class="rpt-stat warn">未知 ' + r.unknown_issue + '</span>' +
-      '<span class="rpt-stat err">失败 ' + r.infer_failed + '</span>' +
-    '</div>' +
-    linkHtml;
+  if (r && r.has_html) {
+    window.open('./' + name + '/report.html', '_blank');
+  }
+  // 重置下拉框
+  document.getElementById('rpt-select').value = "";
 }
 
 // ─── trend charts ───
-function buildLineDatasets(metric) {
-  const base = { fill: false, tension: 0.3, pointRadius: 4, borderWidth: 2 };
-  if (metric === 'all') {
-    return [
-      { ...base, label: '总数据', data: trendTotal, borderColor: '#2c3e50' },
-      { ...base, label: '已分类', data: trendClassified, borderColor: '#27ae60' },
-      { ...base, label: '未知问题', data: trendUnknown, borderColor: '#e67e22' },
-      { ...base, label: '失败', data: trendFailed, borderColor: '#c0392b' },
-    ];
+let trendFilters = { level1: "", level2: "", level3: "" };
+let trendVersion = "";
+let trendMode = "count";
+
+// 从所有报告汇总分类选项
+function getTrendLevel1Options() {
+  const keys = {};
+  reports.forEach(r => {
+    const d = comparisonData[r.name];
+    Object.keys(d.level1_dist).forEach(k => { keys[k] = true; });
+  });
+  return sortedUnique(Object.keys(keys));
+}
+
+function getTrendLevel2Options(l1) {
+  const keys = {};
+  reports.forEach(r => {
+    const d = comparisonData[r.name];
+    if (d.level2_dist[l1]) Object.keys(d.level2_dist[l1]).forEach(k => { keys[k] = true; });
+  });
+  return sortedUnique(Object.keys(keys));
+}
+
+function getTrendLevel3Options(l1, l2) {
+  const keys = {};
+  reports.forEach(r => {
+    const d = comparisonData[r.name];
+    if (d.level3_dist[l1] && d.level3_dist[l1][l2]) Object.keys(d.level3_dist[l1][l2]).forEach(k => { keys[k] = true; });
+  });
+  return sortedUnique(Object.keys(keys));
+}
+
+function getTrendVersionOptions() {
+  const keys = {};
+  reports.forEach(r => {
+    const d = comparisonData[r.name];
+    d.versions.forEach(v => { keys[v] = true; });
+  });
+  return sortedUnique(Object.keys(keys));
+}
+
+function fillTrendSelect(id, options) {
+  const sel = document.getElementById(id);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="" title="全部">全部</option>';
+  options.forEach(o => {
+    const e = document.createElement("option");
+    if (id === "trend-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
+    else { e.value = o; e.textContent = o; e.title = o; }
+    sel.appendChild(e);
+  });
+  sel.value = options.includes(cur) ? cur : "";
+}
+
+function buildTrendData() {
+  // 逐报告统计当前筛选条件下的数量和总数
+  const counts = [];
+  const totals = [];
+
+  reports.forEach(r => {
+    const d = comparisonData[r.name];
+    let list = d.details;
+    // 版本筛选
+    if (trendVersion) {
+      const fv = trendVersion === "__empty__" ? "" : trendVersion;
+      list = list.filter(item => item.version === fv);
+    }
+    let allList = list;
+    // 分类筛选
+    if (trendFilters.level1) {
+      list = list.filter(item => {
+        const cls = item.classification || {};
+        if (item.status === "classified") {
+          if (trendFilters.level1 !== cls.level1) return false;
+          if (trendFilters.level2 && trendFilters.level2 !== cls.level2) return false;
+          if (trendFilters.level3 && trendFilters.level3 !== cls.level3) return false;
+          return true;
+        }
+        if (item.status === "unknown_issue" && trendFilters.level1 === "未知问题") return true;
+        return false;
+      });
+    }
+    totals.push(allList.length);
+    counts.push(list.length);
+  });
+
+  let title = trendMode === "pct" ? "占比趋势" : "数量趋势";
+  if (trendFilters.level3) title = trendFilters.level1 + " › " + trendFilters.level2 + " › " + trendFilters.level3;
+  else if (trendFilters.level2) title = trendFilters.level1 + " › " + trendFilters.level2;
+  else if (trendFilters.level1) title = trendFilters.level1;
+  if (trendVersion) title += (trendVersion === "__empty__" ? " (无版本号)" : " (" + trendVersion + ")");
+  document.getElementById("trend-title").textContent = title;
+
+  // 百分比模式下返回占比值
+  if (trendMode === "pct") {
+    return counts.map((c, i) => totals[i] > 0 ? round2(c / totals[i] * 100) : 0);
   }
-  const map = {
-    classified: { label: '已分类', data: trendClassified, borderColor: '#27ae60' },
-    unknown:    { label: '未知问题', data: trendUnknown, borderColor: '#e67e22' },
-    failed:     { label: '失败', data: trendFailed, borderColor: '#c0392b' },
-  };
-  return [{ ...base, ...map[metric] }];
+  return counts;
 }
 
 function initTrendCharts() {
-  trendCharts.line = new Chart(document.getElementById('trendLineChart'), {
-    type: 'line',
-    data: { labels: trendLabels, datasets: buildLineDatasets(trendMetric) },
+  const trendData = buildTrendData();
+  const isPct = trendMode === "pct";
+  trendCharts.mixed = new Chart(document.getElementById('trendChart'), {
+    type: 'bar',
+    data: { labels: trendLabels, datasets: [
+      { type: 'bar', label: isPct ? '占比' : '数量', data: trendData, backgroundColor: '#4a90d9', borderRadius: 4, order: 2, barPercentage: 0.7, categoryPercentage: 0.7 },
+      { type: 'line', label: isPct ? '占比趋势' : '数量趋势', data: trendData, borderColor: '#c0392b', backgroundColor: 'rgba(192,57,43,0.1)', fill: false, tension: 0.3, pointRadius: 4, borderWidth: 2, order: 1 }
+    ] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } } },
-      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
+      plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => isPct ? ctx.dataset.label + ': ' + ctx.raw + '%' : ctx.dataset.label + ': ' + ctx.raw } }
+      },
+      scales: { y: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { callback: v => isPct ? v + '%' : v } }, x: { grid: { display: false } } },
+      onClick: (_, els) => {
+        if (!els.length) return;
+        const idx = els[0].index;
+        const r = reports[idx];
+        if (r && r.has_html) window.open('./' + r.name + '/report.html', '_blank');
+      }
     }
   });
+  // 填充一级下拉框
+  fillTrendSelect("trend-level1", getTrendLevel1Options());
+  // 填充版本下拉框
+  const allVersions = getTrendVersionOptions();
+  fillTrendSelect("trend-version", allVersions);
+  document.getElementById("trend-version").disabled = allVersions.length === 0;
 }
 
-function setTrendMetric(metric) {
-  trendMetric = metric;
-  document.querySelectorAll('.charts-hdr .tb-btn[data-metric]').forEach(b => {
-    b.classList.toggle('active', b.getAttribute('data-metric') === metric);
-  });
-  trendCharts.line.data.datasets = buildLineDatasets(metric);
-  trendCharts.line.update();
+function onTrendFilterChange(src) {
+  const s1 = document.getElementById("trend-level1"), s2 = document.getElementById("trend-level2"), s3 = document.getElementById("trend-level3");
+  trendFilters.level1 = s1.value;
+  trendFilters.level2 = s2.value;
+  trendFilters.level3 = s3.value;
+  if (src === "level1") {
+    if (trendFilters.level1) {
+      fillTrendSelect("trend-level2", getTrendLevel2Options(trendFilters.level1)); s2.disabled = false;
+      s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+    } else {
+      s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+      s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+    }
+    trendFilters.level2 = ""; trendFilters.level3 = "";
+    s2.value = ""; s3.value = "";
+  } else if (src === "level2") {
+    if (trendFilters.level2) {
+      fillTrendSelect("trend-level3", getTrendLevel3Options(trendFilters.level1, trendFilters.level2)); s3.disabled = false;
+    } else {
+      s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+    }
+    trendFilters.level3 = "";
+    s3.value = "";
+  }
+  updateTrendChart();
+  updateTrendBreadcrumb();
+}
+
+function onTrendVersionChange() {
+  const newVer = document.getElementById("trend-version").value;
+  if (newVer !== trendVersion) {
+    // 版本变化时重置一二三级筛选
+    trendFilters = { level1: "", level2: "", level3: "" };
+    fillTrendSelect("trend-level1", getTrendLevel1Options());
+    document.getElementById("trend-level1").value = "";
+    document.getElementById("trend-level2").disabled = true; document.getElementById("trend-level2").innerHTML = '<option value="">全部</option>';
+    document.getElementById("trend-level3").disabled = true; document.getElementById("trend-level3").innerHTML = '<option value="">全部</option>';
+  }
+  trendVersion = newVer;
+  updateTrendChart();
+  updateTrendBreadcrumb();
+}
+
+function updateTrendChart() {
+  const data = buildTrendData();
+  const isPct = trendMode === "pct";
+  trendCharts.mixed.data.datasets[0].data = data;
+  trendCharts.mixed.data.datasets[0].label = isPct ? '占比' : '数量';
+  trendCharts.mixed.data.datasets[1].data = data;
+  trendCharts.mixed.data.datasets[1].label = isPct ? '占比趋势' : '数量趋势';
+  trendCharts.mixed.options.scales.y.ticks.callback = v => isPct ? v + '%' : v;
+  trendCharts.mixed.options.plugins.tooltip.callbacks.label = ctx => isPct ? ctx.dataset.label + ': ' + ctx.raw + '%' : ctx.dataset.label + ': ' + ctx.raw;
+  trendCharts.mixed.update();
+}
+
+function setTrendMode(mode) {
+  trendMode = mode;
+  document.getElementById("trend-mode-count").classList.toggle("active", mode === "count");
+  document.getElementById("trend-mode-pct").classList.toggle("active", mode === "pct");
+  updateTrendChart();
+}
+
+function updateTrendBreadcrumb() {
+  const el = document.getElementById("trend-path");
+  const l1 = trendFilters.level1, l2 = trendFilters.level2, l3 = trendFilters.level3;
+  if (!l1 && !l2 && !l3 && !trendVersion) { el.textContent = ""; return; }
+  el.textContent = "";
+  function addSeg(text, cls, clickFn) {
+    if (cls) {
+      const s = document.createElement("span"); s.className = cls; s.textContent = text;
+      if (clickFn) s.onclick = clickFn; el.appendChild(s);
+    } else { el.appendChild(document.createTextNode(text)); }
+  }
+  addSeg("全部", "p", clearTrendFilters);
+  if (l1) { addSeg(" › ", "sep"); addSeg(l1, "p", () => clearTrendLevel(1)); }
+  if (l2) { addSeg(" › ", "sep"); addSeg(l2, "p", () => clearTrendLevel(2)); }
+  if (l3) { addSeg(" › ", "sep"); addSeg(l3, "p", () => clearTrendLevel(3)); }
+  if (trendVersion) { addSeg(" › ", "sep"); addSeg("版本:" + (trendVersion === "__empty__" ? "无版本号" : trendVersion), "p", clearTrendVersion); }
+}
+
+function clearTrendFilters() {
+  trendFilters = { level1: "", level2: "", level3: "" }; trendVersion = "";
+  fillTrendSelect("trend-level1", getTrendLevel1Options());
+  document.getElementById("trend-level1").value = "";
+  const s2 = document.getElementById("trend-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+  const s3 = document.getElementById("trend-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  document.getElementById("trend-version").value = "";
+  updateTrendChart(); updateTrendBreadcrumb();
+}
+
+function clearTrendLevel(n) {
+  if (n === 1) { trendFilters.level2 = ""; trendFilters.level3 = ""; fillTrendSelect("trend-level2", getTrendLevel2Options(trendFilters.level1)); document.getElementById("trend-level2").disabled = !trendFilters.level1; document.getElementById("trend-level2").value = ""; document.getElementById("trend-level3").disabled = true; document.getElementById("trend-level3").innerHTML = '<option value="">全部</option>'; }
+  else if (n === 2) { trendFilters.level3 = ""; fillTrendSelect("trend-level3", getTrendLevel3Options(trendFilters.level1, trendFilters.level2)); document.getElementById("trend-level3").disabled = !trendFilters.level2; document.getElementById("trend-level3").value = ""; }
+  updateTrendChart(); updateTrendBreadcrumb();
+}
+
+function clearTrendVersion() {
+  trendVersion = ""; document.getElementById("trend-version").value = "";
+  updateTrendChart(); updateTrendBreadcrumb();
 }
 
 // ─── comparison ───
@@ -474,13 +651,15 @@ function onFilterChange(src) {
   cmpFilters.level2 = s2.value;
   cmpFilters.level3 = s3.value;
   if (src === "level1") {
-    if (cmpFilters.level1) { fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1)); s2.disabled = false; }
+    if (cmpFilters.level1) { fillCmpSelect("filter-level2", getAvailableLevel2(cmpFilters.level1)); s2.disabled = false; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     cmpFilters.level2 = ""; cmpFilters.level3 = "";
+    s2.value = ""; s3.value = "";
   } else if (src === "level2") {
     if (cmpFilters.level2) { fillCmpSelect("filter-level3", getAvailableLevel3(cmpFilters.level1, cmpFilters.level2)); s3.disabled = false; }
     else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     cmpFilters.level3 = "";
+    s3.value = "";
   }
   cmpPage = 1; updateCmpAll();
 }
@@ -503,7 +682,7 @@ function onVersionChange() {
 function setCmpF1(val) {
   cmpFilters.level1 = val; cmpFilters.level2 = ""; cmpFilters.level3 = "";
   document.getElementById("filter-level1").value = val;
-  fillCmpSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false;
+  fillCmpSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = "";
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
   cmpPage = 1; updateCmpAll();
 }
@@ -512,7 +691,7 @@ function setCmpF2(l1, l2) {
   cmpFilters.level1 = l1; cmpFilters.level2 = l2; cmpFilters.level3 = "";
   document.getElementById("filter-level1").value = l1;
   fillCmpSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
-  fillCmpSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false;
+  fillCmpSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = "";
   cmpPage = 1; updateCmpAll();
 }
 
@@ -595,15 +774,17 @@ function onCmpSelectChange() {
     updateCmpAll();
     document.getElementById("cmp-summary-area").style.display = '';
     document.getElementById("cmp-filter-bar").style.display = '';
-    document.getElementById("cmp-charts-card").style.display = '';
-    document.getElementById("cmp-table-card").style.display = '';
+    document.getElementById("cmp-charts-body").style.display = '';
+    document.getElementById("cmp-table-wrap").style.display = '';
+    document.getElementById("cmp-pagination").style.display = '';
     document.getElementById("cmp-empty").style.display = 'none';
   } else {
     cmpSelected = false;
     document.getElementById("cmp-summary-area").style.display = 'none';
     document.getElementById("cmp-filter-bar").style.display = 'none';
-    document.getElementById("cmp-charts-card").style.display = 'none';
-    document.getElementById("cmp-table-card").style.display = 'none';
+    document.getElementById("cmp-charts-body").style.display = 'none';
+    document.getElementById("cmp-table-wrap").style.display = 'none';
+    document.getElementById("cmp-pagination").style.display = 'none';
     if (a === b && a) document.getElementById("cmp-empty").textContent = '请选择两份不同的报告进行对比';
     else document.getElementById("cmp-empty").textContent = '请选择两份报告进行对比';
     document.getElementById("cmp-empty").style.display = '';
@@ -662,7 +843,6 @@ function updateCmpCharts() {
   else if (cmpFilters.level1 && cmpFilters.level2) title = cmpFilters.level1 + ' › ' + cmpFilters.level2;
   else if (cmpFilters.level1) title = cmpFilters.level1;
   else title = "全部";
-  document.getElementById("cmp-charts-title").textContent = title;
   document.getElementById("cmp-table-title").textContent = title;
 
   const barLabels = labels.map(l => l.length > 10 ? l.slice(0, 10) + '…' : l);
@@ -803,6 +983,12 @@ document.addEventListener('DOMContentLoaded', () => {
       selA.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
       selB.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
     });
+    // 默认选择前两个报告进行对比
+    if (reports.length >= 2) {
+      selA.value = reports[0].name;
+      selB.value = reports[1].name;
+      onCmpSelectChange();
+    }
   } catch (err) {
     document.body.innerHTML += '<div style="margin:20px;padding:16px;background:#fce4e4;color:#c0392b;border-radius:8px;font-size:14px;"><strong>JS Error:</strong> ' + err.message + '<br><pre>' + err.stack + '</pre></div>';
   }

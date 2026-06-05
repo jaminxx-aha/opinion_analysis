@@ -343,13 +343,15 @@ function onFilterChange(src) {
   filters.level2 = s2.value;
   filters.level3 = s3.value;
   if (src === "level1") {
-    if (filters.level1) { fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = false; }
+    if (filters.level1) { fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = false; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     filters.level2 = ""; filters.level3 = "";
+    s2.value = ""; s3.value = "";
   } else if (src === "level2") {
     if (filters.level2) { fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); s3.disabled = false; }
     else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
     filters.level3 = "";
+    s3.value = "";
   }
   // src === "level3" needs no special handling beyond the sync above
   currentPage = 1; updateAll();
@@ -374,6 +376,7 @@ function setF1(val) {
   filters.level1 = val; filters.level2 = ""; filters.level3 = "";
   document.getElementById("filter-level1").value = val;
   fillSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false;
+  document.getElementById("filter-level2").value = "";
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
   currentPage = 1; updateAll();
 }
@@ -383,6 +386,7 @@ function setF2(l1, l2) {
   document.getElementById("filter-level1").value = l1;
   fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
   fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false;
+  document.getElementById("filter-level3").value = "";
   currentPage = 1; updateAll();
 }
 
