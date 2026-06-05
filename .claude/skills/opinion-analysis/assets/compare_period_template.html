@@ -455,6 +455,13 @@ function clearVersion() {
 
 // ─── charts ───
 function getCurrentData() {
+  if (filters.level1 && filters.level2 && filters.level3) {
+    // 三级已选中：只展示当前选中的三级分类数据
+    const sub = level3Data[filters.level1] && level3Data[filters.level1][filters.level2];
+    const item = sub && sub[filters.level3];
+    if (item) return { [filters.level3]: item };
+    return {};
+  }
   if (filters.level1 && filters.level2 && level3Data[filters.level1] && level3Data[filters.level1][filters.level2]) {
     return level3Data[filters.level1][filters.level2];
   }

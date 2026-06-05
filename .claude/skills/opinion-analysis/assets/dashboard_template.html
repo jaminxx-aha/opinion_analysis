@@ -637,6 +637,13 @@ function renderCmpSummary() {
 
 // ─── charts ───
 function getCurrentCmpData() {
+  if (cmpFilters.level1 && cmpFilters.level2 && cmpFilters.level3) {
+    // 三级已选中：只展示当前选中的三级分类数据
+    const sub = cmpLevel3Data[cmpFilters.level1] && cmpLevel3Data[cmpFilters.level1][cmpFilters.level2];
+    const item = sub && sub[cmpFilters.level3];
+    if (item) return { [cmpFilters.level3]: item };
+    return {};
+  }
   if (cmpFilters.level1 && cmpFilters.level2 && cmpLevel3Data[cmpFilters.level1] && cmpLevel3Data[cmpFilters.level1][cmpFilters.level2]) {
     return cmpLevel3Data[cmpFilters.level1][cmpFilters.level2];
   }
