@@ -10,20 +10,32 @@ dependencies: python>=3.8, pandas>=1.5.0, openpyxl, python-dotenv
 
 ## 执行步骤
 
-### 步骤1：识别列信息
+### 步骤1：获取excel文件信息
 
 ```bash
-python <skill_path>/scripts/analyze_excel.py <Excel文件路径> --info [--app-column <列号>]
+python <skill_path>/scripts/excel_info.py <Excel文件路径>
 ```
 
-根据输出判断：
+### 步骤2：获取应用列表
 
-- **应用名**：内容为已知应用名（抖音或别名），记 `app_name`
-- **问题描述列**：内容为问题描述文本，记 `problem_index` 和 `row_count`
-- **版本号列**（可选）：内容为版本号（如 "3.5.0"、"v1.2.3"），记 `version_index`。若数据中无版本号相关字段则不传此参数
-- 验证 `references/apps/<app_name>/` 存在；不存在的应用所有数据归为"未知问题"，需告知用户
+```bash
+python <skill_path>/scripts/app_list
+```
 
-### 步骤2：分类并生成报告
+### 步骤3：获取字段信息
+
+根据excel文件信息，和应用列表，获取以下信息
+
+| 字段 | 说明 |
+|------|------|
+| app_col_index | 应用名列号，没有应用名相关的列则报错 |
+| app_name | 应用名，从excel文件信息中获取应用名，若应用名不在应用列表中，则报错 |
+| problem_index | 问题描述列号，没有问题描述相关的列则报错 |
+| problem_col_name | 问题描述列名 |
+| version_index | 版本号列号，没有版本号相关的列则忽略 |
+| version_col_name | 版本号名称，没有版本号相关的列则忽略 |
+
+### 步骤4：分类并生成报告
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
@@ -48,9 +60,5 @@ python <skill_path>/scripts/classify_data.py \
 - [references/apps/](references/apps/) — 各应用知识库
 - [assets/report_template.html](assets/report_template.html) — HTML报告模板
 - [scripts/classify_data.py](scripts/classify_data.py) — 分类脚本（支持续跑和 `--retry` 重试）
-- [scripts/analyze_excel.py](scripts/analyze_excel.py) — Excel分析 + 报告生成
-- [scripts/config.py](scripts/config.py) — 配置与公共函数
-
-## 支持的应用
-
-抖音
+- [scripts/excel_info.py](scripts/excel_info.py) — 获取excel表格的前几行数据
+- [scripts/app_list.py](scripts/app_list.py) — 获取当前支持的应用列表

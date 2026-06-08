@@ -69,7 +69,7 @@ def _load_env():
 
 
 sys.path.insert(0, SCRIPT_DIR)
-from config import resolve_column, SUPPORTED_APPS, get_app_dir
+from app_list import get_supported_apps, get_app_dir
 
 
 DB_SCHEMA = """
@@ -176,7 +176,7 @@ def code_to_classification(code, code_to_path):
 
 
 def load_reference(app_name):
-    app_dir = get_app_dir(SKILL_DIR, app_name)
+    app_dir = get_app_dir(app_name)
     if not app_dir:
         return None
     refs = {}
@@ -624,13 +624,14 @@ def main():
     args = parser.parse_args()
 
     app_name = args.app_name
-    if app_name not in SUPPORTED_APPS:
-        logger.warning("' %s' 不在支持列表中, 所有数据归为'未知问题'", app_name)
-        refs = {"info": "", "classification": "", "examples": "", "classification_tree": {"0": ["未知问题"]}}
-    else:
-        refs = load_reference(app_name)
-        if not refs:
-            logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
+    if app_name not in get_supported_apps():
+        supported = ", ".join(get_supported_apps())
+        print(f"错误: 应用 '{app_name}' 不在支持列表中，当前支持的应用: {supported}")
+        sys.exit(1)
+
+    refs = load_reference(app_name)
+    if not refs:
+        logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
 
     excel_path = args.excel_path
     output_dir = args.output_dir
@@ -639,14 +640,14 @@ def main():
 
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
-    problem_col = args.problem_name or resolve_column(args.problem_index, columns)
+    problem_col = args.problem_name or columns[int(args.problem_index) - 1]
     if problem_col not in columns:
         logger.error("问题描述列 '%s' 不存在", problem_col); sys.exit(1)
 
     # 解析版本号列
     version_col = None
     if args.version_index > 0:
-        version_col = resolve_column(args.version_index, columns)
+        version_col = columns[int(args.version_index) - 1]
         if version_col not in columns:
             logger.error("版本号列 '%s' 不存在", version_col); sys.exit(1)
     if version_col:
@@ -760,7 +761,7 @@ def main():
     print(f"分类完成({mode_label}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
 
     # 分类完成后自动生成报告
-    from analyze_excel import generate_report
+    from generate_report import generate_report
     report_path = generate_report(db_path, output_dir)
     if report_path:
         logger.info("报告已生成: %s", report_path)

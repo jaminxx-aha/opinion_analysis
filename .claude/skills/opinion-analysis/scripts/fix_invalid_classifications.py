@@ -20,7 +20,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 
 sys.path.insert(0, SCRIPT_DIR)
-from config import SUPPORTED_APPS, get_app_dir
+from app_list import get_supported_apps, get_app_dir
 from classify_data import validate_classification, parse_classification_md
 
 logger = logging.getLogger("fix_invalid")
@@ -32,7 +32,7 @@ logger.addHandler(handler)
 
 def load_classification_tree(app_name):
     """加载应用的分类编码→路径字典"""
-    app_dir = get_app_dir(SKILL_DIR, app_name)
+    app_dir = get_app_dir(app_name)
     if not app_dir:
         logger.error("应用 '%s' 不在支持列表中, 无法加载分类字典", app_name)
         return None
@@ -110,8 +110,8 @@ def main():
     parser.add_argument("--db-path", required=True, help="SQLite数据库路径")
     args = parser.parse_args()
 
-    if args.app_name not in SUPPORTED_APPS:
-        logger.warning("应用 '%s' 不在支持列表中: %s", args.app_name, SUPPORTED_APPS)
+    if args.app_name not in get_supported_apps():
+        logger.warning("应用 '%s' 不在支持列表中: %s", args.app_name, get_supported_apps())
 
     if not os.path.isfile(args.db_path):
         logger.error("数据库文件不存在: %s", args.db_path)
