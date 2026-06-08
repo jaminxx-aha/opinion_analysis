@@ -262,7 +262,13 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
 
-    return output_path
+    return {
+        'path': output_path,
+        'total': total,
+        'classified': classified,
+        'unknown_issue': unknown_issue,
+        'infer_failed': infer_failed,
+    }
 
 
 def main():
@@ -275,8 +281,8 @@ def main():
     output_path = sys.argv[2] if len(sys.argv) > 2 else None
     template_path = sys.argv[3] if len(sys.argv) > 3 else None
 
-    result_path = generate_report(input_path, output_path, template_path)
-    print(f"报告已生成: {result_path}")
+    result = generate_report(input_path, output_path, template_path)
+    print(f"报告已生成: {result['path']}")
 
 
 if __name__ == "__main__":

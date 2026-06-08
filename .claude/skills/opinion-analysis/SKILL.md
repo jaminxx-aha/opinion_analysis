@@ -24,16 +24,18 @@ python <skill_path>/scripts/app_list
 
 ### 步骤3：获取字段信息
 
-根据excel文件信息，和应用列表，获取以下信息
+根据excel文件信息，和应用列表，获取以下信息（索引下标从0开始）
 
 | 字段 | 说明 |
 |------|------|
-| app_col_index | 应用名列号，没有应用名相关的列则报错 |
-| app_name | 应用名，从excel文件信息中获取应用名，若应用名不在应用列表中，则报错 |
-| problem_index | 问题描述列号，没有问题描述相关的列则报错 |
+| app_col_index | 应用名列号 |
+| app_name | 应用名，从excel文件信息中获取应用名，需要映射为应用列表中的值 |
+| problem_index | 问题描述列号 |
 | problem_col_name | 问题描述列名 |
-| version_index | 版本号列号，没有版本号相关的列则忽略 |
-| version_col_name | 版本号名称，没有版本号相关的列则忽略 |
+| version_index | 版本号列号 |
+| version_col_name | 版本号名称 |
+
+**注意**：若无法获取应用名和问题描述列号，或应用名无法映射到应用列表中，终止步骤！
 
 ### 步骤4：分类并生成报告
 

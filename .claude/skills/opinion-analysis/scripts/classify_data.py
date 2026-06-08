@@ -614,9 +614,10 @@ def main():
     parser = argparse.ArgumentParser(description="使用LLM API自动分类舆情数据")
     parser.add_argument("--app-name", required=True)
     parser.add_argument("--problem-name", default=None)
-    parser.add_argument("--problem-index", type=int, required=True)
-    parser.add_argument("--version-index", type=int, default=0,
-                        help="版本号列索引(从1开始, 0表示无版本号)")
+    parser.add_argument("--problem-index", type=int, required=True,
+                        help="问题描述列索引(从0开始)")
+    parser.add_argument("--version-index", type=int, default=-1,
+                        help="版本号列索引(从0开始, -1表示无版本号)")
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
@@ -640,14 +641,14 @@ def main():
 
     df = pd.read_excel(excel_path)
     columns = df.columns.tolist()
-    problem_col = args.problem_name or columns[int(args.problem_index) - 1]
+    problem_col = args.problem_name or columns[args.problem_index]
     if problem_col not in columns:
         logger.error("问题描述列 '%s' 不存在", problem_col); sys.exit(1)
 
     # 解析版本号列
     version_col = None
-    if args.version_index > 0:
-        version_col = columns[int(args.version_index) - 1]
+    if args.version_index >= 0:
+        version_col = columns[args.version_index]
         if version_col not in columns:
             logger.error("版本号列 '%s' 不存在", version_col); sys.exit(1)
     if version_col:
@@ -762,10 +763,17 @@ def main():
 
     # 分类完成后自动生成报告
     from generate_report import generate_report
-    report_path = generate_report(db_path, output_dir)
-    if report_path:
-        logger.info("报告已生成: %s", report_path)
-        print(f"报告已生成: {report_path}")
+    report_html_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(args.excel_path))[0]}_report.html")
+    report = generate_report(db_path, report_html_path)
+    if report:
+        logger.info("报告已生成: %s", report['path'])
+        print(f"\n报告已生成: {report['path']}")
+        print(f"| 属性 | 值 |")
+        print(f"|------|-----|")
+        print(f"| 总数据 | {report['total']} |")
+        print(f"| 已分类 | {report['classified']} |")
+        print(f"| 未知问题 | {report['unknown_issue']} |")
+        print(f"| 推理失败 | {report['infer_failed']} |")
     else:
         logger.warning("报告生成失败")
 
