@@ -370,6 +370,42 @@ _progress_base = 0
 _output_dir = ""
 
 
+def clean_desc(text):
+    """清洗问题描述文本，移除HTML/CSS标签残留和卡片消息等无效内容。
+    客服对话数据常见: br(换行残留)、span/p(标签名残留)、
+    style/color/text-*(CSS属性残留)、答：卡片消息(小艺卡片无数据)
+    """
+    if not text or not text.strip():
+        return text
+
+    # br → 换行符（HTML换行标记残留）
+    text = re.sub(r'\bbr\b', '\n', text)
+
+    # CSS属性残留: 属性名 + 值 + 分号（如 style text-warp-mode wrap;、color rgb 192 0 0;）
+    css_props = r'\b(?:style|color|text-\w+(?:-\w+)?|font-\w+|background(?:-\w+)?|margin(?:-\w+)?|padding(?:-\w+)?|border(?:-\w+)?|width|height|display|position|overflow(?:-\w+)?|white-space|word-\w+|line-height|vertical-align|text-align|text-decoration|letter-spacing|rgb)\b[^;]*?;'
+    text = re.sub(css_props, '', text)
+
+    # HTML标签名残留: 独立英文单词形式的标签名（如 p、span、div）
+    html_tags = r'\b(?:p|span|div|b|i|strong|em|a|font|center|li|ul|ol|table|tr|td|th|img|hr|pre|code|sub|sup|small|big|h[1-6]|section|article|header|footer|nav|main|label|input|button|form|select|option|textarea|script|style)\b'
+    text = re.sub(html_tags, '', text)
+
+    # 移除"答：卡片消息"回答段（小艺卡片消息无原始数据，直接删除）
+    text = re.sub(r'答[:：]\s*卡片消息', '', text)
+
+    # 移除清理后变空的"答："标记
+    text = re.sub(r'\n\s*答[:：]\s*\n', '\n', text)
+    text = re.sub(r'^答[:：]\s*$', '', text, flags=re.MULTILINE)
+
+    # 规范化空白: 压缩空格、合并多余换行、清理换行前后空格
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n[ \t]+', '\n', text)
+    text = text.strip()
+
+    return text
+
+
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
     """status: 0=成功, 1=未知问题, 2=失败"""
     try:
@@ -377,7 +413,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         conn.execute("PRAGMA busy_timeout = 30000")
         cursor = conn.cursor()
         row = df.iloc[num - 1]
-        problem = str(row[problem_col]) if not pd.isna(row[problem_col]) else ""
+        problem = clean_desc(str(row[problem_col])) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
         version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
         if status == 0 and classification and classification[0] != "未知问题":
@@ -690,7 +726,7 @@ def main():
                 unknown_count += 1
         conn.close()
 
-        all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+        all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) in retry_ids]
 
         logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
@@ -707,7 +743,7 @@ def main():
         if max_id is None:
             max_id = 0
 
-        all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
+        all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) > max_id]
 
         logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
