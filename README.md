@@ -41,7 +41,7 @@ cp .env.example .env
 ```ini
 LLM_PROVIDER=openai          # openai 或 anthropic
 LLM_MODEL=deepseek-chat      # 模型名称
-LLM_API_KEY=your-api-key     # API 密钥
+LLM_API_KEY=your-api-key     # API 密钥 (多个key用逗号分隔)
 LLM_BASE_URL=https://api.deepseek.com/v1  # API 地址
 ```
 
@@ -115,9 +115,9 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
 |------|------|------|
 | `LLM_PROVIDER` | 是 | API 格式：`openai` 或 `anthropic` |
 | `LLM_MODEL` | 是 | 模型名称 |
-| `LLM_API_KEY` | 是 | API 密钥 |
+| `LLM_API_KEY` | 是 | API 密钥（多个key用逗号分隔） |
 | `LLM_BASE_URL` | 是 | API 基地址 |
-| `LLM_MAX_CONCURRENT` | 否 | 最大并发数，默认 1 |
+| `LLM_MAX_CONCURRENT` | 否 | 每个key的最大并发数（总并发=key数×此值），默认 1 |
 | `LLM_MAX_TOKENS` | 否 | 最大输出 token，默认 1024 |
 | `LLM_BATCH_SIZE` | 否 | 每次请求处理行数，默认 1 |
 | `LLM_MAX_RETRIES` | 否 | 最大重试次数，默认 3 |

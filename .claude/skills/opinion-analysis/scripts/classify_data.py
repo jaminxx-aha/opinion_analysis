@@ -11,9 +11,9 @@ classify_data.py - 使用LLM API自动分类舆情数据
 LLM配置从项目根目录.env自动加载:
   LLM_PROVIDER      API格式 (openai/anthropic)
   LLM_MODEL         模型名称
-  LLM_API_KEY       API密钥
+  LLM_API_KEY       API密钥(多个key用逗号分隔)
   LLM_BASE_URL      API基础URL
-  LLM_MAX_CONCURRENT 最大并发数(默认1)
+  LLM_MAX_CONCURRENT 每个key的最大并发数(总并发=key数×此值, 默认1)
   LLM_MAX_TOKENS    最大生成token(默认1024)
   LLM_BATCH_SIZE    每次LLM调用处理的问题数(默认1)
   LLM_MAX_RETRIES   最大重试次数
@@ -322,7 +322,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
                         log_fh.flush()
         if log_fh:
             log_fh.close()
-        logger.info("LLM响应接收完成(Anthropic SDK), 长度%d", len(full_text))
+        logger.info("LLM响应接收完成(Anthropic SDK, key=%s..., 长度%d)", api_key[:8], len(full_text))
         return full_text
     else:
         from openai import OpenAI, APITimeoutError
@@ -360,7 +360,7 @@ def call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout
                         log_fh.flush()
         if log_fh:
             log_fh.close()
-        logger.info("LLM响应接收完成(OpenAI SDK), 长度%d", len(full_text))
+        logger.info("LLM响应接收完成(OpenAI SDK, key=%s..., 长度%d)", api_key[:8], len(full_text))
         return full_text
 
 
@@ -593,9 +593,15 @@ def main():
     # 从环境变量读取LLM配置
     provider = os.environ.get("LLM_PROVIDER", "openai")
     model = os.environ.get("LLM_MODEL")
-    api_key = os.environ.get("LLM_API_KEY")
+    api_key_raw = os.environ.get("LLM_API_KEY")
+    if not api_key_raw:
+        logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
+    api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()]
+    if not api_keys:
+        logger.error("需要 LLM_API_KEY 环境变量 (解析后无有效key)"); sys.exit(1)
     base_url = os.environ.get("LLM_BASE_URL")
     max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
+    total_concurrent = len(api_keys) * max_concurrent
     max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
@@ -606,8 +612,6 @@ def main():
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    if not api_key:
-        logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
     if not model:
         logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
 
@@ -689,8 +693,8 @@ def main():
         all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) in retry_ids]
 
-        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                    args.retry, failed_count, unknown_count, missing_count, len(all_data), max_concurrent, batch_size, provider, model, temperature)
+        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                    args.retry, failed_count, unknown_count, missing_count, len(all_data), total_concurrent, len(api_keys), max_concurrent, batch_size, provider, model, temperature)
 
         _output_dir = output_dir
         _progress_base = 0
@@ -706,8 +710,8 @@ def main():
         all_data = [{"num": i + 1, "desc": str(df.iloc[i][problem_col]) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) > max_id]
 
-        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d, 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                    len(filtered), max_id, len(all_data), max_concurrent, batch_size, provider, model, temperature)
+        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
+                    len(filtered), max_id, len(all_data), total_concurrent, len(api_keys), max_concurrent, batch_size, provider, model, temperature)
 
         _output_dir = output_dir
         _progress_base = max_id
@@ -719,10 +723,16 @@ def main():
 
     batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
-    if max_concurrent == 1:
-        for batch in batches:
+    logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(api_keys), max_concurrent, total_concurrent)
+    if len(api_keys) > 1:
+        key_prefixes = [k[:8] + "..." for k in api_keys]
+        logger.info("key列表(前缀): %s", ", ".join(key_prefixes))
+
+    if total_concurrent == 1:
+        for i, batch in enumerate(batches):
+            assigned_key = api_keys[i % len(api_keys)]
             batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)
+                                          provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)
             for _, st in batch_results:
                 if st == 0:
                     success += 1
@@ -731,10 +741,12 @@ def main():
                 else:
                     failed += 1
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col): i
-                       for i, batch in enumerate(batches)}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=total_concurrent) as executor:
+            futures = {}
+            for i, batch in enumerate(batches):
+                assigned_key = api_keys[i % len(api_keys)]
+                futures[executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
+                                       provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)] = i
             for f in concurrent.futures.as_completed(futures):
                 try:
                     batch_results = f.result()
