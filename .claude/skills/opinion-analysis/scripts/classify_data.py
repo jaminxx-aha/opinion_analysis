@@ -407,7 +407,7 @@ def clean_desc(text):
 
 
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
-    """status: 0=成功, 1=未知问题, 2=失败"""
+    """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长"""
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout = 30000")
@@ -426,12 +426,15 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         elif status == 1:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, "未知问题", "", "", "未知问题", reason, raw_json, version))
+        elif status == 3:
+            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "描述过长", "", "", "描述过长", reason, raw_json, version))
         else:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
         conn.close()
-        status_label = {0: "成功", 1: "未知问题", 2: "失败"}
+        status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
         logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)
@@ -756,6 +759,17 @@ def main():
     success = 0
     unknown = 0
     failed = 0
+    too_long = 0
+
+    # 描述过长(>300字)的项直接入库status=3, 不送LLM
+    too_long_items = [item for item in all_data if len(item["desc"]) > 300]
+    all_data = [item for item in all_data if len(item["desc"]) <= 300]
+    for item in too_long_items:
+        desc_len = len(item["desc"])
+        save_item(item["num"], ["描述过长"], f"清洗后描述长度{desc_len}超过300字限制, 跳过分类", app_name, problem_col, df, db_path, 3, version_col)
+        too_long += 1
+    if too_long_items:
+        logger.info("描述过长跳过分类: %d条", len(too_long_items))
 
     batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
@@ -802,12 +816,12 @@ def main():
     db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
     if args.retry:
         mode_label = f"重试-{args.retry}"
-        processed = success + unknown + failed
+        processed = success + unknown + failed + too_long
     else:
         mode_label = "续跑"
-        processed = max_id + success + unknown + failed
-    logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d) | %s", mode_label, processed, total_all, success, unknown, failed, db_status)
-    print(f"分类完成({mode_label}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}) | {db_status}")
+        processed = max_id + success + unknown + failed + too_long
+    logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d, 过长%d) | %s", mode_label, processed, total_all, success, unknown, failed, too_long, db_status)
+    print(f"分类完成({mode_label}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}, 过长{too_long}) | {db_status}")
 
     # 分类完成后自动生成报告
     from generate_report import generate_report

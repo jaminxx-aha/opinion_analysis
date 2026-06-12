@@ -48,6 +48,7 @@ def read_data_from_db(db_path: str) -> dict:
         "classified": 0,
         "unknown_issue": 0,
         "infer_failed": 0,
+        "too_long": 0,
     }
 
     details = []
@@ -96,6 +97,23 @@ def read_data_from_db(db_path: str) -> dict:
                 'input': r['problem'],
                 'status': 'infer_failed',
                 'version': version or '',
+                'reasoning': r['reasoning'] or '',
+                'raw_data': raw_data,
+            })
+        elif status == 3:
+            summary["too_long"] += 1
+            details.append({
+                'row_id': r['id'],
+                'input': r['problem'],
+                'status': 'too_long',
+                'version': version or '',
+                'classification': {
+                    'app': r['cls_app'] or r['app'],
+                    'level1': '描述过长',
+                    'level2': '',
+                    'level3': '',
+                    'full_path': '描述过长',
+                },
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
             })
@@ -224,6 +242,7 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
     classified = summary.get('classified', 0)
     unknown_issue = summary.get('unknown_issue', 0)
     infer_failed = summary.get('infer_failed', 0)
+    too_long = summary.get('too_long', 0)
 
     # 查找Excel来源文件名
     input_dir = os.path.dirname(os.path.abspath(input_path))
@@ -239,6 +258,7 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
         'CLASSIFIED': classified,
         'UNKNOWN_ISSUE': unknown_issue,
         'INFER_FAILED': infer_failed,
+        'TOO_LONG': too_long,
         'DETAILS_JSON': json.dumps(details, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'EXCEL_FILENAME': excel_filename,

@@ -42,6 +42,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .sum-item.ok .sum-num { color: var(--green); }
 .sum-item.warn .sum-num { color: var(--orange); }
 .sum-item.err .sum-num { color: var(--red); }
+.sum-item.long .sum-num { color: #8b5cf6; }
 
 /* ─── toolbar ─── */
 .toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--primary-light); border-bottom: 1px solid rgba(59,130,246,.15); flex-wrap: wrap; }
@@ -98,6 +99,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .cls .unk:hover { text-decoration: underline; }
 .cls .fail { color: var(--red); cursor: pointer; font-weight: 600; transition: color var(--transition); }
 .cls .fail:hover { text-decoration: underline; }
+.cls .long { color: #8b5cf6; cursor: pointer; font-weight: 600; transition: color var(--transition); }
+.cls .long:hover { text-decoration: underline; }
 .rsn { font-size: 12px; color: var(--text-secondary); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; cursor: default; }
 
 /* ─── pagination ─── */
@@ -148,6 +151,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
     <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
     <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">未知问题</div></div>
     <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
+    <div class="sum-item long" onclick="filterByStatus('too_long')"><div class="sum-num">{{TOO_LONG}}</div><div class="sum-label">描述过长</div></div>
   </div>
 
   <div class="toolbar">
@@ -213,6 +217,7 @@ function getAllOptions() {
     else hasEmptyVer = true;
     if (item.status === "unknown_issue") { level1s["未知问题"] = true; return; }
     if (item.status === "infer_failed") { level1s["推理失败"] = true; return; }
+    if (item.status === "too_long") { level1s["描述过长"] = true; return; }
     if (item.status === "classified") {
       const cls = item.classification;
       level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
@@ -274,6 +279,13 @@ function getFilteredData() {
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     }
+    if (item.status === "too_long") {
+      if (depthFilter) return false;
+      if (filters.level1 === "描述过长") return true;
+      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    }
     if (item.status === "unknown_issue") {
       if (depthFilter) return false;
       if (filters.level1 === "未知问题") return true;
@@ -301,6 +313,7 @@ function calcStats(data) {
   data.forEach(item => {
     if (item.status === "unknown_issue") { stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1; return; }
     if (item.status === "infer_failed") { stats.level1["推理失败"] = (stats.level1["推理失败"] || 0) + 1; return; }
+    if (item.status === "too_long") { stats.level1["描述过长"] = (stats.level1["描述过长"] || 0) + 1; return; }
     if (item.status !== "classified") return;
     const cls = item.classification;
     stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
@@ -354,7 +367,7 @@ function filterByStatus(status) {
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-version").value = "";
   document.getElementById("search-input").value = "";
-  var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "未知问题" : "推理失败";
+  var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "未知问题" : status === "infer_failed" ? "推理失败" : status === "too_long" ? "描述过长" : "";
   document.getElementById("filter-path").innerHTML = label ? '<span class="p">' + label + '</span>' : "";
   currentPage = 1; updateAll();
 }
@@ -382,7 +395,7 @@ function updateBreadcrumb() {
   const el = document.getElementById("filter-path");
   if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
-  if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : "推理失败") + "</span>");
+  if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : statusFilter === "infer_failed" ? "推理失败" : statusFilter === "too_long" ? "描述过长" : statusFilter) + "</span>");
   if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter) + "</span>");
   if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
@@ -425,6 +438,8 @@ function updateTable() {
       clsHtml = "<span class='cls'>" + ps.join("") + "</span>";
     } else if (item.status === "infer_failed") {
       clsHtml = "<span class='cls'><span class='fail' onclick=\"setF1('推理失败')\">推理失败</span></span>";
+    } else if (item.status === "too_long") {
+      clsHtml = "<span class='cls'><span class='long' onclick=\"setF1('描述过长')\">描述过长</span></span>";
     } else {
       clsHtml = "<span class='cls'><span class='unk' onclick=\"setF1('未知问题')\">未知问题</span></span>";
     }
@@ -523,6 +538,7 @@ function showDetail(i) {
   let cv = "";
   if (item.status === "classified") cv = (cls.level1||"") + (cls.level2?"."+cls.level2:"") + (cls.level3?"."+cls.level3:"");
   else if (item.status === "unknown_issue") cv = "未知问题";
+  else if (item.status === "too_long") cv = "描述过长";
   else cv = "推理失败";
   let h = "<div class='mdl-cls'><div class='l'>分类结果</div><div class='v'>" + cv + "</div></div>";
   if (item.version) h += "<div class='mdl-cls' style='background:#f7f9fb;margin-bottom:0'><div class='l'>版本号</div><div class='v' style='color:var(--text);font-size:14px'>" + item.version + "</div></div>";
