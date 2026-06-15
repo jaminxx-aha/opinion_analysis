@@ -53,7 +53,7 @@ python <skill_path>/scripts/classify_data.py \
 
 `--version-index` 可选，0 或不传表示无版本号列。分类完成后自动生成HTML报告。
 
-`--retry` 可选，当用户需要分析未知问题或推理失败的问题时添加。retry_mode=`failed`继续分析推理失败的数据，retry_mode=`unknown`继续分析未知数据
+`--retry` 可选，当用户需要分析其他问题或推理失败的问题时添加。retry_mode=`failed`继续分析推理失败的数据，retry_mode=`unknown`继续分析未知数据
 
 **执行时间过长时**：分类脚本会持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志文件 `<output_dir>/report.log` 分析原因（如API超时、连接失败等）。
 

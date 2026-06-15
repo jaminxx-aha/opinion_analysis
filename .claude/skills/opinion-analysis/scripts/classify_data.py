@@ -124,9 +124,9 @@ def parse_classification_md(md_content):
 
     Returns:
         dict: 编码字符串到名称路径列表的映射，
-        如 {"0": ["未知问题"], "1": ["卡顿"], "1.1": ["卡顿","滑动卡顿"], "1.1.1": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"]}
+        如 {"0": ["其他问题"], "1": ["卡顿"], "1.1": ["卡顿","滑动卡顿"], "1.1.1": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"]}
     """
-    code_to_path = {"0": ["未知问题"]}
+    code_to_path = {"0": ["其他问题"]}
 
     lines = md_content.strip().split('\n')
     for line in lines:
@@ -164,15 +164,15 @@ def code_to_classification(code, code_to_path):
 
     Returns:
         名称路径列表，如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
-        编码"0"返回["未知问题"]
+        编码"0"返回["其他问题"]
     """
     if not code or code == "0":
-        return ["未知问题"]
+        return ["其他问题"]
     # 容错: 若LLM返回"1.1 滑动卡顿"格式，提取编码部分
     code_match = re.match(r'^(\d+(?:\.\d+)*)', str(code).strip())
     if code_match:
         code = code_match.group(1)
-    return code_to_path.get(code, ["未知问题"])
+    return code_to_path.get(code, ["其他问题"])
 
 
 def load_reference(app_name):
@@ -193,7 +193,7 @@ def load_reference(app_name):
         refs["classification_tree"] = parse_classification_md(md_content)  # 编码→路径字典(用于校验和转换)
         refs["classification"] = md_content  # md原文(用于prompt注入)
     else:
-        refs["classification_tree"] = {"0": ["未知问题"]}
+        refs["classification_tree"] = {"0": ["其他问题"]}
         refs["classification"] = ""
 
     return refs
@@ -207,11 +207,11 @@ def validate_classification(classification, code_to_path):
         code_to_path: 编码→路径字典 (来自 parse_classification_md)
 
     Returns:
-        True if path is valid (or classification is ["未知问题"])
+        True if path is valid (or classification is ["其他问题"])
         False if any path doesn't match any registered code path
     """
-    # 特殊情况: "未知问题"是Prompt规则允许的, 不在字典中但直接放行
-    if not classification or classification[0] == "未知问题":
+    # 特殊情况: "其他问题"是Prompt规则允许的, 不在字典中但直接放行
+    if not classification or classification[0] == "其他问题":
         return True
 
     # 检查名称路径是否与字典中某个编码对应的路径完全匹配
@@ -407,7 +407,7 @@ def clean_desc(text):
 
 
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
-    """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长"""
+    """status: 0=成功, 1=其他问题, 2=失败, 3=描述过长"""
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA busy_timeout = 30000")
@@ -416,7 +416,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         problem = clean_desc(str(row[problem_col])) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
         version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
-        if status == 0 and classification and classification[0] != "未知问题":
+        if status == 0 and classification and classification[0] != "其他问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
@@ -425,7 +425,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
                            (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json, version))
         elif status == 1:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "未知问题", "", "", "未知问题", reason, raw_json, version))
+                           (num, app_name, problem, status, app_name, "其他问题", "", "", "其他问题", reason, raw_json, version))
         elif status == 3:
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, "描述过长", "", "", "描述过长", reason, raw_json, version))
@@ -434,7 +434,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
         conn.close()
-        status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
+        status_label = {0: "成功", 1: "其他问题", 2: "失败", 3: "描述过长"}
         logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)
@@ -462,7 +462,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     if not valid_items:
         for item in batch:
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], False))
         with _progress_lock:
             _progress_done += len(batch)
@@ -485,7 +485,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -497,7 +497,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["其他问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -508,7 +508,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["未知问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["其他问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -536,7 +536,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         reason = p.get("reason", "") if isinstance(p, dict) else ""
                         classification = code_to_classification(code, code_to_path)
                         if not isinstance(code, str):
-                            save_item(num, ["未知问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["其他问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         elif code == "0":
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
@@ -577,15 +577,15 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         reason = p.get("reason", "") if isinstance(p, dict) else ""
                         classification = code_to_classification(code, code_to_path)
                         if not isinstance(code, str):
-                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["其他问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         elif code == "0":
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
                             results.append((num, 1))
-                        elif classification[0] == "未知问题":
-                            # 编码不在字典中, 转换后为未知问题
+                        elif classification[0] == "其他问题":
+                            # 编码不在字典中, 转换后为其他问题
                             invalid_reason = f"分类编码无效: {code} 不存在于编码表"
-                            save_item(num, ["未知问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["其他问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         else:
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
@@ -610,12 +610,12 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     except Exception as e:
         logger.error("批量LLM推理失败: %s", e)
         for item in valid_items:
-            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     for item in batch:
         if not item["desc"].strip():
-            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     with _progress_lock:
@@ -664,7 +664,7 @@ def main():
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
-                        help="重试模式: failed=重试失败数据, unknown=重试未知问题数据")
+                        help="重试模式: failed=重试失败数据, unknown=重试其他问题数据")
     args = parser.parse_args()
 
     app_name = args.app_name
@@ -834,7 +834,7 @@ def main():
         print(f"|------|-----|")
         print(f"| 总数据 | {report['total']} |")
         print(f"| 已分类 | {report['classified']} |")
-        print(f"| 未知问题 | {report['unknown_issue']} |")
+        print(f"| 其他问题 | {report['unknown_issue']} |")
         print(f"| 推理失败 | {report['infer_failed']} |")
     else:
         logger.warning("报告生成失败")
