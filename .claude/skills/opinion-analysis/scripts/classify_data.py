@@ -181,7 +181,7 @@ def load_reference(app_name):
         return None
     refs = {}
     # info.md and examples.md remain as markdown
-    for fname, key in [("info.md", "info"), ("examples.md", "examples")]:
+    for fname, key in [("info.md", "info"), ("examples.md", "examples"), ("error_examples.md", "error_examples")]:
         fpath = os.path.join(app_dir, fname)
         refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
 
@@ -245,12 +245,22 @@ def build_batch_prompt(app_name, items, refs):
 {refs.get('examples', '')}
 ---EXAMPLES_END---
 
+以下是一些错误的推理示例（以---ERROR_EXAMPLES---、---ERROR_EXAMPLES_END---分隔）
+---ERROR_EXAMPLES---
+{refs.get('error_examples', '')}
+---ERROR_EXAMPLES_END---
+
 推导规则：参照示例的推理方式，对照编码表逐层推导，返回分类编码；无法推导的层级截断编码（如无法推导二级则只返回一级编码如"1"，无法推导三级则只返回到二级编码如"1.1"）；不属于编码表问题的返回"0"。
 
 必须返回{len(items)}个元素，禁止多加或遗漏，必须按照以下json格式返回，json格式被三个反引号分割
 ```
 [{{"classification": "编码", "reason": "推理过程"}}]
 ```
+
+【要求】
+1.推理过程需要严格按照层级推理，即先分析出第一级，然后根据一级分类分析出第二级，再根据第二级分类分析出第三第三级分类
+2.忽略卓易通相关的描述，只分析原生鸿蒙相关的问题
+3.要根据现有的描述分析问题，若无法进一步得到更确切的分类则返回，不要去联想猜测
 """
 
 def extract_json(text):
