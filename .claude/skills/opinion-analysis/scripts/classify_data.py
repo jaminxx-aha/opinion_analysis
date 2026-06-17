@@ -138,17 +138,17 @@ def parse_classification_md(md_content):
         # 编码含至少两个数字段(1.1或1.1.1)，后面是空格+标签
         match = re.match(r'^(\d+\.\d+(?:\.\d+)*?)\s+(.+)$', line)
         if match:
-            code, label = match.group(1), match.group(2)
+            code, label = match.group(1), match.group(2).strip()
             parts = code.split('.')
             parent_code = '.'.join(parts[:-1])
             parent_path = code_to_path.get(parent_code, [])
             code_to_path[code] = parent_path + [label]
             continue
 
-        # 一级: "1.卡顿" (单数字+点+标签，无空格分隔)
-        match = re.match(r'^(\d+)\.(.+)$', line)
+        # 一级: "1 卡顿" (单数字+空格+标签)
+        match = re.match(r'^(\d+)\s+(.+)$', line)
         if match:
-            code, label = match.group(1), match.group(2)
+            code, label = match.group(1), match.group(2).strip()
             code_to_path[code] = [label]
             continue
 
