@@ -20,6 +20,7 @@ if sys.platform == 'win32':
 
 import json
 import argparse
+import sqlite3
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,12 +29,47 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SKILL_DIR)))
 DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "dashboard_template.html")
 
 sys.path.insert(0, SCRIPT_DIR)
-from generate_report import read_data_from_db, render_template
+from generate_report import read_data_from_db, render_template, domain_table, table_exists
 from compare_period import compute_distribution, compute_level2_by_level1, compute_level3_by_level1_level2, find_xlsx_in_dir, get_db_mtime, extract_versions
 
 
-def scan_reports(output_dir: str) -> list:
-    """扫描 output/ 目录，收集每个报告的元数据和分布数据"""
+def _resolve_db_path(entry_path: str, domain: str) -> str:
+    """返回某报告目录下包含该域数据的 DB 文件路径（空串表示无数据）。
+
+    解析顺序：report.db（新，单库双表）→ <domain>_report.db（旧，按域分库）→ function 回退 report.db 的 report 表。
+    """
+    report_db = os.path.join(entry_path, "report.db")
+    if os.path.isfile(report_db):
+        conn = sqlite3.connect(report_db)
+        has_table = table_exists(conn, domain_table(domain))
+        # function 域：兼容最早的 report 表
+        if not has_table and domain == "function":
+            has_table = table_exists(conn, "report")
+        conn.close()
+        if has_table:
+            return report_db
+    per_domain = os.path.join(entry_path, f"{domain}_report.db")
+    if os.path.isfile(per_domain):
+        return per_domain
+    return ""
+
+
+def _read_domain_db(db_path: str, domain: str):
+    """从 db 读取某域数据（单库双表 / 按域分库 / 最早 report 表）。"""
+    conn = sqlite3.connect(db_path)
+    has_new = table_exists(conn, domain_table(domain))
+    has_legacy_report = domain == "function" and table_exists(conn, "report")
+    conn.close()
+    if has_new:
+        return read_data_from_db(db_path, domain_table(domain))
+    if has_legacy_report:
+        return read_data_from_db(db_path, "report")
+    # 按域分库（旧）
+    return read_data_from_db(db_path, "report")
+
+
+def scan_reports(output_dir: str, domain: str = "function") -> list:
+    """扫描 output/ 目录，收集每个报告的元数据和分布数据（按指定域）"""
     reports = []
     if not os.path.isdir(output_dir):
         return reports
@@ -42,11 +78,11 @@ def scan_reports(output_dir: str) -> list:
         entry_path = os.path.join(output_dir, entry)
         if not os.path.isdir(entry_path):
             continue
-        db_path = os.path.join(entry_path, "report.db")
-        if not os.path.isfile(db_path):
+        db_path = _resolve_db_path(entry_path, domain)
+        if not db_path:
             continue
 
-        data = read_data_from_db(db_path)
+        data = _read_domain_db(db_path, domain)
         summary = data['summary']
         details = data['details']
         total = summary.get('total', len(details))
@@ -74,12 +110,14 @@ def scan_reports(output_dir: str) -> list:
     return reports
 
 
-def build_comparison_data(output_dir: str, reports: list) -> dict:
+def build_comparison_data(output_dir: str, reports: list, domain: str = "function") -> dict:
     """构建客户端对比所需的分布数据（含三级钻取和版本筛选）"""
     comparison_data = {}
     for r in reports:
-        db_path = os.path.join(output_dir, r['name'], 'report.db')
-        data = read_data_from_db(db_path)
+        db_path = _resolve_db_path(os.path.join(output_dir, r['name']), domain)
+        if not db_path:
+            continue
+        data = _read_domain_db(db_path, domain)
         details = data['details']
         total = data['summary']['total']
 
@@ -94,16 +132,11 @@ def build_comparison_data(output_dir: str, reports: list) -> dict:
     return comparison_data
 
 
-def generate_dashboard(output_dir: str = None, template_path: str = None) -> str:
-    """生成报告管理中心仪表盘"""
-
-    if not template_path:
-        template_path = DEFAULT_TEMPLATE
-
-    if not output_dir:
-        output_dir = os.path.join(PROJECT_DIR, 'output')
-
-    reports = scan_reports(output_dir)
+def _build_domain_bundle(output_dir: str, domain: str):
+    """为单个域构建仪表盘所需的全部数据。返回 None 表示该域无任何数据。"""
+    reports = scan_reports(output_dir, domain)
+    if not reports:
+        return None
 
     trend_labels = [r['name'] for r in reports]
     trend_total = [r['total'] for r in reports]
@@ -116,21 +149,48 @@ def generate_dashboard(output_dir: str = None, template_path: str = None) -> str
     for key in all_level1_keys:
         level1_trend[key] = [r['level1_dist'].get(key, 0) for r in reports]
 
-    comparison_data = build_comparison_data(output_dir, reports) if reports else {}
+    comparison_data = build_comparison_data(output_dir, reports, domain)
+
+    return {
+        'reports': reports,
+        'trend_labels': trend_labels,
+        'trend_total': trend_total,
+        'trend_classified': trend_classified,
+        'trend_unknown': trend_unknown,
+        'trend_failed': trend_failed,
+        'level1_keys': all_level1_keys,
+        'level1_trend': level1_trend,
+        'comparison_data': comparison_data,
+    }
+
+
+def generate_dashboard(output_dir: str = None, template_path: str = None) -> str:
+    """生成报告管理中心仪表盘：功能域与业务域同页双标签页切换"""
+
+    if not template_path:
+        template_path = DEFAULT_TEMPLATE
+
+    if not output_dir:
+        output_dir = os.path.join(PROJECT_DIR, 'output')
+
+    bundles = {}
+    for domain in ("function", "business"):
+        b = _build_domain_bundle(output_dir, domain)
+        if b is not None:
+            bundles[domain] = b
+
+    has_reports = len(bundles) > 0
+    default_domain = "function" if "function" in bundles else (next(iter(bundles)) if bundles else "function")
 
     variables = {
-        'REPORTS_JSON': json.dumps(reports, ensure_ascii=False),
-        'TREND_LABELS_JSON': json.dumps(trend_labels, ensure_ascii=False),
-        'TREND_TOTAL_JSON': json.dumps(trend_total, ensure_ascii=False),
-        'TREND_CLASSIFIED_JSON': json.dumps(trend_classified, ensure_ascii=False),
-        'TREND_UNKNOWN_JSON': json.dumps(trend_unknown, ensure_ascii=False),
-        'TREND_FAILED_JSON': json.dumps(trend_failed, ensure_ascii=False),
-        'LEVEL1_KEYS_JSON': json.dumps(all_level1_keys, ensure_ascii=False),
-        'LEVEL1_TREND_JSON': json.dumps(level1_trend, ensure_ascii=False),
-        'COMPARISON_DATA_JSON': json.dumps(comparison_data, ensure_ascii=False),
+        'DOMAIN_FUNCTION_JSON': json.dumps(bundles.get("function"), ensure_ascii=False),
+        'DOMAIN_BUSINESS_JSON': json.dumps(bundles.get("business"), ensure_ascii=False),
+        'HAS_FUNCTION': "function" in bundles,
+        'HAS_BUSINESS': "business" in bundles,
+        'DEFAULT_DOMAIN': default_domain,
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'HAS_REPORTS': len(reports) > 0,
-        'HAS_NO_REPORTS': len(reports) == 0,
+        'HAS_REPORTS': has_reports,
+        'HAS_NO_REPORTS': not has_reports,
     }
 
     html = render_template(template_path, variables)

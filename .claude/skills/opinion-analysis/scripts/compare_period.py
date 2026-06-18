@@ -37,7 +37,7 @@ DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "compare_period_template.ht
 
 # 导入 generate_report 的 DB 读取和模板渲染函数
 sys.path.insert(0, SCRIPT_DIR)
-from generate_report import read_data_from_db, render_template
+from generate_report import read_domain_from_db, render_template
 
 
 def find_xlsx_in_dir(dir_path: str) -> str:
@@ -183,28 +183,27 @@ def extract_versions(details: list) -> list:
     return result
 
 
-def generate_compare_report(db_path_a: str, db_path_b: str,
-                             output_dir: str = None,
-                             label_a: str = None, label_b: str = None,
-                             template_path: str = None) -> str:
-    """生成周期对比报告"""
+def _build_domain_bundle(data_a, data_b):
+    """为单个域构建对比所需的全套数据（data_a/data_b 为 {summary,details}，可为 None）。
 
-    if not template_path:
-        template_path = DEFAULT_TEMPLATE
+    返回 None 表示该域在两期均无数据。
+    """
+    if data_a is None and data_b is None:
+        return None
 
-    # 读取两个 db 的数据
-    data_a = read_data_from_db(db_path_a)
-    data_b = read_data_from_db(db_path_b)
+    # 任一期缺失时用空数据兜底，使另一期仍可正常对比
+    empty = {'summary': {'total': 0, 'classified': 0, 'unknown_issue': 0, 'infer_failed': 0}, 'details': []}
+    a = data_a or empty
+    b = data_b or empty
 
-    summary_a = data_a['summary']
-    summary_b = data_b['summary']
-    details_a = data_a['details']
-    details_b = data_b['details']
+    summary_a = a['summary']
+    summary_b = b['summary']
+    details_a = a['details']
+    details_b = b['details']
+    total_a = summary_a.get('total', 0)
+    total_b = summary_b.get('total', 0)
 
-    total_a = summary_a['total']
-    total_b = summary_b['total']
-
-    # ─── 1. 汇总对比 ───
+    # 1. 汇总对比
     summary_comparison = {}
     for key in ['total', 'classified', 'unknown_issue', 'infer_failed']:
         val_a = summary_a.get(key, 0)
@@ -219,17 +218,17 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
             'delta': delta, 'delta_pct': delta_pct,
         }
 
-    # ─── 2. Level1 分布对比 ───
+    # 2. Level1 分布对比
     dist_l1_a = compute_distribution(details_a, total_a, 'level1')
     dist_l1_b = compute_distribution(details_b, total_b, 'level1')
     level1_comparison = build_comparison_data(dist_l1_a, dist_l1_b, total_a, total_b)
 
-    # ─── 3. Level2 分布对比 ───
+    # 3. Level2 分布对比
     dist_l2_a = compute_level2_by_level1(details_a)
     dist_l2_b = compute_level2_by_level1(details_b)
     level2_comparison = build_nested_comparison(dist_l2_a, dist_l2_b, total_a, total_b)
 
-    # ─── 4. Level3 分布对比 ───
+    # 4. Level3 分布对比
     dist_l3_a = compute_level3_by_level1_level2(details_a)
     dist_l3_b = compute_level3_by_level1_level2(details_b)
     level3_comparison = {}
@@ -239,14 +238,48 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
         sub_b = dist_l3_b.get(l1, {})
         level3_comparison[l1] = build_nested_comparison(sub_a, sub_b, total_a, total_b)
 
-    # ─── 5. 版本号数据 ───
-    versions_a = extract_versions(details_a)
-    versions_b = extract_versions(details_b)
-    all_versions = sorted(set(versions_a + versions_b))
+    # 5. 版本号
+    all_versions = sorted(set(extract_versions(details_a) + extract_versions(details_b)))
 
-    # ─── 6. 元信息 ───
+    return {
+        'summary': summary_comparison,
+        'level1': level1_comparison,
+        'level2': level2_comparison,
+        'level3': level3_comparison,
+        'detailsA': details_a,
+        'detailsB': details_b,
+        'versions': all_versions,
+    }
+
+
+def generate_compare_report(db_path_a: str, db_path_b: str,
+                             output_dir: str = None,
+                             label_a: str = None, label_b: str = None,
+                             template_path: str = None) -> str:
+    """生成周期对比报告：同时对比功能域与业务域（每 db 读取两域各自的表）。
+
+    某域在任一期无数据时该域展示为空，不影响另一域。
+    """
+
+    if not template_path:
+        template_path = DEFAULT_TEMPLATE
+
+    # 按域读取两期数据并构建 bundle
+    bundles = {}
+    for domain in ("function", "business"):
+        data_a = read_domain_from_db(db_path_a, domain)
+        data_b = read_domain_from_db(db_path_b, domain)
+        bundle = _build_domain_bundle(data_a, data_b)
+        if bundle is not None:
+            bundles[domain] = bundle
+
+    if not bundles:
+        raise SystemExit(f"错误: 两个 db 中功能域与业务域均无数据。\n  A={db_path_a}\n  B={db_path_b}")
+
+    # 6. 元信息
     dir_a = os.path.dirname(os.path.abspath(db_path_a))
     dir_b = os.path.dirname(os.path.abspath(db_path_b))
+    all_versions_any = any(b.get('versions') for b in bundles.values())
     meta = {
         'label_a': label_a or os.path.basename(dir_a),
         'label_b': label_b or os.path.basename(dir_b),
@@ -254,18 +287,18 @@ def generate_compare_report(db_path_a: str, db_path_b: str,
         'time_b': get_db_mtime(db_path_b),
         'source_a': find_xlsx_in_dir(dir_a),
         'source_b': find_xlsx_in_dir(dir_b),
-        'has_version': len(all_versions) > 0,
+        'has_version': bool(all_versions_any),
     }
 
-    # ─── 模板变量 ───
+    default_domain = "function" if "function" in bundles else next(iter(bundles))
+
+    # 模板变量
     variables = {
-        'SUMMARY_JSON': json.dumps(summary_comparison, ensure_ascii=False),
-        'LEVEL1_JSON': json.dumps(level1_comparison, ensure_ascii=False),
-        'LEVEL2_JSON': json.dumps(level2_comparison, ensure_ascii=False),
-        'LEVEL3_JSON': json.dumps(level3_comparison, ensure_ascii=False),
-        'DETAILS_A_JSON': json.dumps(details_a, ensure_ascii=False),
-        'DETAILS_B_JSON': json.dumps(details_b, ensure_ascii=False),
-        'ALL_VERSIONS_JSON': json.dumps(all_versions, ensure_ascii=False),
+        'DOMAIN_FUNCTION_JSON': json.dumps(bundles.get("function"), ensure_ascii=False),
+        'DOMAIN_BUSINESS_JSON': json.dumps(bundles.get("business"), ensure_ascii=False),
+        'HAS_FUNCTION': "function" in bundles,
+        'HAS_BUSINESS': "business" in bundles,
+        'DEFAULT_DOMAIN': default_domain,
         'META_JSON': json.dumps(meta, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'LABEL_A': meta['label_a'],

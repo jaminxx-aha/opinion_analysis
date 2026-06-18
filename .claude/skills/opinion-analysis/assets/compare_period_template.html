@@ -61,6 +61,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tb-path .sep { color: var(--text-muted); margin: 0 4px; }
 
 .charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); }
+.domain-tabs { display: none; gap: 6px; margin-bottom: 16px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; box-shadow: var(--shadow); }
+.domain-tab { padding: 7px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all .2s; user-select: none; }
+.domain-tab:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.domain-tab.active { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .charts-hdr { padding: 14px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 .charts-hdr h2 { font-size: 15px; font-weight: 700; }
 .charts-body { padding: 24px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
@@ -111,6 +115,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   </div>
 </div>
 
+<div class="domain-tabs" id="domain-tabs"></div>
+
 <div class="charts-card">
   <div class="cmp-summary" id="summary-area"></div>
   <div class="toolbar">
@@ -141,26 +147,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 </div>
 
-<script id="summary-data" type="application/json">{{SUMMARY_JSON}}</script>
-<script id="level1-data" type="application/json">{{LEVEL1_JSON}}</script>
-<script id="level2-data" type="application/json">{{LEVEL2_JSON}}</script>
-<script id="level3-data" type="application/json">{{LEVEL3_JSON}}</script>
-<script id="details-a" type="application/json">{{DETAILS_A_JSON}}</script>
-<script id="details-b" type="application/json">{{DETAILS_B_JSON}}</script>
-<script id="all-versions" type="application/json">{{ALL_VERSIONS_JSON}}</script>
+<script id="domain-function" type="application/json">{{DOMAIN_FUNCTION_JSON}}</script>
+<script id="domain-business" type="application/json">{{DOMAIN_BUSINESS_JSON}}</script>
 <script id="meta-data" type="application/json">{{META_JSON}}</script>
 
 <script>
 const LABEL_A = "{{LABEL_A}}";
 const LABEL_B = "{{LABEL_B}}";
-const summaryData = JSON.parse(document.getElementById('summary-data').textContent);
-const level1DataOrig = JSON.parse(document.getElementById('level1-data').textContent);
-const level2DataOrig = JSON.parse(document.getElementById('level2-data').textContent);
-const level3DataOrig = JSON.parse(document.getElementById('level3-data').textContent);
-const detailsA = JSON.parse(document.getElementById('details-a').textContent);
-const detailsB = JSON.parse(document.getElementById('details-b').textContent);
-const allVersions = JSON.parse(document.getElementById('all-versions').textContent);
 const metaData = JSON.parse(document.getElementById('meta-data').textContent);
+
+// 按域加载对比数据（每域可为 null：该域无数据，页面展示空）
+function _loadBundle(name) {
+  const el = document.getElementById('domain-' + name);
+  if (!el || !el.textContent.trim()) return null;
+  try { return JSON.parse(el.textContent); } catch (e) { return null; }
+}
+const dataByDomain = { function: _loadBundle("function"), business: _loadBundle("business") };
+let activeDomain = "{{DEFAULT_DOMAIN}}";
+if (!dataByDomain[activeDomain]) activeDomain = dataByDomain.function ? "function" : (dataByDomain.business ? "business" : "function");
 
 const COLORS_A = "#3b82f6";
 const COLORS_B = "#f59e0b";
@@ -174,6 +178,15 @@ let viewMode = "count";  // 固定数量模式，不可切换
 let currentPage = 1;
 const pageSize = 50;
 let charts = {};
+
+// 当前域的工作数据（由 applyDomain 切换时重新指向）
+let summaryData = {};
+let level1DataOrig = {};
+let level2DataOrig = {};
+let level3DataOrig = {};
+let detailsA = [];
+let detailsB = [];
+let allVersions = [];
 
 // Current comparison data (may be recomputed when version changes)
 let level1Data = level1DataOrig;
@@ -646,12 +659,54 @@ function goPage(p) { currentPage = p; updateTable(); }
 
 function updateAll() { updateCharts(); updateBreadcrumb(); updateTable(); }
 
+// ─── 域切换 ───
+function renderDomainTabs() {
+  const el = document.getElementById("domain-tabs");
+  if (!el) return;
+  const tabs = [["function", "功能域"], ["business", "业务域"]];
+  const available = tabs.filter(([d]) => dataByDomain[d]);
+  if (available.length === 0) return;
+  el.style.display = "flex";
+  el.innerHTML = available.map(([d, label]) =>
+    `<div class="domain-tab${d === activeDomain ? ' active' : ''}" data-domain="${d}" onclick="switchDomain('${d}')">${label}</div>`
+  ).join("");
+}
+
+function applyDomain(d) {
+  if (!dataByDomain[d]) return;
+  activeDomain = d;
+  const b = dataByDomain[d] || {};
+  summaryData = b.summary || {};
+  level1DataOrig = b.level1 || {};
+  level2DataOrig = b.level2 || {};
+  level3DataOrig = b.level3 || {};
+  detailsA = b.detailsA || [];
+  detailsB = b.detailsB || [];
+  allVersions = b.versions || [];
+  // 重置筛选与图表
+  filters = { level1: "", level2: "", level3: "" };
+  versionFilter = ""; currentPage = 1;
+  if (charts.bar) { try { charts.bar.destroy(); charts.delta.destroy(); } catch (e) {} }
+  charts = {};
+  level1Data = level1DataOrig; level2Data = level2DataOrig; level3Data = level3DataOrig;
+  // 重置下拉
+  fillSelect("filter-level1", Object.keys(level1Data).sort());
+  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  fillSelect("filter-version", allVersions);
+  document.getElementById("filter-version").disabled = allVersions.length === 0;
+  document.getElementById("filter-version").value = "";
+  document.getElementById("filter-path").innerHTML = "";
+  renderSummary();
+  updateAll();
+  document.querySelectorAll('.domain-tab').forEach(t => t.classList.toggle('active', t.dataset.domain === d));
+}
+
+function switchDomain(d) { if (d === activeDomain || !dataByDomain[d]) return; applyDomain(d); }
+
 // ─── init ───
-renderSummary();
-fillSelect("filter-level1", Object.keys(level1Data).sort());
-fillSelect("filter-version", allVersions);
-document.getElementById("filter-version").disabled = allVersions.length === 0;
-updateAll();
+renderDomainTabs();
+applyDomain(activeDomain);
 </script>
 </body>
 </html>

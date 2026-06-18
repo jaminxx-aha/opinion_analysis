@@ -27,16 +27,30 @@ from openpyxl.utils import get_column_letter
 DATA_START_ROW = 3  # 数据从第3行开始
 
 
-def _read_db(db_path):
-    """读取DB中的分类数据"""
+def _table_for_domain(domain):
+    """域 → 表名。function/business 分别 report_function/report_business。"""
+    return f"report_{domain}"
+
+
+def _read_db(db_path, table="report"):
+    """读取DB中指定表的分类数据（默认 report 表）
+
+    table: report_function / report_business / report(旧)。若指定表不存在，
+    自动回退到 report 表（兼容旧库）。
+    """
     if not os.path.isfile(db_path):
         print(f"错误: DB文件不存在: {db_path}")
         sys.exit(1)
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
+    if table != "report":
+        has = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        if not has:
+            print(f"提示: 表 {table} 不存在，回退到 report 表")
+            table = "report"
     rows = conn.execute(
-        "SELECT problem, level1, level2, level3 FROM report ORDER BY id"
+        f"SELECT problem, level1, level2, level3 FROM {table} ORDER BY id"
     ).fetchall()
     conn.close()
     return rows
@@ -150,9 +164,9 @@ INF_WIDTHS = {
 }
 
 
-def export_db_to_excel(db_path, output_path):
+def export_db_to_excel(db_path, output_path, domain="function"):
     """创建新Excel文件：仅校准分类（问题描述 + level1/level2/level3）"""
-    rows = _read_db(db_path)
+    rows = _read_db(db_path, _table_for_domain(domain))
 
     wb = Workbook()
     ws = wb.active
@@ -197,13 +211,13 @@ def _find_cal_columns(ws):
     sys.exit(1)
 
 
-def append_to_excel(db_path, excel_path):
+def append_to_excel(db_path, excel_path, domain="function"):
     """向已有Excel文件追加推理分类4列，列号动态计算"""
     if not os.path.isfile(excel_path):
         print(f"错误: Excel文件不存在: {excel_path}")
         sys.exit(1)
 
-    rows = _read_db(db_path)
+    rows = _read_db(db_path, _table_for_domain(domain))
     wb = load_workbook(excel_path)
     ws = wb.active
 
@@ -246,9 +260,11 @@ if __name__ == "__main__":
     parser.add_argument("output_path", help="输出Excel文件路径")
     parser.add_argument("--append", action="store_true",
                         help="追加模式: 向已有Excel文件添加推理分类列（而非创建新文件）")
+    parser.add_argument("--domain", choices=["function", "business"], default="function",
+                        help="导出的分类域（默认 function）。单库 report.db 读 report_<domain> 表，缺失时回退 report 表")
     args = parser.parse_args()
 
     if args.append:
-        append_to_excel(args.db_path, args.output_path)
+        append_to_excel(args.db_path, args.output_path, args.domain)
     else:
-        export_db_to_excel(args.db_path, args.output_path)
+        export_db_to_excel(args.db_path, args.output_path, args.domain)

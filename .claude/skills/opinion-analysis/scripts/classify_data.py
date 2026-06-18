@@ -73,8 +73,9 @@ sys.path.insert(0, SCRIPT_DIR)
 from app_list import get_supported_apps, get_app_dir
 
 
-DB_SCHEMA = """
-CREATE TABLE IF NOT EXISTS report (
+# 建表 SQL 模板（按域生成表名：report_function / report_business）
+_DB_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS {table} (
     id INTEGER PRIMARY KEY,
     app TEXT,
     problem TEXT,
@@ -91,14 +92,21 @@ CREATE TABLE IF NOT EXISTS report (
 """
 
 
-def init_db(db_path):
+def report_table(domain):
+    """域 → 表名。功能域/业务域分别落 report_function / report_business 表（同一 report.db）。"""
+    return f"report_{domain}"
+
+
+def init_db(db_path, domain):
+    """初始化单库 report.db，为指定域创建 report_<domain> 表。"""
+    table = report_table(domain)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute(DB_SCHEMA)
+    conn.execute(_DB_TABLE_SQL.format(table=table))
     # 兼容旧DB：自动添加缺失的 version 列
-    cols = [row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()]
+    cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if 'version' not in cols:
-        conn.execute("ALTER TABLE report ADD COLUMN version TEXT DEFAULT ''")
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN version TEXT DEFAULT ''")
     conn.commit()
     conn.close()
 
@@ -141,7 +149,10 @@ atexit.register(_close_all_db)
 def init_output_dir(excel_path, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.path.join(output_dir, "log"), exist_ok=True)
-    shutil.copy2(excel_path, os.path.join(output_dir, os.path.basename(excel_path)))
+    # 复制原始 Excel（多域续跑时可能已存在，避免覆盖报错）
+    dst = os.path.join(output_dir, os.path.basename(excel_path))
+    if not os.path.exists(dst):
+        shutil.copy2(excel_path, dst)
 
 
 def setup_logging(output_dir):
@@ -211,18 +222,37 @@ def code_to_classification(code, code_to_path):
     return code_to_path.get(code, ["其他问题"])
 
 
-def load_reference(app_name):
+# 各域对应的知识库文件名（除共享的 info.md 外）。
+# function/business 域分别使用 *_function.md / *_business.md。
+DOMAIN_FILES = {
+    "function": {
+        "info": "info.md",
+        "examples": "examples_function.md",
+        "error_examples": "error_examples_function.md",
+        "classification": "classification_function.md",
+    },
+    "business": {
+        "info": "info.md",
+        "examples": "examples_business.md",
+        "error_examples": "error_examples_business.md",
+        "classification": "classification_business.md",
+    },
+}
+
+
+def load_reference(app_name, domain="function"):
     app_dir = get_app_dir(app_name)
     if not app_dir:
         return None
+    files = DOMAIN_FILES.get(domain, DOMAIN_FILES["function"])
     refs = {}
-    # info.md and examples.md remain as markdown
-    for fname, key in [("info.md", "info"), ("examples.md", "examples"), ("error_examples.md", "error_examples")]:
-        fpath = os.path.join(app_dir, fname)
+    # info.md 与 examples_business.md / error_examples_business.md 保持 markdown 原文
+    for key in ("info", "examples", "error_examples"):
+        fpath = os.path.join(app_dir, files[key])
         refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
 
-    # classification.md: 解析编号大纲生成编码→路径字典
-    classification_path = os.path.join(app_dir, "classification.md")
+    # 分类文件: 解析编号大纲生成编码→路径字典
+    classification_path = os.path.join(app_dir, files["classification"])
     if os.path.isfile(classification_path):
         with open(classification_path, "r", encoding="utf-8") as f:
             md_content = f.read()
@@ -255,15 +285,19 @@ def validate_classification(classification, code_to_path):
     return tuple(classification) in valid_paths
 
 
-def build_batch_prompt(app_name, items, refs):
-    """构建批量分类prompt，items为[{num, desc}]列表"""
+def build_batch_prompt(app_name, items, refs, domain="function"):
+    """构建批量分类prompt，items为[{num, desc}]列表
+
+    domain: 分类域，function=功能域/性能问题，business=业务域
+    """
+    domain_label = "业务模块" if domain == "business" else "性能问题"
     problems_text = "\n" + "\n".join([
         f"---PROBLEM_{i+1}---\n\n{item['desc']}\n\n---PROBLEM_{i+1}_END---\n"
         for i, item in enumerate(items)
     ])
     return f"""你是一位专业的{app_name}应用问题分类专家，请根据用户的问题描述（以---PROBLEMS---、---PROBLEMS_END---分隔，内部有{len(items)}个问题，每个问题以---PROBLEM_N---，---PROBLEM_N_END---分隔，每个问题可能属于多个分类，只要给出最相关即可），
 
-结合应用描述（---APP---、---APP_END---分隔）、问题分类编码表（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），推导出最准确的分类编码。
+结合应用描述（---APP---、---APP_END---分隔）、{domain_label}分类编码表（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），推导出最准确的分类编码。本次分析的是【{domain_label}】维度，请围绕该维度的分类树进行归类。
 
 ---PROBLEMS---
 {problems_text}
@@ -452,6 +486,10 @@ def clean_desc(text):
     return text
 
 
+# 当前域对应的表名（report_function / report_business），由 main() 设置，供 save_item 使用
+_TABLE = "report_function"
+
+
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
     """status: 0=成功, 1=其他问题, 2=失败, 3=描述过长"""
     try:
@@ -461,21 +499,22 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         problem = clean_desc(str(row[problem_col])) if not pd.isna(row[problem_col]) else ""
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
         version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
+        t = _TABLE
         if status == 0 and classification and classification[0] != "其他问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
             fp = ".".join(filter(None, [l1, l2, l3]))
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json, version))
         elif status == 1:
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, "其他问题", "", "", "其他问题", reason, raw_json, version))
         elif status == 3:
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, "描述过长", "", "", "描述过长", reason, raw_json, version))
         else:
-            cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
         status_label = {0: "成功", 1: "其他问题", 2: "失败", 3: "描述过长"}
@@ -485,7 +524,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
 
 
 def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None):
+                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None, domain="function"):
     """处理一批问题，batch为[{num, desc}]列表"""
     global _progress_done, _output_dir
 
@@ -513,7 +552,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
         return results
 
     try:
-        prompt = build_batch_prompt(app_name, valid_items, refs)
+        prompt = build_batch_prompt(app_name, valid_items, refs, domain)
         row_nums = ",".join(str(it["num"]) for it in valid_items)
         logger.debug("批量开始LLM推理, 行号[%s], 有效问题数: %d", row_nums, len(valid_items))
 
@@ -707,19 +746,24 @@ def main():
                         help="版本号列索引(从0开始, -1表示无版本号)")
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--domain", required=True, choices=["function", "business"],
+                        help="分类域: function=功能域/性能问题, business=业务域")
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
                         help="重试模式: failed=重试失败数据, unknown=重试其他问题数据")
     args = parser.parse_args()
 
     app_name = args.app_name
+    domain = args.domain
     if app_name not in get_supported_apps():
         supported = ", ".join(get_supported_apps())
         print(f"错误: 应用 '{app_name}' 不在支持列表中，当前支持的应用: {supported}")
         sys.exit(1)
 
-    refs = load_reference(app_name)
+    refs = load_reference(app_name, domain)
     if not refs:
         logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
+    if not refs.get("classification"):
+        logger.error("无法加载 '%s' 域[%s]的分类知识库(classification文件缺失)", app_name, domain); sys.exit(1)
 
     excel_path = args.excel_path
     output_dir = args.output_dir
@@ -747,15 +791,16 @@ def main():
     logger.info("总行数: %d (无应用名列筛选)", len(df))
 
     db_path = os.path.join(output_dir, "report.db")
-    init_db(db_path)
+    init_db(db_path, domain)
 
     conn = sqlite3.connect(db_path)
-
-    global _output_dir, _progress_base
+    table = report_table(domain)
+    global _output_dir, _progress_base, _TABLE
+    _TABLE = table
 
     if args.retry:
         # 重试模式: 找出指定状态及缺失的行
-        existing = dict(conn.execute("SELECT id, status FROM report").fetchall())
+        existing = dict(conn.execute(f"SELECT id, status FROM {table}").fetchall())
         retry_ids = set()
         missing_count = 0
         failed_count = 0
@@ -785,7 +830,7 @@ def main():
         total_all = len(filtered)
     else:
         # 续跑模式: 从最大id之后继续
-        max_id = conn.execute("SELECT MAX(id) FROM report").fetchone()[0]
+        max_id = conn.execute(f"SELECT MAX(id) FROM {table}").fetchone()[0]
         conn.close()
         if max_id is None:
             max_id = 0
@@ -826,7 +871,7 @@ def main():
         for i, batch in enumerate(batches):
             assigned_key = api_keys[i % len(api_keys)]
             batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)
+                                          provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
             for _, st in batch_results:
                 if st == 0:
                     success += 1
@@ -840,7 +885,7 @@ def main():
             for i, batch in enumerate(batches):
                 assigned_key = api_keys[i % len(api_keys)]
                 futures[executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
-                                       provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col)] = i
+                                       provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)] = i
             for f in concurrent.futures.as_completed(futures):
                 try:
                     batch_results = f.result()
@@ -855,7 +900,7 @@ def main():
                     failed += batch_size
 
     conn = sqlite3.connect(db_path)
-    cnt = conn.execute("SELECT COUNT(*) FROM report").fetchone()[0]
+    cnt = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
     conn.close()
     db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
     if args.retry:
@@ -867,13 +912,14 @@ def main():
     logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d, 过长%d) | %s", mode_label, processed, total_all, success, unknown, failed, too_long, db_status)
     print(f"分类完成({mode_label}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}, 过长{too_long}) | {db_status}")
 
-    # 分类完成后自动生成报告
+    # 分类完成后自动生成报告（读 output_dir 下所有域 DB 合并双标签页）
     from generate_report import generate_report
     report_html_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(args.excel_path))[0]}_report.html")
-    report = generate_report(db_path, report_html_path)
+    report = generate_report(output_dir, report_html_path)
     if report:
-        logger.info("报告已生成: %s", report['path'])
+        logger.info("报告已生成: %s (包含域: %s)", report['path'], ",".join(report.get('domains', [])))
         print(f"\n报告已生成: {report['path']}")
+        print(f"包含域: {', '.join(report.get('domains', []))}")
         print(f"| 属性 | 值 |")
         print(f"|------|-----|")
         print(f"| 总数据 | {report['total']} |")

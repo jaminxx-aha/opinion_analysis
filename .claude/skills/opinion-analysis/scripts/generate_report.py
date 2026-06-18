@@ -29,17 +29,29 @@ SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "report_template.html")
 
 
-def read_data_from_db(db_path: str) -> dict:
-    """从SQLite数据库读取分类结果"""
+def domain_table(domain: str) -> str:
+    """域 → 表名。功能域/业务域分别 report_function / report_business（同一 report.db）。"""
+    return f"report_{domain}"
+
+
+def table_exists(conn, table: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+
+def read_data_from_db(db_path: str, table: str = "report") -> dict:
+    """从SQLite数据库读取指定表的分类结果
+
+    table: report_function / report_business / report(旧)
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     # 兼容旧DB：检查 version 列是否存在
-    cols = [row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()]
+    cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     has_version = 'version' in cols
 
-    cursor.execute("SELECT * FROM report ORDER BY id")
+    cursor.execute(f"SELECT * FROM {table} ORDER BY id")
     rows = cursor.fetchall()
     conn.close()
 
@@ -202,6 +214,56 @@ def read_data_from_json(json_path: str) -> dict:
     }
 
 
+def read_domain(output_dir: str, domain: str):
+    """读取某个分类域的数据。
+
+    解析顺序：
+      1. <output_dir>/report.db 的 report_<domain> 表（新布局，单库双表）
+      2. <output_dir>/<domain>_report.db 的 report 表（旧布局，按域分库）
+      3. function 域回退 <output_dir>/report.db 的 report 表（更早的单域库）
+    返回 {summary, details} 或 None（该域数据不存在时）。
+    """
+    output_dir = os.path.abspath(output_dir)
+
+    # 1. 单库 report.db 的 report_<domain> 表
+    report_db = os.path.join(output_dir, "report.db")
+    if os.path.isfile(report_db):
+        conn = sqlite3.connect(report_db)
+        t = domain_table(domain)
+        if table_exists(conn, t):
+            conn.close()
+            return read_data_from_db(report_db, t)
+        conn.close()
+
+    # 2. 按域分库（旧布局）
+    per_domain_db = os.path.join(output_dir, f"{domain}_report.db")
+    if os.path.isfile(per_domain_db):
+        return read_data_from_db(per_domain_db, "report")
+
+    # 3. function 域回退到最早的单域 report.db（表 report）
+    if domain == "function" and os.path.isfile(report_db):
+        conn = sqlite3.connect(report_db)
+        legacy = table_exists(conn, "report")
+        conn.close()
+        if legacy:
+            return read_data_from_db(report_db, "report")
+
+    return None
+
+
+def read_domain_from_db(db_path: str, domain: str):
+    """从指定 DB 文件读取某域数据（report_<domain> 表，回退 report 表）。"""
+    conn = sqlite3.connect(db_path)
+    has_new = table_exists(conn, domain_table(domain))
+    has_legacy = table_exists(conn, "report") if domain == "function" else False
+    conn.close()
+    if has_new:
+        return read_data_from_db(db_path, domain_table(domain))
+    if has_legacy:
+        return read_data_from_db(db_path, "report")
+    return None
+
+
 def render_template(template_path: str, variables: dict) -> str:
     """读取HTML模板并替换变量占位符，处理条件块"""
     with open(template_path, 'r', encoding='utf-8') as f:
@@ -223,43 +285,74 @@ def render_template(template_path: str, variables: dict) -> str:
     return html
 
 
-def generate_report(input_path: str, output_path: str = None, template_path: str = None) -> str:
-    """根据分析结果生成可视化 HTML 报告"""
+def generate_report(input_path: str, output_path: str = None, template_path: str = None) -> dict:
+    """根据分析结果生成可视化 HTML 报告。
 
+    input_path 可以是:
+      - 目录：读取该目录下存在的 function / business 两个域 DB，合并成双标签页报告
+      - .db 文件：单库，按文件名推断域（旧 report.db 视作 function）
+      - .json 文件：旧 JSON 格式（按 function 域处理）
+    """
     if not template_path:
         template_path = DEFAULT_TEMPLATE
 
-    # 根据输入类型选择读取方式
-    if input_path.endswith('.db'):
-        report_data = read_data_from_db(input_path)
+    # 判定输入类型并按域收集数据
+    domains_data = {}  # domain -> {summary, details}
+    if os.path.isdir(input_path):
+        input_dir = os.path.abspath(input_path)
+        for domain in ("function", "business"):
+            data = read_domain(input_dir, domain)
+            if data is not None:
+                domains_data[domain] = data
+    elif input_path.endswith('.db'):
+        input_dir = os.path.dirname(os.path.abspath(input_path))
+        # 单库 report.db 可能含两域表；按域分库 db 取其域
+        for domain in ("function", "business"):
+            data = read_domain_from_db(input_path, domain)
+            if data is not None:
+                domains_data[domain] = data
     else:
-        report_data = read_data_from_json(input_path)
+        input_dir = os.path.dirname(os.path.abspath(input_path))
+        domains_data["function"] = read_data_from_json(input_path)
 
-    summary = report_data['summary']
-    details = report_data['details']
+    if not domains_data:
+        return None
 
-    total = summary.get('total', len(details))
-    classified = summary.get('classified', 0)
-    unknown_issue = summary.get('unknown_issue', 0)
-    infer_failed = summary.get('infer_failed', 0)
-    too_long = summary.get('too_long', 0)
+    # 默认展示首个可用域
+    default_domain = "function" if "function" in domains_data else next(iter(domains_data))
 
-    # 查找Excel来源文件名
-    input_dir = os.path.dirname(os.path.abspath(input_path))
+    # 查找 Excel 来源文件名（目录内的 .xlsx/.xls）
     excel_filename = ''
-    for f in os.listdir(input_dir):
-        if f.endswith('.xlsx') or f.endswith('.xls'):
-            excel_filename = f
-            break
+    if os.path.isdir(input_dir) and os.path.exists(input_dir):
+        for f in os.listdir(input_dir):
+            if f.endswith('.xlsx') or f.endswith('.xls'):
+                excel_filename = f
+                break
 
-    # 模板变量
+    # 域摘要，供模板里的 summary 数字使用（默认域）
+    def_data = domains_data[default_domain]
+    def_summary = def_data['summary']
+    def_details = def_data['details']
+    total = def_summary.get('total', len(def_details))
+    classified = def_summary.get('classified', 0)
+    unknown_issue = def_summary.get('unknown_issue', 0)
+    infer_failed = def_summary.get('infer_failed', 0)
+    too_long = def_summary.get('too_long', 0)
+
     variables = {
         'TOTAL': total,
         'CLASSIFIED': classified,
         'UNKNOWN_ISSUE': unknown_issue,
         'INFER_FAILED': infer_failed,
         'TOO_LONG': too_long,
-        'DETAILS_JSON': json.dumps(details, ensure_ascii=False),
+        # 双域数据，每域 {summary, details}；模板里按 domain 取用
+        'DOMAIN_FUNCTION_JSON': json.dumps(domains_data.get("function"), ensure_ascii=False),
+        'DOMAIN_BUSINESS_JSON': json.dumps(domains_data.get("business"), ensure_ascii=False),
+        'HAS_FUNCTION': "function" in domains_data,
+        'HAS_BUSINESS': "business" in domains_data,
+        'DEFAULT_DOMAIN': default_domain,
+        # 兼容旧模板：DETAILS_JSON 指向默认域
+        'DETAILS_JSON': json.dumps(def_details, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'EXCEL_FILENAME': excel_filename,
         'HAS_EXCEL_FILENAME': bool(excel_filename),
@@ -269,21 +362,25 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
     # 确定输出路径
     if not output_path:
-        input_dir = os.path.dirname(os.path.abspath(input_path))
-        input_basename = os.path.basename(input_path)
-        for ext in ['.json', '.db']:
-            if input_basename.endswith(ext):
-                input_basename = input_basename[:-len(ext)]
-        for suffix in ['_classified', '_prepared']:
-            if input_basename.endswith(suffix):
-                input_basename = input_basename[:-len(suffix)]
-        output_path = os.path.join(input_dir, f"{input_basename}_report.html")
+        if os.path.isdir(input_path):
+            # 传入的是目录：用目录名作报告名
+            output_path = os.path.join(input_dir, f"{os.path.basename(input_dir)}_report.html")
+        else:
+            input_basename = os.path.basename(input_path)
+            for ext in ['.json', '.db']:
+                if input_basename.endswith(ext):
+                    input_basename = input_basename[:-len(ext)]
+            for suffix in ['_classified', '_prepared']:
+                if input_basename.endswith(suffix):
+                    input_basename = input_basename[:-len(suffix)]
+            output_path = os.path.join(input_dir, f"{input_basename}_report.html")
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
 
     return {
         'path': output_path,
+        'domains': list(domains_data.keys()),
         'total': total,
         'classified': classified,
         'unknown_issue': unknown_issue,
@@ -293,7 +390,8 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python generate_report.py <分析结果JSON或DB路径> [输出HTML路径] [模板HTML路径]")
+        print("用法: python generate_report.py <输出目录或分析结果JSON/DB路径> [输出HTML路径] [模板HTML路径]")
+        print("      传目录时读取该目录下 function/business 两域 DB 合并双标签页报告")
         print("      未指定输出路径时，结果将保存在输入文件所在目录")
         sys.exit(1)
 

@@ -27,6 +27,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 /* ─── header ─── */
 .hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
+.domain-tabs { display: none; gap: 6px; margin-bottom: 20px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; box-shadow: var(--shadow); }
+.domain-tab { padding: 7px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all .2s; user-select: none; }
+.domain-tab:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.domain-tab.active { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .hdr h1 { font-size: 22px; font-weight: 800; letter-spacing: .5px; color: #fff; }
 .hdr-meta { font-size: 13px; color: rgba(255,255,255,.8); }
 
@@ -136,6 +140,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   <div class="hdr-meta"><span>{{GENERATED_TIME}}</span></div>
 </div>
 
+<div class="domain-tabs" id="domain-tabs"></div>
+
 {{IF_REPORTS}}
 <div class="section">
   <div class="rpt-bar">
@@ -205,32 +211,36 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 </div>
 
-<script id="reports-data" type="application/json">{{REPORTS_JSON}}</script>
-<script id="trend-labels-data" type="application/json">{{TREND_LABELS_JSON}}</script>
-<script id="trend-total-data" type="application/json">{{TREND_TOTAL_JSON}}</script>
-<script id="trend-classified-data" type="application/json">{{TREND_CLASSIFIED_JSON}}</script>
-<script id="trend-unknown-data" type="application/json">{{TREND_UNKNOWN_JSON}}</script>
-<script id="trend-failed-data" type="application/json">{{TREND_FAILED_JSON}}</script>
-<script id="level1-keys-data" type="application/json">{{LEVEL1_KEYS_JSON}}</script>
-<script id="level1-trend-data" type="application/json">{{LEVEL1_TREND_JSON}}</script>
-<script id="comparison-data" type="application/json">{{COMPARISON_DATA_JSON}}</script>
+<script id="domain-function" type="application/json">{{DOMAIN_FUNCTION_JSON}}</script>
+<script id="domain-business" type="application/json">{{DOMAIN_BUSINESS_JSON}}</script>
 
 <script>
-const reports = JSON.parse(document.getElementById('reports-data').textContent);
-const trendLabels = JSON.parse(document.getElementById('trend-labels-data').textContent);
-const trendTotal = JSON.parse(document.getElementById('trend-total-data').textContent);
-const trendClassified = JSON.parse(document.getElementById('trend-classified-data').textContent);
-const trendUnknown = JSON.parse(document.getElementById('trend-unknown-data').textContent);
-const trendFailed = JSON.parse(document.getElementById('trend-failed-data').textContent);
-const level1Keys = JSON.parse(document.getElementById('level1-keys-data').textContent);
-const level1Trend = JSON.parse(document.getElementById('level1-trend-data').textContent);
-const comparisonData = JSON.parse(document.getElementById('comparison-data').textContent);
+// 按域加载仪表盘数据（每域可为 null：该域无数据）
+function _loadBundle(name) {
+  const el = document.getElementById('domain-' + name);
+  if (!el || !el.textContent.trim()) return null;
+  try { return JSON.parse(el.textContent); } catch (e) { return null; }
+}
+const dataByDomain = { function: _loadBundle("function"), business: _loadBundle("business") };
+let activeDomain = "{{DEFAULT_DOMAIN}}";
+if (!dataByDomain[activeDomain]) activeDomain = dataByDomain.function ? "function" : (dataByDomain.business ? "business" : "function");
 
 const COLORS = ['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#14b8a6','#1f2937','#d97706','#6b7280','#f97316','#06b6d4','#0ea5e9','#a855f7','#334155','#dc2626','#1d4ed8'];
 const COLOR_A = '#3b82f6';
 const COLOR_B = '#f59e0b';
 const COLOR_POS = '#10b981';
 const COLOR_NEG = '#ef4444';
+
+// 当前域的工作数据（applyDomain 切换时重新指向）
+let reports = [];
+let trendLabels = [];
+let trendTotal = [];
+let trendClassified = [];
+let trendUnknown = [];
+let trendFailed = [];
+let level1Keys = [];
+let level1Trend = {};
+let comparisonData = {};
 
 let trendMetric = 'all';
 let trendCharts = {};
@@ -239,8 +249,21 @@ let cmpCharts = {};
 // ─── report selector ───
 function populateReportSelect() {
   const sel = document.getElementById('rpt-select');
+  sel.innerHTML = '<option value="">选择报告</option>';
   reports.forEach(r => {
     sel.appendChild(new Option(r.name + '  (' + r.mtime.slice(0, 10) + ')', r.name));
+  });
+  sel.value = "";
+}
+
+function populateCmpSelects() {
+  const selA = document.getElementById("cmp-select-a");
+  const selB = document.getElementById("cmp-select-b");
+  selA.innerHTML = '<option value="">选择报告</option>';
+  selB.innerHTML = '<option value="">选择报告</option>';
+  reports.forEach(r => {
+    selA.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
+    selB.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
   });
 }
 
@@ -975,29 +998,67 @@ function goCmpPage(p) { cmpPage = p; updateCmpTable(); }
 
 function updateCmpAll() { updateCmpCharts(); updateCmpBreadcrumb(); updateCmpTable(); }
 
+// ─── 域切换 ───
+function renderDomainTabs() {
+  const el = document.getElementById("domain-tabs");
+  if (!el) return;
+  const tabs = [["function", "功能域"], ["business", "业务域"]];
+  const available = tabs.filter(([d]) => dataByDomain[d]);
+  if (available.length === 0) { el.style.display = "none"; return; }
+  el.style.display = "flex";
+  el.innerHTML = available.map(([d, label]) =>
+    `<div class="domain-tab${d === activeDomain ? ' active' : ''}" data-domain="${d}" onclick="switchDomain('${d}')">${label}</div>`
+  ).join("");
+}
+
+function _destroyCharts() {
+  for (const k of Object.keys(trendCharts)) { try { trendCharts[k].destroy(); } catch (e) {} }
+  for (const k of Object.keys(cmpCharts)) { try { cmpCharts[k].destroy(); } catch (e) {} }
+  trendCharts = {}; cmpCharts = {};
+}
+
+function applyDomain(d) {
+  const b = dataByDomain[d];
+  if (!b) return;
+  activeDomain = d;
+  reports = b.reports || [];
+  trendLabels = b.trend_labels || [];
+  trendTotal = b.trend_total || [];
+  trendClassified = b.trend_classified || [];
+  trendUnknown = b.trend_unknown || [];
+  trendFailed = b.trend_failed || [];
+  level1Keys = b.level1_keys || [];
+  level1Trend = b.level1_trend || {};
+  comparisonData = b.comparison_data || {};
+
+  // 重置筛选与图表
+  trendFilters = { level1: "", level2: "", level3: "" };
+  trendVersion = ""; trendMode = "count"; trendMetric = "all";
+  cmpNameA = ""; cmpNameB = ""; cmpFilters = { level1: "", level2: "", level3: "" };
+  cmpVersion = ""; cmpPage = 1; cmpSelected = false;
+  _destroyCharts();
+
+  populateReportSelect();
+  populateCmpSelects();
+  if (reports.length === 0) return;
+  initTrendCharts();
+  // 默认对比前两个报告
+  if (reports.length >= 2) {
+    document.getElementById("cmp-select-a").value = reports[0].name;
+    document.getElementById("cmp-select-b").value = reports[1].name;
+    onCmpSelectChange();
+  }
+  document.querySelectorAll('.domain-tab').forEach(t => t.classList.toggle('active', t.dataset.domain === d));
+}
+
+function switchDomain(d) { if (d === activeDomain || !dataByDomain[d]) return; applyDomain(d); }
+
 // ─── init ───
 document.addEventListener('DOMContentLoaded', () => {
   try {
-    populateReportSelect();
-
-    if (reports.length === 0) {
-      return;
-    }
-
-    initTrendCharts();
-
-    const selA = document.getElementById("cmp-select-a");
-    const selB = document.getElementById("cmp-select-b");
-    reports.forEach(r => {
-      selA.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
-      selB.appendChild(new Option(r.name + ' (' + r.mtime.slice(0, 10) + ')', r.name));
-    });
-    // 默认选择前两个报告进行对比
-    if (reports.length >= 2) {
-      selA.value = reports[0].name;
-      selB.value = reports[1].name;
-      onCmpSelectChange();
-    }
+    renderDomainTabs();
+    if (!dataByDomain[activeDomain]) return;  // 两域均无数据
+    applyDomain(activeDomain);
   } catch (err) {
     document.body.innerHTML += '<div style="margin:20px;padding:16px;background:#fce4e4;color:#c0392b;border-radius:8px;font-size:14px;"><strong>JS Error:</strong> ' + err.message + '<br><pre>' + err.stack + '</pre></div>';
   }

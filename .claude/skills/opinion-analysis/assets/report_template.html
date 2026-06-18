@@ -60,6 +60,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 /* ─── charts ─── */
 .charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); }
+/* ─── domain tabs ─── */
+.domain-tabs { display: none; gap: 6px; margin-bottom: 14px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; box-shadow: var(--shadow); }
+.domain-tab { padding: 7px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all var(--transition); user-select: none; }
+.domain-tab:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.domain-tab.active { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .charts-hdr { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); }
 .charts-hdr h2 { font-size: 15px; font-weight: 700; }
 .charts-hdr .tog { font-size: 13px; color: var(--primary); cursor: pointer; transition: color var(--transition); }
@@ -145,13 +150,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   </div>
 </div>
 
+<div class="domain-tabs" id="domain-tabs"></div>
+
 <div class="charts-card">
   <div class="summary">
-    <div class="sum-item total" onclick="filterByStatus('all')"><div class="sum-num">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
-    <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
-    <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num">{{UNKNOWN_ISSUE}}</div><div class="sum-label">其他问题</div></div>
-    <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
-    <div class="sum-item long" onclick="filterByStatus('too_long')"><div class="sum-num">{{TOO_LONG}}</div><div class="sum-label">描述过长</div></div>
+    <div class="sum-item total" onclick="filterByStatus('all')"><div class="sum-num" id="sum-total">{{TOTAL}}</div><div class="sum-label">总数据</div></div>
+    <div class="sum-item ok" onclick="filterByStatus('classified')"><div class="sum-num" id="sum-classified">{{CLASSIFIED}}</div><div class="sum-label">已分类</div></div>
+    <div class="sum-item warn" onclick="filterByStatus('unknown_issue')"><div class="sum-num" id="sum-unknown">{{UNKNOWN_ISSUE}}</div><div class="sum-label">其他问题</div></div>
+    <div class="sum-item err" onclick="filterByStatus('infer_failed')"><div class="sum-num" id="sum-failed">{{INFER_FAILED}}</div><div class="sum-label">失败</div></div>
+    <div class="sum-item long" onclick="filterByStatus('too_long')"><div class="sum-num" id="sum-long">{{TOO_LONG}}</div><div class="sum-label">描述过长</div></div>
   </div>
 
   <div class="toolbar">
@@ -196,9 +203,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 </div>
 
-<script id="report-data" type="application/json">{{DETAILS_JSON}}</script>
+<script id="report-data-function" type="application/json">{{DOMAIN_FUNCTION_JSON}}</script>
+<script id="report-data-business" type="application/json">{{DOMAIN_BUSINESS_JSON}}</script>
 <script>
-const allData = JSON.parse(document.getElementById('report-data').textContent);
+// 按域加载数据：每域 {summary, details}
+function _loadDomain(name) {
+  const el = document.getElementById('report-data-' + name);
+  if (!el || !el.textContent.trim()) return null;
+  try {
+    const raw = JSON.parse(el.textContent);
+    return { summary: raw.summary || {}, details: raw.details || [] };
+  } catch (e) { return null; }
+}
+const dataByDomain = { function: _loadDomain("function"), business: _loadDomain("business") };
+let activeDomain = "{{DEFAULT_DOMAIN}}";
+if (!dataByDomain[activeDomain]) activeDomain = dataByDomain.function ? "function" : (dataByDomain.business ? "business" : "function");
+let allData = (dataByDomain[activeDomain] && dataByDomain[activeDomain].details) || [];
 let filters = { level1: "", level2: "", level3: "" };
 let depthFilter = "";
 let searchText = "";
@@ -555,13 +575,57 @@ function showDetail(i) {
 
 function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
 
-document.addEventListener("DOMContentLoaded", () => {
+// ─── 域切换 ───
+function renderDomainTabs() {
+  const el = document.getElementById("domain-tabs");
+  if (!el) return;
+  const tabs = [["function", "功能域"], ["business", "业务域"]];
+  const available = tabs.filter(([d]) => dataByDomain[d]);
+  if (available.length === 0) return;
+  el.style.display = "flex";
+  el.innerHTML = available.map(([d, label]) =>
+    `<div class="domain-tab${d === activeDomain ? ' active' : ''}" data-domain="${d}" onclick="switchDomain('${d}')">${label}</div>`
+  ).join("");
+}
+
+function updateSummary() {
+  const d = dataByDomain[activeDomain] || { summary: {}, details: [] };
+  const s = d.summary || {};
+  document.getElementById("sum-total").textContent = (s.total != null ? s.total : d.details.length);
+  document.getElementById("sum-classified").textContent = s.classified || 0;
+  document.getElementById("sum-unknown").textContent = s.unknown_issue || 0;
+  document.getElementById("sum-failed").textContent = s.infer_failed || 0;
+  document.getElementById("sum-long").textContent = s.too_long || 0;
+}
+
+function applyDomain(d) {
+  if (!dataByDomain[d]) return;
+  activeDomain = d;
+  allData = dataByDomain[d].details;
+  // 切域：重置所有筛选与图表
+  filters = { level1: "", level2: "", level3: "" };
+  depthFilter = ""; searchText = ""; statusFilter = ""; versionFilter = ""; currentPage = 1;
+  if (charts.bar) { try { charts.bar.destroy(); charts.pie.destroy(); } catch (e) {} }
+  charts = {};
   const opts = getAllOptions();
   fillSelect("filter-level1", opts.level1s);
   fillSelect("filter-version", opts.versions);
-  const versionSel = document.getElementById("filter-version");
-  versionSel.disabled = opts.versions.length === 0;
+  document.getElementById("filter-version").disabled = opts.versions.length === 0;
+  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
+  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-depth").value = "";
+  document.getElementById("search-input").value = "";
+  document.getElementById("filter-path").innerHTML = "";
+  updateSummary();
   initCharts(); updateAll();
+  document.querySelectorAll('.domain-tab').forEach(t => t.classList.toggle('active', t.dataset.domain === d));
+}
+
+function switchDomain(d) { if (d === activeDomain || !dataByDomain[d]) return; applyDomain(d); }
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderDomainTabs();
+  applyDomain(activeDomain);
 });
 </script>
 </body>

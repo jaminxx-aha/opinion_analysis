@@ -15,17 +15,32 @@
 
 ## 分类体系
 
-采用三级层级分类（一级→二级→三级），分类体系由应用专属知识库决定，不同应用的分类维度和细分内容各不相同。每个应用的知识库包含：
+本工具支持两条并行的分类轴，用户运行时通过 `--domain` 选择本次分析哪条轴：
 
-- **info.md** — 应用描述与模块划分
-- **classification.md** — 该应用的三级分类树
-- **examples.md** — 分类示例与推理过程
+- **功能域（function）**：按性能/功能问题维度分类（卡顿、闪退、启动异常……）。
+- **业务域（business）**：按业务模块维度分类（短视频内容、直播、电商、社交……）。
 
-示例分类路径（抖音）：
+两条轴采用相同的三级层级分类（一级→二级→三级），由应用专属知识库决定。两个域**各自独立运行、互不影响**：同一输出目录下分别生成 `function_report.db` 与 `business_report.db`，续跑/重试按域隔离。报告会读取目录下已存在的所有域 DB，合并成一份双标签页报告，可在「功能域 / 业务域」之间切换查看。
+
+每个应用的每个域知识库包含：
+
+- **info.md** — 应用描述与模块划分（两域共享）
+- **classification_function.md** / **classification_business.md** — 功能域 / 业务域的三级分类树
+- **examples_function.md** / **examples_business.md** — 分类示例与推理过程
+- **error_examples_function.md** / **error_examples_business.md** — 错误推理示例
+
+示例分类路径（抖音·功能域）：
 
 ```
 卡顿 > 滑动卡顿 > 首页推荐视频流上下滑动卡顿
 闪退/崩溃 > 播放闪退 > 首页推荐视频播放闪退
+```
+
+示例分类路径（抖音·业务域）：
+
+```
+短视频内容 > 内容浏览 > 推荐视频流
+电商交易 > 交易流程 > 下单/支付
 ```
 
 ## 快速开始
@@ -71,19 +86,24 @@ python .claude/skills/opinion-analysis/scripts/excel_info.py test/douyin_100.xls
 # 步骤2：查看当前支持的应用列表
 python .claude/skills/opinion-analysis/scripts/app_list.py
 
-# 步骤3：分类并生成报告
+# 步骤3：分类并生成报告（功能域）
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
-  --app-name 抖音 --problem-index 5 \
+  --domain function --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
 
-# 步骤4（可选）：重试失败或未知问题
+# 步骤3'（可选）：业务域分析（同一份数据、同一输出目录）
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
-  --app-name 抖音 --problem-index 5 \
+  --domain business --app-name 抖音 --problem-index 5 \
+  --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
+
+# 步骤4（可选）：重试失败或未知问题（只作用于指定 --domain）
+python .claude/skills/opinion-analysis/scripts/classify_data.py \
+  --domain function --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100 \
   --retry [failed/unknow]    # 重试推理【失败/未知】的数据
 ```
 
-不带 `--retry` 时为续跑模式，从数据库最大 ID 之后继续处理。
+`--domain` 必填：`function`=功能域/性能问题，`business`=业务域。不带 `--retry` 时为续跑模式，从对应域 DB 的最大 ID 之后继续处理。报告会自动合并同一输出目录下已运行的所有域。
 
 ## 项目结构
 
@@ -94,17 +114,21 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
 └── .claude/skills/opinion-analysis/
     ├── SKILL.md                         # 技能定义与工作流
     ├── assets/
-    │   └── report_template.html         # HTML 报告模板
+    │   └── report_template.html         # HTML 报告模板（功能域/业务域双标签页）
     │       (dashboard_template.html / compare_period_template.html / chart.js)
     ├── references/apps/                 # 应用知识库
-    │   └── 抖音/ { info.md, classification.md, examples.md, error_examples.md }
+    │   └── 抖音/ {
+    │         info.md,                              # 应用描述（两域共享）
+    │         classification_function.md / examples_function.md / error_examples_function.md,        # 功能域
+    │         classification_business.md / examples_business.md / error_examples_business.md         # 业务域
+    │       }
     └── scripts/
         ├── app_list.py                  # 当前支持的应用列表
         ├── excel_info.py                # Excel 前几行预览
-        ├── classify_data.py             # LLM 分类核心脚本（续跑 / --retry）
-        ├── generate_report.py           # DB/JSON → 单篇 HTML 报告
-        ├── generate_dashboard.py        # 扫描 output/ 生成汇总仪表盘
-        ├── compare_period.py            # 两期分类报告对比
+        ├── classify_data.py             # LLM 分类核心脚本（--domain 必填 / 续跑 / --retry）
+        ├── generate_report.py           # 目录或 DB → 单篇 HTML 报告（自动合并双域）
+        ├── generate_dashboard.py        # 扫描 output/ 生成汇总仪表盘（--domain）
+        ├── compare_period.py            # 两期分类报告对比（传对应域 DB）
         ├── export_db_to_excel.py        # DB → Excel，带校准分类与正确率校验
         └── fix_invalid_classifications.py  # 修复 DB 中不在编码表的脏数据
 ```
