@@ -41,6 +41,7 @@ import shutil
 import sqlite3
 
 import threading
+import atexit
 import logging
 import concurrent.futures
 
@@ -100,6 +101,41 @@ def init_db(db_path):
         conn.execute("ALTER TABLE report ADD COLUMN version TEXT DEFAULT ''")
     conn.commit()
     conn.close()
+
+
+# ========== 线程局部 DB 连接复用 ==========
+# save_item 在多线程批量入库中被高频调用，原先每次新建+关闭连接开销大。
+# 改为每个线程复用一个连接：连接仅在所属线程使用，满足 sqlite3 默认
+# check_same_thread=True；多连接并发写仍由 busy_timeout 兜底 SQLITE_BUSY。
+_thread_local = threading.local()
+_db_conns = []  # 登记所有线程的连接，便于统一回收
+_db_conns_lock = threading.Lock()
+
+
+def _get_db_conn(db_path):
+    """返回当前线程复用的 SQLite 连接，首次调用时创建并登记。"""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        _thread_local.conn = conn
+        with _db_conns_lock:
+            _db_conns.append(conn)
+    return conn
+
+
+def _close_all_db():
+    """关闭所有线程登记的连接并清空（程序退出时调用）。"""
+    with _db_conns_lock:
+        for conn in _db_conns:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _db_conns.clear()
+
+
+atexit.register(_close_all_db)
 
 
 def init_output_dir(excel_path, output_dir):
@@ -419,8 +455,7 @@ def clean_desc(text):
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
     """status: 0=成功, 1=其他问题, 2=失败, 3=描述过长"""
     try:
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA busy_timeout = 30000")
+        conn = _get_db_conn(db_path)
         cursor = conn.cursor()
         row = df.iloc[num - 1]
         problem = clean_desc(str(row[problem_col])) if not pd.isna(row[problem_col]) else ""
@@ -443,7 +478,6 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
             cursor.execute("INSERT OR REPLACE INTO report (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
-        conn.close()
         status_label = {0: "成功", 1: "其他问题", 2: "失败", 3: "描述过长"}
         logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
     except Exception as e:
@@ -848,6 +882,8 @@ def main():
         print(f"| 推理失败 | {report['infer_failed']} |")
     else:
         logger.warning("报告生成失败")
+
+    _close_all_db()
 
 
 if __name__ == "__main__":

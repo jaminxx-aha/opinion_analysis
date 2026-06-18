@@ -66,14 +66,17 @@ pip install anthropic   # LLM_PROVIDER=anthropic 时
 
 ```bash
 # 步骤1：查看 Excel 列信息
-python .claude/skills/opinion-analysis/scripts/analyze_excel.py test/douyin_100.xlsx --info
+python .claude/skills/opinion-analysis/scripts/excel_info.py test/douyin_100.xlsx
 
-# 步骤2：分类并生成报告
+# 步骤2：查看当前支持的应用列表
+python .claude/skills/opinion-analysis/scripts/app_list.py
+
+# 步骤3：分类并生成报告
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
   --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
 
-# 步骤3（可选）：重试失败或未知问题
+# 步骤4（可选）：重试失败或未知问题
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
   --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100 \
@@ -92,13 +95,18 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
     ├── SKILL.md                         # 技能定义与工作流
     ├── assets/
     │   └── report_template.html         # HTML 报告模板
+    │       (dashboard_template.html / compare_period_template.html / chart.js)
     ├── references/apps/                 # 应用知识库
-    │   └── 抖音/ { info.md, classification.json, examples.md }
+    │   └── 抖音/ { info.md, classification.md, examples.md, error_examples.md }
     └── scripts/
-        ├── config.py                    # 配置、应用别名、列解析
-        ├── classify_data.py             # LLM 分类核心脚本
-        ├── analyze_excel.py             # Excel 分析 + 报告生成
-        └── generate_report.py           # DB/JSON → HTML 报告渲染
+        ├── app_list.py                  # 当前支持的应用列表
+        ├── excel_info.py                # Excel 前几行预览
+        ├── classify_data.py             # LLM 分类核心脚本（续跑 / --retry）
+        ├── generate_report.py           # DB/JSON → 单篇 HTML 报告
+        ├── generate_dashboard.py        # 扫描 output/ 生成汇总仪表盘
+        ├── compare_period.py            # 两期分类报告对比
+        ├── export_db_to_excel.py        # DB → Excel，带校准分类与正确率校验
+        └── fix_invalid_classifications.py  # 修复 DB 中不在编码表的脏数据
 ```
 
 ## 支持的应用
