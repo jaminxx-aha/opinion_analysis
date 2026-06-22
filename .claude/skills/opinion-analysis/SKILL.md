@@ -51,7 +51,7 @@ python <skill_path>/scripts/classify_data.py \
   [--retry <retry_mode>]
 ```
 
-`--domain` **必填**：`function`=功能域/性能问题，`business`=业务域。两个域各自独立运行、互不影响；同一 `--output-dir` 下分别生成 `function_report.db` 与 `business_report.db`。
+`--domain` **必填**：`function`=功能域/性能问题，`business`=业务域。两个域各自独立运行、互不影响；同一 `--output-dir` 下共用单个 `report.db`，分别写入 `report_function` 与 `report_business` 两张表。
 
 `--output-dir` 输出路径，如果用户指定了输出路径，output_dir=用户指定路径，否则out_dir=`./output/<excel_name>`。
 

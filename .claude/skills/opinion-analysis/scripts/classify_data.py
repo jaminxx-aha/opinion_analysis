@@ -70,6 +70,14 @@ def _load_env():
 
 
 sys.path.insert(0, SCRIPT_DIR)
+
+# 关键：当本文件作为脚本入口运行时(__main__)，将自身注册为 `classify_data` 模块。
+# 否则 classify_batch / classify_layered 中的 `from classify_data import ...` 会从磁盘
+# 重新导入一份新模块实例，导致 main() 设置的模块全局状态(_output_dir / _TABLE /
+# _progress_* 等)对兄弟模块不可见，save_item/get_output_dir 会读到空默认值。
+if __name__ == "__main__":
+    sys.modules.setdefault("classify_data", sys.modules[__name__])
+
 from app_list import get_supported_apps, get_app_dir
 
 
@@ -230,12 +238,16 @@ DOMAIN_FILES = {
         "examples": "examples_function.md",
         "error_examples": "error_examples_function.md",
         "classification": "classification_function.md",
+        "examples_layered": "examples_layered_function.md",
+        "error_examples_layered": "error_examples_layered_function.md",
     },
     "business": {
         "info": "info.md",
         "examples": "examples_business.md",
         "error_examples": "error_examples_business.md",
         "classification": "classification_business.md",
+        "examples_layered": "examples_layered_business.md",
+        "error_examples_layered": "error_examples_layered_business.md",
     },
 }
 
@@ -246,8 +258,9 @@ def load_reference(app_name, domain="function"):
         return None
     files = DOMAIN_FILES.get(domain, DOMAIN_FILES["function"])
     refs = {}
-    # info.md 与 examples_business.md / error_examples_business.md 保持 markdown 原文
-    for key in ("info", "examples", "error_examples"):
+    # info.md 与 examples_*.md / error_examples_*.md 保持 markdown 原文
+    # 批量模式用 examples/error_examples；逐层模式用 examples_layered/error_examples_layered
+    for key in ("info", "examples", "error_examples", "examples_layered", "error_examples_layered"):
         fpath = os.path.join(app_dir, files[key])
         refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
 
@@ -284,54 +297,6 @@ def validate_classification(classification, code_to_path):
     valid_paths = set(tuple(v) for v in code_to_path.values())
     return tuple(classification) in valid_paths
 
-
-def build_batch_prompt(app_name, items, refs, domain="function"):
-    """构建批量分类prompt，items为[{num, desc}]列表
-
-    domain: 分类域，function=功能域/性能问题，business=业务域
-    """
-    domain_label = "业务模块" if domain == "business" else "性能问题"
-    problems_text = "\n" + "\n".join([
-        f"---PROBLEM_{i+1}---\n\n{item['desc']}\n\n---PROBLEM_{i+1}_END---\n"
-        for i, item in enumerate(items)
-    ])
-    return f"""你是一位专业的{app_name}应用问题分类专家，请根据用户的问题描述（以---PROBLEMS---、---PROBLEMS_END---分隔，内部有{len(items)}个问题，每个问题以---PROBLEM_N---，---PROBLEM_N_END---分隔，每个问题可能属于多个分类，只要给出最相关即可），
-
-结合应用描述（---APP---、---APP_END---分隔）、{domain_label}分类编码表（以---CLASSIFICATION---、---CLASSIFICATION_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），推导出最准确的分类编码。本次分析的是【{domain_label}】维度，请围绕该维度的分类树进行归类。
-
----PROBLEMS---
-{problems_text}
----PROBLEMS_END---
-
----APP---
-{refs.get('info', '')}
----APP_END---
-
----CLASSIFICATION---
-{refs.get('classification', '')}
----CLASSIFICATION_END---
-
----EXAMPLES---
-{refs.get('examples', '')}
----EXAMPLES_END---
-
-以下是一些错误的推理示例（以---ERROR_EXAMPLES---、---ERROR_EXAMPLES_END---分隔）
----ERROR_EXAMPLES---
-{refs.get('error_examples', '')}
----ERROR_EXAMPLES_END---
-
-推导规则：参照示例的推理方式，对照编码表逐层推导，返回分类编码；无法推导的层级截断编码（如无法推导二级则只返回一级编码如"1"，无法推导三级则只返回到二级编码如"1.1"）；不属于编码表问题的返回"0"。
-
-必须返回{len(items)}个元素，禁止多加或遗漏，必须按照以下json格式返回，json格式被三个反引号分割
-```
-[{{"classification": "编码", "reason": "推理过程"}}]
-```
-
-【要求】
-1.推理过程需要严格按照层级推理，即先分析出第一级，然后根据一级分类分析出第二级，再根据第二级分类分析出第三第三级分类
-2.忽略卓易通相关的描述，只分析原生鸿蒙相关的问题
-3.要根据现有的描述分析问题，若无法进一步得到更确切的分类则返回，不要去联想猜测
-"""
 
 def extract_json(text):
     try:
@@ -450,6 +415,20 @@ _progress_base = 0
 _output_dir = ""
 
 
+def get_output_dir():
+    """返回当前输出目录（供批量/逐层推理模块写日志文件）。"""
+    return _output_dir
+
+
+def incr_progress(n, total, label):
+    """累加进度并打印进度日志（批量/逐层推理模块共用）。"""
+    global _progress_done
+    with _progress_lock:
+        _progress_done += n
+        pct = _progress_done * 100 // total if total else 0
+        logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, label, _progress_done, total)
+
+
 def clean_desc(text):
     """清洗问题描述文本，移除HTML/CSS标签残留和卡片消息等无效内容。
     客服对话数据常见: br(换行残留)、span/p(标签名残留)、
@@ -523,192 +502,6 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         logger.error("行%d 入库失败: %s", num, e)
 
 
-def process_batch(batch, app_name, problem_col, df, refs, db_path,
-                   provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None, domain="function"):
-    """处理一批问题，batch为[{num, desc}]列表"""
-    global _progress_done, _output_dir
-
-    results = []
-    valid_items = [item for item in batch if item["desc"].strip()]
-
-    nums = [it["num"] for it in batch]
-    if len(nums) == 1:
-        batch_label = str(nums[0])
-        log_base = f"response_{nums[0]}"
-    else:
-        batch_label = ",".join(str(n) for n in nums)
-        log_base = f"response_{'_'.join(str(n) for n in nums)}"
-
-    def _log_file(attempt):
-        suffix = f"_retry{attempt + 1}" if attempt > 0 else ""
-        return os.path.join(_output_dir, "log", f"{log_base}{suffix}.log") if _output_dir else None
-
-    if not valid_items:
-        for item in batch:
-            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
-            results.append((item["num"], False))
-        with _progress_lock:
-            _progress_done += len(batch)
-        return results
-
-    try:
-        prompt = build_batch_prompt(app_name, valid_items, refs, domain)
-        row_nums = ",".join(str(it["num"]) for it in valid_items)
-        logger.debug("批量开始LLM推理, 行号[%s], 有效问题数: %d", row_nums, len(valid_items))
-
-        for attempt in range(max_retries):
-            try:
-                logger.info("LLM请求发送, 第%d/%d次", attempt + 1, max_retries)
-                text = call_llm_sdk(prompt, provider, api_key, base_url, model, max_tokens, timeout, verify_ssl, disable_proxy, temperature=temperature, log_file=_log_file(attempt))
-                logger.info("批量LLM推理返回, 文本长度: %d", len(text) if text else 0)
-            except Exception as e:
-                logger.warning("LLM调用失败(第%d/%d次): %s", attempt + 1, max_retries, e)
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    for item in valid_items:
-                        save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
-                        results.append((item["num"], 2))
-                    break
-
-            parsed = extract_json(text)
-            if not parsed or not isinstance(parsed, list):
-                logger.warning("JSON解析失败(第%d/%d次), 原始返回: %s", attempt + 1, max_retries, text[:300] if text else "空")
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    for item in valid_items:
-                        save_item(item["num"], ["其他问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
-                        results.append((item["num"], 2))
-                    break
-
-            if len(parsed) != len(valid_items):
-                logger.warning("结果数量不一致(第%d/%d次): 期望%d条, 返回%d条", attempt + 1, max_retries, len(valid_items), len(parsed))
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    for item in valid_items:
-                        save_item(item["num"], ["其他问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
-                        results.append((item["num"], 2))
-                    break
-
-            # 格式检查: classification应为字符串编码
-            code_to_path = refs.get("classification_tree", {})
-            format_errors = False
-            for p in parsed:
-                if not isinstance(p, dict):
-                    continue
-                cls = p.get("classification", "0")
-                if not isinstance(cls, str):
-                    format_errors = True
-                    break
-
-            if format_errors:
-                logger.warning("分类格式错误(第%d/%d次): classification应为字符串编码", attempt + 1, max_retries)
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    for i, item in enumerate(valid_items):
-                        num = item["num"]
-                        p = parsed[i]
-                        code = p.get("classification", "0") if isinstance(p, dict) else "0"
-                        reason = p.get("reason", "") if isinstance(p, dict) else ""
-                        classification = code_to_classification(code, code_to_path)
-                        if not isinstance(code, str):
-                            save_item(num, ["其他问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
-                            results.append((num, 2))
-                        elif code == "0":
-                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
-                            results.append((num, 1))
-                        else:
-                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
-                            results.append((num, 0))
-                        logger.info("行%d 批量推理成功, 编码: %s, 分类: %s", num, code, ".".join(classification))
-                    break
-
-            # 分类编码校验: 检查每个编码是否存在于编码→路径字典中
-            invalid_codes = []
-            for i, p in enumerate(parsed):
-                if not isinstance(p, dict):
-                    invalid_codes.append((i, "not a dict"))
-                    continue
-                code = p.get("classification", "0")
-                if not isinstance(code, str):
-                    continue  # 已在format_errors中处理
-                # 容错: 提取编码部分(如"1.1 滑动卡顿" → "1.1")
-                code_clean = re.match(r'^(\d+(?:\.\d+)*)', str(code).strip())
-                code_str = code_clean.group(1) if code_clean else str(code).strip()
-                if code_str != "0" and code_str not in code_to_path:
-                    invalid_codes.append((i, code_str))
-
-            if invalid_codes:
-                for idx, invalid_code in invalid_codes:
-                    logger.warning("分类编码无效(第%d/%d次), 项目%d: '%s' 不存在于编码表", attempt + 1, max_retries, idx + 1, invalid_code)
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue  # 重试整个批次
-                else:
-                    # 最后一次重试仍无效, 按条保存
-                    for i, item in enumerate(valid_items):
-                        num = item["num"]
-                        p = parsed[i]
-                        code = p.get("classification", "0") if isinstance(p, dict) else "0"
-                        reason = p.get("reason", "") if isinstance(p, dict) else ""
-                        classification = code_to_classification(code, code_to_path)
-                        if not isinstance(code, str):
-                            save_item(num, ["其他问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
-                            results.append((num, 2))
-                        elif code == "0":
-                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
-                            results.append((num, 1))
-                        elif classification[0] == "其他问题":
-                            # 编码不在字典中, 转换后为其他问题
-                            invalid_reason = f"分类编码无效: {code} 不存在于编码表"
-                            save_item(num, ["其他问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
-                            results.append((num, 2))
-                        else:
-                            save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
-                            results.append((num, 0))
-                    break
-
-            for i, item in enumerate(valid_items):
-                num = item["num"]
-                p = parsed[i]
-                code = p.get("classification", "0")
-                reason = p.get("reason", "")
-                classification = code_to_classification(code, code_to_path)
-                if code == "0":
-                    save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
-                    results.append((num, 1))
-                else:
-                    save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
-                    results.append((num, 0))
-                logger.info("行%d 批量推理成功, 编码: %s, 分类: %s", num, code, ".".join(classification))
-            break
-
-    except Exception as e:
-        logger.error("批量LLM推理失败: %s", e)
-        for item in valid_items:
-            save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
-            results.append((item["num"], 2))
-
-    for item in batch:
-        if not item["desc"].strip():
-            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
-            results.append((item["num"], 2))
-
-    with _progress_lock:
-        _progress_done += len(batch)
-        pct = _progress_done * 100 // total
-        logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, batch_label, _progress_done, total)
-
-    return results
-
-
 def main():
     _load_env()
 
@@ -733,6 +526,15 @@ def main():
     disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
+    # 推理模式: batch=批量一次性推导(受 LLM_BATCH_SIZE 控制); layered=逐层串行推导(LLM_BATCH_SIZE 不生效)
+    reason_mode = os.environ.get("LLM_REASON_MODE", "batch").lower()
+    if reason_mode not in ("batch", "layered"):
+        logger.warning("未知 LLM_REASON_MODE=%s, 回退为 batch", reason_mode)
+        reason_mode = "batch"
+    if reason_mode == "layered":
+        logger.info("推理模式: 逐层推导(layered), LLM_BATCH_SIZE 不生效, 每条问题按一级→二级→三级串行推导")
+    else:
+        logger.info("推理模式: 批量推导(batch), 批量大小 %d", batch_size)
 
     if not model:
         logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
@@ -821,8 +623,8 @@ def main():
         all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) in retry_ids]
 
-        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                    args.retry, failed_count, unknown_count, missing_count, len(all_data), total_concurrent, len(api_keys), max_concurrent, batch_size, provider, model, temperature)
+        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), 推理模式 %s, provider=%s, model=%s, temperature=%.1f",
+                    args.retry, failed_count, unknown_count, missing_count, len(all_data), total_concurrent, len(api_keys), max_concurrent, reason_mode, provider, model, temperature)
 
         _output_dir = output_dir
         _progress_base = 0
@@ -838,8 +640,8 @@ def main():
         all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                      for i in filtered if (i + 1) > max_id]
 
-        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), 批量大小 %d, provider=%s, model=%s, temperature=%.1f",
-                    len(filtered), max_id, len(all_data), total_concurrent, len(api_keys), max_concurrent, batch_size, provider, model, temperature)
+        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), 推理模式 %s, provider=%s, model=%s, temperature=%.1f",
+                    len(filtered), max_id, len(all_data), total_concurrent, len(api_keys), max_concurrent, reason_mode, provider, model, temperature)
 
         _output_dir = output_dir
         _progress_base = max_id
@@ -860,44 +662,54 @@ def main():
     if too_long_items:
         logger.info("描述过长跳过分类: %d条", len(too_long_items))
 
-    batches = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
-
     logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(api_keys), max_concurrent, total_concurrent)
     if len(api_keys) > 1:
         key_prefixes = [k[:8] + "..." for k in api_keys]
         logger.info("key列表(前缀): %s", ", ".join(key_prefixes))
 
+    # 懒导入推理模块（避免模块加载期循环导入：两模块均 import 自 classify_data）
+    if reason_mode == "layered":
+        from classify_layered import process_item_layered
+        run_fn = process_item_layered
+        # 逐层模式: 每条问题一个独立任务，忽略 batch_size
+        tasks = all_data
+    else:
+        from classify_batch import process_batch
+        run_fn = process_batch
+        # 批量模式: 按 batch_size 切批
+        tasks = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
+
+    def _accumulate(st):
+        nonlocal success, unknown, failed
+        if st == 0:
+            success += 1
+        elif st == 1:
+            unknown += 1
+        else:
+            failed += 1
+
     if total_concurrent == 1:
-        for i, batch in enumerate(batches):
+        for i, task in enumerate(tasks):
             assigned_key = api_keys[i % len(api_keys)]
-            batch_results = process_batch(batch, app_name, problem_col, df, refs, db_path,
-                                          provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
-            for _, st in batch_results:
-                if st == 0:
-                    success += 1
-                elif st == 1:
-                    unknown += 1
-                else:
-                    failed += 1
+            task_results = run_fn(task, app_name, problem_col, df, refs, db_path,
+                                  provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
+            for _, st in task_results:
+                _accumulate(st)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=total_concurrent) as executor:
             futures = {}
-            for i, batch in enumerate(batches):
+            for i, task in enumerate(tasks):
                 assigned_key = api_keys[i % len(api_keys)]
-                futures[executor.submit(process_batch, batch, app_name, problem_col, df, refs, db_path,
+                futures[executor.submit(run_fn, task, app_name, problem_col, df, refs, db_path,
                                        provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)] = i
             for f in concurrent.futures.as_completed(futures):
                 try:
-                    batch_results = f.result()
-                    for _, st in batch_results:
-                        if st == 0:
-                            success += 1
-                        elif st == 1:
-                            unknown += 1
-                        else:
-                            failed += 1
+                    task_results = f.result()
+                    for _, st in task_results:
+                        _accumulate(st)
                 except Exception:
-                    failed += batch_size
+                    # 批量模式按 batch_size 计失败条数；逐层模式每任务1条
+                    failed += batch_size if reason_mode == "batch" else 1
 
     conn = sqlite3.connect(db_path)
     cnt = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
