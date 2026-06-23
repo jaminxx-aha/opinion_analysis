@@ -483,7 +483,8 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
-            fp = ".".join(filter(None, [l1, l2, l3]))
+            # full_path 保留完整深层路径（分类树最深 5 级）；level1/2/3 列受 schema 限制只存前 3 级
+            fp = ".".join(classification)
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json, version))
         elif status == 1:

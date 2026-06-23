@@ -63,18 +63,22 @@ def children_codes(code_to_path, parent_code):
     return children
 
 
+_CN_LEVEL = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
 def parse_layered_examples(md):
-    """切分为 {1: str, 2: {parent: str}, 3: {parent: str}}。
+    """切分为 {level: str_or_dict}。
 
     - 一级段（## 一级）为单个表格文本；
-    - 二/三级段（## 二级 / ## 三级）按 `### 父级名` 子标题切成 {父级名: 表格文本}，
-      调用时只注入当前父级对应的那一段，不混入其它父级用例。
+    - 二级及以上段（## 二级 / ## 三级 / ## 四级 ...）按 `### 父级名` 子标题切成
+      {父级名: 表格文本}，调用时只注入当前父级对应的那一段，不混入其它父级用例。
+    支持任意深度（随分类树层级加深自动适配）。
     """
-    result = {1: "", 2: {}, 3: {}}
+    result = {}  # {1: str, level>=2: {parent: str}}
     if not md:
         return result
-    level = None       # 1/2/3
-    parent = None     # L2/L3 子段父级名
+    level = None       # 当前层级
+    parent = None     # L2+ 子段父级名
     buf = []
 
     def flush():
@@ -84,20 +88,20 @@ def parse_layered_examples(md):
         if level is None or not text:
             return
         if level == 1:
-            result[1] = text if not result[1] else result[1] + "\n" + text
+            result[1] = text if not result.get(1) else result[1] + "\n" + text
         elif parent is not None:
-            result[level][parent] = text
+            result.setdefault(level, {})[parent] = text
 
     for line in md.split("\n"):
         s = line.strip()
-        m2 = re.match(r'^##\s*(一级|二级|三级)', s)
+        m2 = re.match(r'^##\s*([一二三四五六七八九十]+)级', s)
         if m2:
             flush()
-            level = {"一级": 1, "二级": 2, "三级": 3}[m2.group(1)]
+            level = _CN_LEVEL[m2.group(1)]
             parent = None
             continue
         m3 = re.match(r'^###\s*(.+?)\s*$', s)
-        if m3 and level in (2, 3):
+        if m3 and level is not None and level >= 2:
             flush()
             parent = m3.group(1)
             continue
@@ -136,7 +140,7 @@ def _layer_level_label(domain):
 def build_layer_prompt(app_name, desc, refs, domain, level, parent_name):
     """构建层级无关的单层推导 prompt（不出现"一级/二级/三级"字样，候选给编号+名称）。
 
-    level: 1/2/3，仅用于取对应层用例段；prompt 文本不提及层级。
+    level: 当前层级（1,2,3,...），仅用于取对应层用例段；prompt 文本不提及层级。
     parent_name: 上一层选中的名称（level=1 时为 None）。
     """
     code_to_path = refs.get("classification_tree", {})
@@ -157,15 +161,11 @@ def build_layer_prompt(app_name, desc, refs, domain, level, parent_name):
 
     examples = layered_examples.get(level, "")
     err_examples = layered_error_examples.get(level, "")
-    # L2/L3：layered_examples[level] 是 {父级名: 表格文本}，只取当前父级对应的那段；
-    # L1：layered_examples[1] 是单个表格文本，直接用。
-    if level in (2, 3):
-        if not isinstance(examples, dict):
-            examples = {}
-        if not isinstance(err_examples, dict):
-            err_examples = {}
-        examples = examples.get(parent_name, "")
-        err_examples = err_examples.get(parent_name, "")
+    # level>=2：layered_examples[level] 是 {父级名: 表格文本}，只取当前父级对应的那段；
+    # level==1：layered_examples[1] 是单个表格文本，直接用。深层无对应段时返回空串。
+    if level >= 2:
+        examples = examples.get(parent_name, "") if isinstance(examples, dict) else ""
+        err_examples = err_examples.get(parent_name, "") if isinstance(err_examples, dict) else ""
     domain_label = _layer_level_label(domain)
 
     return f"""你是{app_name}应用{domain_label}分类专家。请根据用户问题描述，从下列候选分类中选择最匹配的一个。
@@ -262,9 +262,12 @@ def _call_layer(item, level, children, parent_name, app_name, refs, domain,
 
 def process_item_layered(item, app_name, problem_col, df, refs, db_path,
                           provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None, domain="function"):
-    """逐层串行推导单条问题，最多 L1→L2→L3 三次 LLM 调用，编号驱动。
+    """逐层串行推导单条问题，循环下钻至无子级或选「其他问题」为止，支持任意深度。
 
     每层 LLM 返回编号；编号拼接成树编码，用 classification_tree 查名称路径入库。
+    - L1 选 0(其他问题) → 整条记为其他问题(status=1)；
+    - 任意更深层选 0 或推导失败 → 止于上级、「其他问题」不写入(status=0)；
+    - 选到无子级的叶节点 → 到末级(status=0)。
     """
     num = item["num"]
     code_to_path = refs.get("classification_tree", {})
@@ -274,64 +277,55 @@ def process_item_layered(item, app_name, problem_col, df, refs, db_path,
         incr_progress(1, total, str(num))
         return [(num, 2)]
 
-    # ---- 第一层 ----
-    children1 = children_codes(code_to_path, "")
-    n1, reason1, ok = _call_layer(item, 1, children1, None, app_name, refs, domain,
-                                 provider, api_key, base_url, model, max_tokens, max_retries,
-                                 timeout, verify_ssl, disable_proxy, temperature)
-    if not ok:
-        save_item(num, ["其他问题"], f"一级推导失败: {reason1}", app_name, problem_col, df, db_path, 2, version_col)
-        incr_progress(1, total, str(num))
-        return [(num, 2)]
-    if n1 == OTHER_NUM:
-        # 其他问题仅第一层有效 → 整条记为其他问题
-        save_item(num, ["其他问题"], reason1, app_name, problem_col, df, db_path, 1, version_col)
-        logger.info("行%d 逐层推导完成, 一层判其他问题(0) → 其他问题", num)
-        incr_progress(1, total, str(num))
-        return [(num, 1)]
+    code = None            # 已确定的当前编码（None = 尚未过 L1）
+    parent_name = None     # code 对应的名称（下一层候选的父级）
+    children = children_codes(code_to_path, "")  # L1 候选
+    reasons = []
+    level = 1
 
-    code1 = children1[n1 - 1][0]
-    children2 = children_codes(code_to_path, code1)
-    if not children2:
-        save_item(num, code_to_path.get(code1, []), reason1, app_name, problem_col, df, db_path, 0, version_col)
-        logger.info("行%d 逐层推导完成, 编码: %s (止于一级, 无子级)", num, code1)
-        incr_progress(1, total, str(num))
-        return [(num, 0)]
+    while True:
+        n, reason, ok = _call_layer(item, level, children, parent_name, app_name, refs, domain,
+                                    provider, api_key, base_url, model, max_tokens, max_retries,
+                                    timeout, verify_ssl, disable_proxy, temperature)
+        if not ok:
+            # 本层推导失败
+            reasons.append(f"第{level}级推导失败: {reason}")
+            if code is None:
+                # L1 失败 → 无任何分类
+                save_item(num, ["其他问题"], reasons[-1], app_name, problem_col, df, db_path, 2, version_col)
+                logger.info("行%d 一级推导失败 → 失败(status=2)", num)
+            else:
+                # 更深层失败 → 止于上级
+                save_item(num, code_to_path.get(code, []), " | ".join(reasons), app_name, problem_col, df, db_path, 0, version_col)
+                logger.info("行%d 逐层推导完成, 编码: %s (第%d级推导失败, 止于上级)", num, code, level)
+            incr_progress(1, total, str(num))
+            return [(num, 2 if code is None else 0)]
 
-    # ---- 第二层 ----
-    n2, reason2, ok = _call_layer(item, 2, children2, children1[n1 - 1][1], app_name, refs, domain,
-                                 provider, api_key, base_url, model, max_tokens, max_retries,
-                                 timeout, verify_ssl, disable_proxy, temperature)
-    if not ok or n2 == OTHER_NUM:
-        # 二层其他问题/失败：止于一级，「其他问题」不写入
-        note = f"二级推导失败, 止于一级: {reason2}" if not ok else f"{reason1} | {reason2}"
-        save_item(num, code_to_path.get(code1, []), note, app_name, problem_col, df, db_path, 0, version_col)
-        logger.info("行%d 逐层推导完成, 编码: %s (止于一级)", num, code1)
-        incr_progress(1, total, str(num))
-        return [(num, 0)]
+        if n == OTHER_NUM:
+            # 本层选「其他问题」
+            reasons.append(reason)
+            if code is None:
+                # 仅 L1 有效 → 整条其他问题
+                save_item(num, ["其他问题"], " | ".join(reasons), app_name, problem_col, df, db_path, 1, version_col)
+                logger.info("行%d 逐层推导完成, 一层判其他问题(0) → 其他问题", num)
+                incr_progress(1, total, str(num))
+                return [(num, 1)]
+            # 更深层其他问题 → 止于上级，「其他问题」不写入
+            save_item(num, code_to_path.get(code, []), " | ".join(reasons), app_name, problem_col, df, db_path, 0, version_col)
+            logger.info("行%d 逐层推导完成, 编码: %s (第%d级判其他问题, 止于上级)", num, code, level)
+            incr_progress(1, total, str(num))
+            return [(num, 0)]
 
-    code2 = children2[n2 - 1][0]
-    children3 = children_codes(code_to_path, code2)
-    if not children3:
-        save_item(num, code_to_path.get(code2, []), f"{reason1} | {reason2}", app_name, problem_col, df, db_path, 0, version_col)
-        logger.info("行%d 逐层推导完成, 编码: %s (止于二级, 无子级)", num, code2)
-        incr_progress(1, total, str(num))
-        return [(num, 0)]
+        # 本层选中一个候选，下钻
+        reasons.append(reason)
+        code = children[n - 1][0]
+        parent_name = children[n - 1][1]
+        children = children_codes(code_to_path, code)
+        if not children:
+            # 已到叶节点
+            save_item(num, code_to_path.get(code, []), " | ".join(reasons), app_name, problem_col, df, db_path, 0, version_col)
+            logger.info("行%d 逐层推导完成, 编码: %s (到末级, 第%d级)", num, code, level)
+            incr_progress(1, total, str(num))
+            return [(num, 0)]
+        level += 1
 
-    # ---- 第三层 ----
-    n3, reason3, ok = _call_layer(item, 3, children3, children2[n2 - 1][1], app_name, refs, domain,
-                                 provider, api_key, base_url, model, max_tokens, max_retries,
-                                 timeout, verify_ssl, disable_proxy, temperature)
-    if not ok or n3 == OTHER_NUM:
-        # 三层其他问题/失败：止于二级，「其他问题」不写入
-        note = f"{reason1} | {reason2} | 三级推导失败, 止于二级: {reason3}" if not ok else f"{reason1} | {reason2} | {reason3}"
-        save_item(num, code_to_path.get(code2, []), note, app_name, problem_col, df, db_path, 0, version_col)
-        logger.info("行%d 逐层推导完成, 编码: %s (止于二级)", num, code2)
-        incr_progress(1, total, str(num))
-        return [(num, 0)]
-
-    code3 = children3[n3 - 1][0]
-    save_item(num, code_to_path.get(code3, []), f"{reason1} | {reason2} | {reason3}", app_name, problem_col, df, db_path, 0, version_col)
-    logger.info("行%d 逐层推导完成, 编码: %s (到三级)", num, code3)
-    incr_progress(1, total, str(num))
-    return [(num, 0)]
