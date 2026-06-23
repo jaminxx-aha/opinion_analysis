@@ -162,10 +162,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   </div>
 
   <div class="toolbar">
-    <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option></select>
+    <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option><option value="4">仅四级</option><option value="5">仅五级</option></select>
     <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
     <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
     <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
+    <span class="tb-label">四级</span><select class="tb-select" id="filter-level4" onchange="onFilterChange('level4')" disabled><option value="">全部</option></select>
+    <span class="tb-label">五级</span><select class="tb-select" id="filter-level5" onchange="onFilterChange('level5')" disabled><option value="">全部</option></select>
     <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
     <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
     <span id="filter-path" class="tb-path"></span>
@@ -219,7 +221,7 @@ const dataByDomain = { function: _loadDomain("function"), business: _loadDomain(
 let activeDomain = "{{DEFAULT_DOMAIN}}";
 if (!dataByDomain[activeDomain]) activeDomain = dataByDomain.function ? "function" : (dataByDomain.business ? "business" : "function");
 let allData = (dataByDomain[activeDomain] && dataByDomain[activeDomain].details) || [];
-let filters = { level1: "", level2: "", level3: "" };
+let filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
 let depthFilter = "";
 let searchText = "";
 let charts = {};
@@ -230,7 +232,7 @@ let currentPage = 1;
 const pageSize = 50;
 
 function getAllOptions() {
-  const level1s = {}, level2s = {}, level3s = {}, versions = {};
+  const level1s = {}, level2s = {}, level3s = {}, level4s = {}, level5s = {}, versions = {};
   let hasEmptyVer = false;
   allData.forEach(item => {
     if (item.version) versions[item.version] = true;
@@ -241,11 +243,12 @@ function getAllOptions() {
     if (item.status === "classified") {
       const cls = item.classification;
       level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
+      level4s[cls.level4] = true; level5s[cls.level5] = true;
     }
   });
   const verList = Object.keys(versions).sort();
   if (hasEmptyVer) verList.push("");  // 空版本号作为可选项
-  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), versions: verList };
+  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), level4s: Object.keys(level4s).sort(), level5s: Object.keys(level5s).sort(), versions: verList };
 }
 
 function getAvailableLevel2(level1) {
@@ -258,6 +261,18 @@ function getAvailableLevel3(level1, level2) {
   const s = {};
   allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) s[cls.level3] = true; } });
   return Object.keys(s).sort();
+}
+
+function getAvailableLevel4(level1, level2, level3) {
+  const s = {};
+  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) if (!level3 || cls.level3 === level3) s[cls.level4] = true; } });
+  return Object.keys(s).filter(Boolean).sort();
+}
+
+function getAvailableLevel5(level1, level2, level3, level4) {
+  const s = {};
+  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) if (!level3 || cls.level3 === level3) if (!level4 || cls.level4 === level4) s[cls.level5] = true; } });
+  return Object.keys(s).filter(Boolean).sort();
 }
 
 function fillSelect(id, options) {
@@ -295,33 +310,35 @@ function getFilteredData() {
     if (item.status === "infer_failed") {
       if (depthFilter) return false;
       if (filters.level1 === "推理失败") return true;
-      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     }
     if (item.status === "too_long") {
       if (depthFilter) return false;
       if (filters.level1 === "描述过长") return true;
-      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     }
     if (item.status === "unknown_issue") {
       if (depthFilter) return false;
       if (filters.level1 === "其他问题") return true;
-      if (filters.level1 || filters.level2 || filters.level3) return false;
+      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     }
     if (item.status === "classified") {
       const cls = item.classification;
       if (depthFilter) {
-        const d = cls.level3 ? 3 : (cls.level2 ? 2 : 1);
+        const d = cls.level5 ? 5 : (cls.level4 ? 4 : (cls.level3 ? 3 : (cls.level2 ? 2 : 1)));
         if (d !== parseInt(depthFilter)) return false;
       }
       if (filters.level1 && cls.level1 !== filters.level1) return false;
       if (filters.level2 && cls.level2 !== filters.level2) return false;
       if (filters.level3 && cls.level3 !== filters.level3) return false;
+      if (filters.level4 && cls.level4 !== filters.level4) return false;
+      if (filters.level5 && cls.level5 !== filters.level5) return false;
     }
     if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
     return true;
@@ -329,7 +346,7 @@ function getFilteredData() {
 }
 
 function calcStats(data) {
-  const stats = { level1: {}, level2: {}, level3: {} };
+  const stats = { level1: {}, level2: {}, level3: {}, level4: {}, level5: {} };
   data.forEach(item => {
     if (item.status === "unknown_issue") { stats.level1["其他问题"] = (stats.level1["其他问题"] || 0) + 1; return; }
     if (item.status === "infer_failed") { stats.level1["推理失败"] = (stats.level1["推理失败"] || 0) + 1; return; }
@@ -339,25 +356,39 @@ function calcStats(data) {
     stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
     if (cls.level2) stats.level2[cls.level2] = (stats.level2[cls.level2] || 0) + 1;
     if (cls.level3) stats.level3[cls.level3] = (stats.level3[cls.level3] || 0) + 1;
+    if (cls.level4) stats.level4[cls.level4] = (stats.level4[cls.level4] || 0) + 1;
+    if (cls.level5) stats.level5[cls.level5] = (stats.level5[cls.level5] || 0) + 1;
   });
   return stats;
 }
 
 function onFilterChange(src) {
-  const s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3");
+  const s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3"), s4 = document.getElementById("filter-level4"), s5 = document.getElementById("filter-level5");
   if (src === "level1") {
     filters.level1 = document.getElementById("filter-level1").value;
     if (filters.level1) { fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = false; }
-    else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
-    filters.level2 = ""; filters.level3 = "";
+    else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
+    filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
   }
   if (src === "level2") {
     filters.level2 = s2.value;
     if (filters.level2) { fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); s3.disabled = false; }
-    else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; }
-    filters.level3 = "";
+    else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
+    filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
   }
-  if (src === "level3") filters.level3 = s3.value;
+  if (src === "level3") {
+    filters.level3 = s3.value;
+    if (filters.level3) { fillSelect("filter-level4", getAvailableLevel4(filters.level1, filters.level2, filters.level3)); s4.disabled = false; }
+    else { s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
+    filters.level4 = ""; filters.level5 = "";
+  }
+  if (src === "level4") {
+    filters.level4 = s4.value;
+    if (filters.level4) { fillSelect("filter-level5", getAvailableLevel5(filters.level1, filters.level2, filters.level3, filters.level4)); s5.disabled = false; }
+    else { s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
+    filters.level5 = "";
+  }
+  if (src === "level5") filters.level5 = s5.value;
   currentPage = 1; updateAll();
 }
 
@@ -367,24 +398,28 @@ function onDepthChange() { depthFilter = document.getElementById("filter-depth")
 
 function onVersionChange() {
   const newVer = document.getElementById("filter-version").value;
-  // Reset level1/2/3 filters when version changes
+  // Reset level1~5 filters when version changes
   if (newVer !== versionFilter) {
-    filters = { level1: "", level2: "", level3: "" };
+    filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
     fillSelect("filter-level1", getAllOptions().level1s);
     document.getElementById("filter-level1").value = "";
     document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
     document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
+    document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
   }
   versionFilter = newVer; currentPage = 1; updateAll();
 }
 
 function filterByStatus(status) {
   if (status === "all") { statusFilter = ""; } else { statusFilter = status; }
-  filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
+  filters = { level1: "", level2: "", level3: "", level4: "", level5: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
   fillSelect("filter-level1", getAllOptions().level1s); document.getElementById("filter-level1").value = "";
   document.getElementById("filter-depth").value = "";
   document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-version").value = "";
   document.getElementById("search-input").value = "";
   var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "其他问题" : status === "infer_failed" ? "推理失败" : status === "too_long" ? "描述过长" : "";
@@ -393,12 +428,14 @@ function filterByStatus(status) {
 }
 
 function clearFilters() {
-  statusFilter = ""; filters = { level1: "", level2: "", level3: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
+  statusFilter = ""; filters = { level1: "", level2: "", level3: "", level4: "", level5: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
   fillSelect("filter-level1", getAllOptions().level1s);
   document.getElementById("filter-level1").value = "";
   document.getElementById("filter-depth").value = "";
   const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
   const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  const s4 = document.getElementById("filter-level4"); s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
+  const s5 = document.getElementById("filter-level5"); s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-version").value = "";
   document.getElementById("search-input").value = "";
   document.getElementById("filter-path").innerHTML = "";
@@ -413,14 +450,16 @@ function toggleCharts() {
 
 function updateBreadcrumb() {
   const el = document.getElementById("filter-path");
-  if (!filters.level1 && !filters.level2 && !filters.level3 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
+  if (!filters.level1 && !filters.level2 && !filters.level3 && !filters.level4 && !filters.level5 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
   const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
   if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "其他问题" : statusFilter === "infer_failed" ? "推理失败" : statusFilter === "too_long" ? "描述过长" : statusFilter) + "</span>");
   if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter) + "</span>");
-  if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级"][parseInt(depthFilter)] + "分类</span>");
+  if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级","四级","五级"][parseInt(depthFilter)] + "分类</span>");
   if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
   if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");
   if (filters.level3) ps.push("<span class='p' onclick='clearLevel(3)'>" + filters.level3 + "</span>");
+  if (filters.level4) ps.push("<span class='p' onclick='clearLevel(4)'>" + filters.level4 + "</span>");
+  if (filters.level5) ps.push("<span class='p' onclick='clearLevel(5)'>" + filters.level5 + "</span>");
   if (searchText) ps.push("<span class='p' onclick='clearFilters()'>搜索:" + searchText + "</span>");
   el.innerHTML = ps.join("<span class='sep'>›</span>");
 }
@@ -431,8 +470,26 @@ function clearVersion() {
 }
 
 function clearLevel(n) {
-  if (n === 1) { filters.level2 = ""; filters.level3 = ""; fillSelect("filter-level2", getAvailableLevel2(filters.level1)); document.getElementById("filter-level2").disabled = !filters.level1; document.getElementById("filter-level2").value = ""; document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>'; }
-  else if (n === 2) { filters.level3 = ""; fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); document.getElementById("filter-level3").disabled = !filters.level2; document.getElementById("filter-level3").value = ""; }
+  const s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3"), s4 = document.getElementById("filter-level4"), s5 = document.getElementById("filter-level5");
+  if (n === 1) {
+    filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
+    fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = !filters.level1; s2.value = "";
+    s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+    s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
+    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
+  } else if (n === 2) {
+    filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
+    fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); s3.disabled = !filters.level2; s3.value = "";
+    s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
+    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
+  } else if (n === 3) {
+    filters.level4 = ""; filters.level5 = "";
+    fillSelect("filter-level4", getAvailableLevel4(filters.level1, filters.level2, filters.level3)); s4.disabled = !filters.level3; s4.value = "";
+    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
+  } else if (n === 4) {
+    filters.level5 = "";
+    fillSelect("filter-level5", getAvailableLevel5(filters.level1, filters.level2, filters.level3, filters.level4)); s5.disabled = !filters.level4; s5.value = "";
+  }
   searchText = ""; document.getElementById("search-input").value = ""; currentPage = 1; updateAll();
 }
 
@@ -455,6 +512,8 @@ function updateTable() {
       if (cls.level1) ps.push("<span class='c' onclick=\"setF1('" + cls.level1 + "')\">" + cls.level1 + "</span>");
       if (cls.level2) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF2('" + cls.level1 + "','" + cls.level2 + "')\">" + cls.level2 + "</span>");
       if (cls.level3) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF3('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "')\">" + cls.level3 + "</span>");
+      if (cls.level4) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF4('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "','" + cls.level4 + "')\">" + cls.level4 + "</span>");
+      if (cls.level5) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF5('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "','" + cls.level4 + "','" + cls.level5 + "')\">" + cls.level5 + "</span>");
       clsHtml = "<span class='cls'>" + ps.join("") + "</span>";
     } else if (item.status === "infer_failed") {
       clsHtml = "<span class='cls'><span class='fail' onclick=\"setF1('推理失败')\">推理失败</span></span>";
@@ -475,31 +534,61 @@ function updateTable() {
 }
 
 function setF1(val) {
-  filters.level1 = val; filters.level2 = ""; filters.level3 = "";
+  filters.level1 = val; filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
   document.getElementById("filter-level1").value = val;
   fillSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false;
   document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
   currentPage = 1; updateAll();
 }
 function setF2(l1, l2) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = "";
+  filters.level1 = l1; filters.level2 = l2; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
   document.getElementById("filter-level1").value = l1;
   fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
   fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = "";
+  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
+  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
   currentPage = 1; updateAll();
 }
 function setF3(l1, l2, l3) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3;
+  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = ""; filters.level5 = "";
   document.getElementById("filter-level1").value = l1;
   fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
   fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
+  const l4opts = getAvailableLevel4(l1, l2, l3);
+  fillSelect("filter-level4", l4opts); document.getElementById("filter-level4").disabled = l4opts.length === 0; document.getElementById("filter-level4").value = "";
+  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
+  currentPage = 1; updateAll();
+}
+function setF4(l1, l2, l3, l4) {
+  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = l4; filters.level5 = "";
+  document.getElementById("filter-level1").value = l1;
+  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
+  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
+  fillSelect("filter-level4", getAvailableLevel4(l1, l2, l3)); document.getElementById("filter-level4").disabled = false; document.getElementById("filter-level4").value = l4;
+  const l5opts = getAvailableLevel5(l1, l2, l3, l4);
+  fillSelect("filter-level5", l5opts); document.getElementById("filter-level5").disabled = l5opts.length === 0; document.getElementById("filter-level5").value = "";
+  currentPage = 1; updateAll();
+}
+function setF5(l1, l2, l3, l4, l5) {
+  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = l4; filters.level5 = l5;
+  document.getElementById("filter-level1").value = l1;
+  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
+  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
+  fillSelect("filter-level4", getAvailableLevel4(l1, l2, l3)); document.getElementById("filter-level4").disabled = false; document.getElementById("filter-level4").value = l4;
+  fillSelect("filter-level5", getAvailableLevel5(l1, l2, l3, l4)); document.getElementById("filter-level5").disabled = false; document.getElementById("filter-level5").value = l5;
   currentPage = 1; updateAll();
 }
 
 function updateCharts() {
   const stats = calcStats(getFilteredData());
   let lvl, title;
-  if (filters.level1 && filters.level2 && Object.keys(stats.level3).length > 0) {
+  if (filters.level1 && filters.level2 && filters.level3 && filters.level4 && Object.keys(stats.level5).length > 0) {
+    lvl = "level5"; title = "五级分类分布";
+  } else if (filters.level1 && filters.level2 && filters.level3 && Object.keys(stats.level4).length > 0) {
+    lvl = "level4"; title = "四级分类分布";
+  } else if (filters.level1 && filters.level2 && Object.keys(stats.level3).length > 0) {
     lvl = "level3"; title = "三级分类分布";
   } else if (filters.level1 && Object.keys(stats.level2).length > 0) {
     lvl = "level2"; title = "二级分类分布";
@@ -517,6 +606,18 @@ function updateCharts() {
   charts.bar.update(); charts.pie.update();
 }
 
+function chartDrillDown(chart, els) {
+  if (!els.length) return;
+  const v = chart.data.labels[els[0].index];
+  if (v == null || v === "") return;
+  const f = filters;
+  if (f.level1 && f.level2 && f.level3 && f.level4) { if (getAvailableLevel5(f.level1, f.level2, f.level3, f.level4).length > 0) setF5(f.level1, f.level2, f.level3, f.level4, v); }
+  else if (f.level1 && f.level2 && f.level3) { if (getAvailableLevel4(f.level1, f.level2, f.level3).length > 0) setF4(f.level1, f.level2, f.level3, v); }
+  else if (f.level1 && f.level2) { if (getAvailableLevel3(f.level1, f.level2).length > 0) setF3(f.level1, f.level2, v); }
+  else if (f.level1) { setF2(f.level1, v); }
+  else setF1(v);
+}
+
 const COLORS = ["#3b82f6","#8b5cf6","#ef4444","#10b981","#f59e0b","#0ea5e9","#14b8a6","#f97316","#1f2937","#d97706","#06b6d4","#dc2626","#6b7280","#1d4ed8","#a855f7","#334155"];
 
 function initCharts() {
@@ -524,12 +625,12 @@ function initCharts() {
   charts.bar = new Chart(document.getElementById("level1Chart"), {
     type: "bar",
     data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 } } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => { if (els.length) { const v = charts.bar.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 } } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => chartDrillDown(charts.bar, els) }
   });
   charts.pie = new Chart(document.getElementById("pieChart"), {
     type: "doughnut",
     data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 }, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + Math.round(ctx.raw/t*100) + "%)"; } } } }, onClick: (_, els) => { if (els.length) { const v = charts.pie.data.labels[els[0].index]; if (filters.level1 && filters.level2) { if (getAvailableLevel3(filters.level1, filters.level2).length > 0) setF3(filters.level1, filters.level2, v); } else if (filters.level1) { setF2(filters.level1, v); } else setF1(v); } } }
+    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 }, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + Math.round(ctx.raw/t*100) + "%)"; } } } }, onClick: (_, els) => chartDrillDown(charts.pie, els) }
   });
 }
 
@@ -556,7 +657,7 @@ function goToPage(p) {
 function showDetail(i) {
   const item = getFilteredData()[i], cls = item.classification || {};
   let cv = "";
-  if (item.status === "classified") cv = (cls.level1||"") + (cls.level2?"."+cls.level2:"") + (cls.level3?"."+cls.level3:"");
+  if (item.status === "classified") cv = (cls.level1||"") + (cls.level2?"."+cls.level2:"") + (cls.level3?"."+cls.level3:"") + (cls.level4?"."+cls.level4:"") + (cls.level5?"."+cls.level5:"");
   else if (item.status === "unknown_issue") cv = "其他问题";
   else if (item.status === "too_long") cv = "描述过长";
   else cv = "推理失败";
@@ -603,7 +704,7 @@ function applyDomain(d) {
   activeDomain = d;
   allData = dataByDomain[d].details;
   // 切域：重置所有筛选与图表
-  filters = { level1: "", level2: "", level3: "" };
+  filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
   depthFilter = ""; searchText = ""; statusFilter = ""; versionFilter = ""; currentPage = 1;
   if (charts.bar) { try { charts.bar.destroy(); charts.pie.destroy(); } catch (e) {} }
   charts = {};
@@ -613,6 +714,8 @@ function applyDomain(d) {
   document.getElementById("filter-version").disabled = opts.versions.length === 0;
   const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
   const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
+  const s4 = document.getElementById("filter-level4"); s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
+  const s5 = document.getElementById("filter-level5"); s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
   document.getElementById("filter-depth").value = "";
   document.getElementById("search-input").value = "";
   document.getElementById("filter-path").innerHTML = "";

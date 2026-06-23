@@ -168,7 +168,9 @@ def build_layer_prompt(app_name, desc, refs, domain, level, parent_name):
         err_examples = err_examples.get(parent_name, "") if isinstance(err_examples, dict) else ""
     domain_label = _layer_level_label(domain)
 
-    return f"""你是{app_name}应用{domain_label}分类专家。请根据用户问题描述，从下列候选分类中选择最匹配的一个。
+    return f"""你是一位专业的{app_name}应用{domain_label}分类专家，请根据用户的问题描述（以---PROBLEM---、---PROBLEM_END---分隔，问题可能属于多个分类，只要给出最相关即可），
+
+结合应用描述（---APP---、---APP_END---分隔）、候选分类（以---CATEGORIES---、---CATEGORIES_END---分隔）和分类推理示例（以---EXAMPLES---、---EXAMPLES_END---分隔），从候选分类中选择最匹配的一个。
 
 ---PROBLEM---
 {desc}

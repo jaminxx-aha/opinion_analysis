@@ -50,6 +50,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
     # 兼容旧DB：检查 version 列是否存在
     cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     has_version = 'version' in cols
+    has_level4 = 'level4' in cols
+    has_level5 = 'level5' in cols
 
     cursor.execute(f"SELECT * FROM {table} ORDER BY id")
     rows = cursor.fetchall()
@@ -80,6 +82,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                     'level1': r['level1'],
                     'level2': r['level2'],
                     'level3': r['level3'],
+                    'level4': r['level4'] if has_level4 else '',
+                    'level5': r['level5'] if has_level5 else '',
                     'full_path': r['full_path'],
                 },
                 'reasoning': r['reasoning'] or '',
@@ -97,6 +101,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                     'level1': '其他问题',
                     'level2': '',
                     'level3': '',
+                    'level4': '',
+                    'level5': '',
                     'full_path': '其他问题',
                 },
                 'reasoning': r['reasoning'] or '',
@@ -124,6 +130,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                     'level1': '描述过长',
                     'level2': '',
                     'level3': '',
+                    'level4': '',
+                    'level5': '',
                     'full_path': '描述过长',
                 },
                 'reasoning': r['reasoning'] or '',
@@ -192,6 +200,8 @@ def read_data_from_json(json_path: str) -> dict:
                     'level1': level1,
                     'level2': level2,
                     'level3': level3,
+                    'level4': '',
+                    'level5': '',
                     'full_path': f'{level1}.{level2}.{level3}',
                 },
             }

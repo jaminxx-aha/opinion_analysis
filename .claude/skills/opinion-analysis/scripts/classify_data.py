@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS {table} (
     level1 TEXT,
     level2 TEXT,
     level3 TEXT,
+    level4 TEXT,
+    level5 TEXT,
     full_path TEXT,
     reasoning TEXT,
     raw_data TEXT,
@@ -115,6 +117,11 @@ def init_db(db_path, domain):
     cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if 'version' not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN version TEXT DEFAULT ''")
+    # 兼容旧DB：自动添加缺失的 level4/level5 列（分类树最深 5 级）
+    if 'level4' not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN level4 TEXT")
+    if 'level5' not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN level5 TEXT")
     conn.commit()
     conn.close()
 
@@ -483,16 +490,18 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
-            # full_path 保留完整深层路径（分类树最深 5 级）；level1/2/3 列受 schema 限制只存前 3 级
+            l4 = classification[3] if len(classification) >= 4 else ""
+            l5 = classification[4] if len(classification) >= 5 else ""
+            # full_path 保留完整深层路径（分类树最深 5 级）；level1~5 列拆分存储各级分类名
             fp = ".".join(classification)
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, l1, l2, l3, fp, reason, raw_json, version))
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, l1, l2, l3, l4, l5, fp, reason, raw_json, version))
         elif status == 1:
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "其他问题", "", "", "其他问题", reason, raw_json, version))
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "其他问题", "", "", "", "", "其他问题", reason, raw_json, version))
         elif status == 3:
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "描述过长", "", "", "描述过长", reason, raw_json, version))
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "描述过长", "", "", "", "", "描述过长", reason, raw_json, version))
         else:
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
