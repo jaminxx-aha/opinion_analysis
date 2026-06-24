@@ -91,9 +91,14 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
   --domain function --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
 
-# 步骤3'（可选）：业务域分析（同一份数据、同一输出目录）
+# 步3'（可选）：业务域分析（同一份数据、同一输出目录）
 python .claude/skills/opinion-analysis/scripts/classify_data.py \
   --domain business --app-name 抖音 --problem-index 5 \
+  --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
+
+# 步骤3（可选）：改走 Claude Agent SDK + 抖音舆情 skill（需在 .env 配 LLM_AGENT_*）
+LLM_PROVIDER=claude-agent-sdk python .claude/skills/opinion-analysis/scripts/classify_data.py \
+  --domain function --app-name 抖音 --problem-index 5 \
   --excel-path test/douyin_100.xlsx --output-dir output/douyin_100
 
 # 步骤4（可选）：重试失败或未知问题（只作用于指定 --domain）
@@ -157,6 +162,21 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
 | `LLM_TEMPERATURE` | 否 | 温度参数，默认 0.7 |
 | `LLM_VERIFY_SSL` | 否 | SSL 验证，默认 true |
 | `LLM_LOG_LEVEL` | 否 | 日志级别，默认 INFO |
+
+### Claude Agent SDK provider
+
+设 `LLM_PROVIDER=claude-agent-sdk` 时改走 headless Claude Code agent 加载「抖音舆情分析」skill 做分类（需 `pip install claude-agent-sdk` + 已安装 `claude` CLI）。此时使用以下变量：
+
+| 变量 | 必需 | 说明 |
+|------|------|------|
+| `LLM_AGENT_SKILL_DIR` | 是 | 含 `.claude/skills/<skill>/SKILL.md` 的项目根目录 |
+| `LLM_AGENT_SKILL_NAME` | 否 | skill 名称，默认 `抖音舆情分析` |
+| `LLM_AGENT_MODEL` | 否 | 模型 ID，如 `claude-opus-4-8` |
+| `LLM_AGENT_API_KEY` | 否 | Anthropic API key；留空则用 `claude /login` 的 OAuth 凭据 |
+| `LLM_AGENT_BASE_URL` | 否 | 走代理时填写 |
+| `LLM_AGENT_MAX_TURNS` | 否 | agent 最大轮次，默认 10 |
+
+skill 单条问题→单个 JSON、一次性返回完整分类编码，batch/layered reason mode 自动退化为每条一次 agent 调用；并发仍由 `LLM_MAX_CONCURRENT` 控制。skill 返回的编码须对齐 `references/apps/抖音/classification_*.md` 编码表，否则该条落「推理失败」。
 
 ## 许可
 
