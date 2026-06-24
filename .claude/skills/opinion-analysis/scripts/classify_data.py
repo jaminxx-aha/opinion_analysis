@@ -517,16 +517,7 @@ def main():
 
     # 从环境变量读取LLM配置
     provider = os.environ.get("LLM_PROVIDER", "openai")
-    model = os.environ.get("LLM_MODEL")
-    api_key_raw = os.environ.get("LLM_API_KEY")
-    if not api_key_raw:
-        logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
-    api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()]
-    if not api_keys:
-        logger.error("需要 LLM_API_KEY 环境变量 (解析后无有效key)"); sys.exit(1)
-    base_url = os.environ.get("LLM_BASE_URL")
     max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
-    total_concurrent = len(api_keys) * max_concurrent
     max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
     batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
@@ -536,18 +527,63 @@ def main():
     disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
-    # 推理模式: batch=批量一次性推导(受 LLM_BATCH_SIZE 控制); layered=逐层串行推导(LLM_BATCH_SIZE 不生效)
-    reason_mode = os.environ.get("LLM_REASON_MODE", "batch").lower()
-    if reason_mode not in ("batch", "layered"):
-        logger.warning("未知 LLM_REASON_MODE=%s, 回退为 batch", reason_mode)
-        reason_mode = "batch"
-    if reason_mode == "layered":
-        logger.info("推理模式: 逐层推导(layered), LLM_BATCH_SIZE 不生效, 每条问题按一级→二级→三级串行推导")
-    else:
-        logger.info("推理模式: 批量推导(batch), 批量大小 %d", batch_size)
 
-    if not model:
-        logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
+    # Claude Agent SDK provider: 走 headless agent 加载抖音舆情 skill，单条问题→单个JSON，
+    # skill 一次性返回完整编码，故 batch/layered 两种 reason mode 在此退化为每条一次 agent 调用。
+    is_agent = (provider == "claude-agent-sdk")
+    if is_agent:
+        reason_mode = "agent"
+        agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
+        agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "抖音舆情分析").strip()
+        model = os.environ.get("LLM_AGENT_MODEL") or None
+        agent_api_key = os.environ.get("LLM_AGENT_API_KEY", "").strip() or None
+        agent_base_url = os.environ.get("LLM_AGENT_BASE_URL", "").strip() or None
+        agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
+        if not agent_skill_dir:
+            logger.error("LLM_PROVIDER=claude-agent-sdk 需要配置 LLM_AGENT_SKILL_DIR (含 .claude/skills/<skill>/SKILL.md 的项目根目录)"); sys.exit(1)
+        skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
+        if not os.path.isfile(skill_md):
+            logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
+        # agent 走单一 Anthropic 凭据；未配 API key 时回退到 claude CLI 自身的 OAuth 登录
+        api_keys = []
+        base_url = agent_base_url
+        total_concurrent = max_concurrent
+        agent_cfg = {
+            "skill_dir": agent_skill_dir,
+            "skill_name": agent_skill_name,
+            "model": model,
+            "api_key": agent_api_key,
+            "base_url": agent_base_url,
+            "max_turns": agent_max_turns,
+            "timeout": timeout,
+            "max_retries": max_retries,
+        }
+        logger.info("推理模式: Claude Agent SDK (skill=%s, model=%s, skill_dir=%s, 并发%d)",
+                    agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
+    else:
+        # 推理模式: batch=批量一次性推导(受 LLM_BATCH_SIZE 控制); layered=逐层串行推导(LLM_BATCH_SIZE 不生效)
+        reason_mode = os.environ.get("LLM_REASON_MODE", "batch").lower()
+        if reason_mode not in ("batch", "layered"):
+            logger.warning("未知 LLM_REASON_MODE=%s, 回退为 batch", reason_mode)
+            reason_mode = "batch"
+        if reason_mode == "layered":
+            logger.info("推理模式: 逐层推导(layered), LLM_BATCH_SIZE 不生效, 每条问题按一级→二级→三级串行推导")
+        else:
+            logger.info("推理模式: 批量推导(batch), 批量大小 %d", batch_size)
+
+        model = os.environ.get("LLM_MODEL")
+        api_key_raw = os.environ.get("LLM_API_KEY")
+        if not api_key_raw:
+            logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
+        api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()]
+        if not api_keys:
+            logger.error("需要 LLM_API_KEY 环境变量 (解析后无有效key)"); sys.exit(1)
+        base_url = os.environ.get("LLM_BASE_URL")
+        total_concurrent = len(api_keys) * max_concurrent
+        if not model:
+            logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
+        agent_cfg = None
+
 
     parser = argparse.ArgumentParser(description="使用LLM API自动分类舆情数据")
     parser.add_argument("--app-name", required=True)
@@ -672,13 +708,21 @@ def main():
     if too_long_items:
         logger.info("描述过长跳过分类: %d条", len(too_long_items))
 
-    logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(api_keys), max_concurrent, total_concurrent)
-    if len(api_keys) > 1:
-        key_prefixes = [k[:8] + "..." for k in api_keys]
-        logger.info("key列表(前缀): %s", ", ".join(key_prefixes))
+    if is_agent:
+        logger.info("Agent provider: skill=%s, 并发%d (无多key切分)", agent_cfg["skill_name"], total_concurrent)
+    else:
+        logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(api_keys), max_concurrent, total_concurrent)
+        if len(api_keys) > 1:
+            key_prefixes = [k[:8] + "..." for k in api_keys]
+            logger.info("key列表(前缀): %s", ", ".join(key_prefixes))
 
-    # 懒导入推理模块（避免模块加载期循环导入：两模块均 import 自 classify_data）
-    if reason_mode == "layered":
+    # 懒导入推理模块（避免模块加载期循环导入：各模块均 import 自 classify_data）
+    if is_agent:
+        from classify_agent import process_item_agent
+        run_fn = process_item_agent
+        # agent skill 单条→单个JSON，一次性给出完整编码，每条问题一个任务
+        tasks = all_data
+    elif reason_mode == "layered":
         from classify_layered import process_item_layered
         run_fn = process_item_layered
         # 逐层模式: 每条问题一个独立任务，忽略 batch_size
@@ -689,6 +733,15 @@ def main():
         # 批量模式: 按 batch_size 切批
         tasks = [all_data[i:i + batch_size] for i in range(0, len(all_data), batch_size)]
 
+    def _invoke(task, idx):
+        """按 provider 分派单次推理调用，返回 [(num, status)]。"""
+        if is_agent:
+            return run_fn(task, app_name, problem_col, df, refs, db_path,
+                          agent_cfg, len(all_data), version_col, domain)
+        assigned_key = api_keys[idx % len(api_keys)]
+        return run_fn(task, app_name, problem_col, df, refs, db_path,
+                      provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
+
     def _accumulate(st):
         nonlocal success, unknown, failed
         if st == 0:
@@ -698,28 +751,26 @@ def main():
         else:
             failed += 1
 
+    # 失败计数的单任务条数：batch 模式按 batch_size 计；agent/layered 每任务1条
+    fail_unit = batch_size if (not is_agent and reason_mode == "batch") else 1
+
     if total_concurrent == 1:
         for i, task in enumerate(tasks):
-            assigned_key = api_keys[i % len(api_keys)]
-            task_results = run_fn(task, app_name, problem_col, df, refs, db_path,
-                                  provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
+            task_results = _invoke(task, i)
             for _, st in task_results:
                 _accumulate(st)
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=total_concurrent) as executor:
             futures = {}
             for i, task in enumerate(tasks):
-                assigned_key = api_keys[i % len(api_keys)]
-                futures[executor.submit(run_fn, task, app_name, problem_col, df, refs, db_path,
-                                       provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)] = i
+                futures[executor.submit(_invoke, task, i)] = i
             for f in concurrent.futures.as_completed(futures):
                 try:
                     task_results = f.result()
                     for _, st in task_results:
                         _accumulate(st)
                 except Exception:
-                    # 批量模式按 batch_size 计失败条数；逐层模式每任务1条
-                    failed += batch_size if reason_mode == "batch" else 1
+                    failed += fail_unit
 
     conn = sqlite3.connect(db_path)
     cnt = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
