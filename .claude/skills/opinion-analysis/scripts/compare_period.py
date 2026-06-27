@@ -67,8 +67,8 @@ def compute_distribution(details: list, total: int, level: str) -> dict:
         if not cls:
             continue
         val = cls.get(level, '')
-        if val and val != '其他问题' or (level == 'level1' and val == '其他问题'):
-            # 对于 level1，其他问题也算一个分类
+        if val and val != '未知问题' or (level == 'level1' and val == '未知问题'):
+            # 对于 level1，未知问题也算一个分类
             if level == 'level1':
                 counter[val] += 1
             elif val:

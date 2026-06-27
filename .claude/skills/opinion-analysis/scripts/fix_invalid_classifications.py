@@ -2,7 +2,7 @@
 """
 fix_invalid_classifications.py - 修复DB中分类路径不属于编码→路径字典的数据
 
-遍历DB中的数据，若分类路径不存在于编码→路径字典中，且不是其他问题(status=1)或失败(status=2)，
+遍历DB中的数据，若分类路径不存在于编码→路径字典中，且不是未知问题(status=1)或失败(status=2)，
 则将其status修改为2(失败)，并在reasoning中追加原因说明。
 
 用法:
@@ -71,7 +71,7 @@ def fix_invalid(db_path, app_name, domain="function"):
     for row in rows:
         id_, l1, l2, l3, full_path, status, reasoning = row
 
-        # 跳过已经是失败(status=2)或其他问题(status=1)的数据
+        # 跳过已经是失败(status=2)或未知问题(status=1)的数据
         if status == 2:
             already_invalid += 1
             continue

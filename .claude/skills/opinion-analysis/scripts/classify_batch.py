@@ -99,7 +99,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
 
     if not valid_items:
         for item in batch:
-            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], False))
         incr_progress(len(batch), total, batch_label)
         return results
@@ -121,7 +121,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -133,7 +133,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["其他问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -144,7 +144,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                     continue
                 else:
                     for item in valid_items:
-                        save_item(item["num"], ["其他问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
+                        save_item(item["num"], ["未知问题"], f"结果数量不一致: 期望{len(valid_items)}条, 返回{len(parsed)}条", app_name, problem_col, df, db_path, 2, version_col)
                         results.append((item["num"], 2))
                     break
 
@@ -172,7 +172,7 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         reason = p.get("reason", "") if isinstance(p, dict) else ""
                         classification = code_to_classification(code, code_to_path)
                         if not isinstance(code, str):
-                            save_item(num, ["其他问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["未知问题"], "分类格式错误: classification应为字符串编码", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         elif code == "0":
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
@@ -213,15 +213,15 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
                         reason = p.get("reason", "") if isinstance(p, dict) else ""
                         classification = code_to_classification(code, code_to_path)
                         if not isinstance(code, str):
-                            save_item(num, ["其他问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["未知问题"], "分类格式错误", app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         elif code == "0":
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 1, version_col)
                             results.append((num, 1))
-                        elif classification[0] == "其他问题":
-                            # 编码不在字典中, 转换后为其他问题
+                        elif classification[0] == "未知问题":
+                            # 编码不在字典中, 转换后为未知问题
                             invalid_reason = f"分类编码无效: {code} 不存在于编码表"
-                            save_item(num, ["其他问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
+                            save_item(num, ["未知问题"], invalid_reason, app_name, problem_col, df, db_path, 2, version_col)
                             results.append((num, 2))
                         else:
                             save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
@@ -246,12 +246,12 @@ def process_batch(batch, app_name, problem_col, df, refs, db_path,
     except Exception as e:
         logger.error("批量LLM推理失败: %s", e)
         for item in valid_items:
-            save_item(item["num"], ["其他问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["未知问题"], f"API调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     for item in batch:
         if not item["desc"].strip():
-            save_item(item["num"], ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
+            save_item(item["num"], ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
             results.append((item["num"], 2))
 
     incr_progress(len(batch), total, batch_label)

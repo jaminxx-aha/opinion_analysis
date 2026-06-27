@@ -68,9 +68,9 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
     details = []
     for r in rows:
         raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
-        status = r['status']  # 0=成功, 1=其他问题, 2=失败
+        status = r['status']  # 0=成功, 1=未知问题, 2=失败
         version = r['version'] if has_version else ''
-        if status == 0 and r['level1'] and r['level1'] != '其他问题':
+        if status == 0 and r['level1'] and r['level1'] != '未知问题':
             summary["classified"] += 1
             details.append({
                 'row_id': r['id'],
@@ -98,12 +98,12 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                 'version': version or '',
                 'classification': {
                     'app': r['app'] or '',
-                    'level1': '其他问题',
+                    'level1': '未知问题',
                     'level2': '',
                     'level3': '',
                     'level4': '',
                     'level5': '',
-                    'full_path': '其他问题',
+                    'full_path': '未知问题',
                 },
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,

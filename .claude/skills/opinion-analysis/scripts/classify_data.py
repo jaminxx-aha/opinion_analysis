@@ -186,9 +186,9 @@ def parse_classification_md(md_content):
 
     Returns:
         dict: 编码字符串到名称路径列表的映射，
-        如 {"0": ["其他问题"], "1": ["卡顿"], "1.1": ["卡顿","滑动卡顿"], "1.1.1": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"]}
+        如 {"0": ["未知问题"], "1": ["卡顿"], "1.1": ["卡顿","滑动卡顿"], "1.1.1": ["卡顿","滑动卡顿","首页推荐视频流上下滑动卡顿"]}
     """
-    code_to_path = {"0": ["其他问题"]}
+    code_to_path = {"0": ["未知问题"]}
 
     lines = md_content.strip().split('\n')
     for line in lines:
@@ -214,6 +214,12 @@ def parse_classification_md(md_content):
             code_to_path[code] = [label]
             continue
 
+    # 功能域兜底：当无法确定性能问题属于「动效卡顿 / 响应慢·加载慢 / 启动慢」中哪一类时，
+    # 归类为「卡顿」。该一级类不在 classification_function.md 中展示，此处按最大一级编码 +1 追加。
+    if any(path == ["动效卡顿"] for path in code_to_path.values()):
+        max_l1 = max((int(k) for k in code_to_path if re.match(r'^\d+$', k)), default=0)
+        code_to_path[str(max_l1 + 1)] = ["卡顿"]
+
     return code_to_path
 
 
@@ -226,15 +232,15 @@ def code_to_classification(code, code_to_path):
 
     Returns:
         名称路径列表，如 ["卡顿", "滑动卡顿", "首页推荐视频流上下滑动卡顿"]
-        编码"0"返回["其他问题"]
+        编码"0"返回["未知问题"]
     """
     if not code or code == "0":
-        return ["其他问题"]
+        return ["未知问题"]
     # 容错: 若LLM返回"1.1 滑动卡顿"格式，提取编码部分
     code_match = re.match(r'^(\d+(?:\.\d+)*)', str(code).strip())
     if code_match:
         code = code_match.group(1)
-    return code_to_path.get(code, ["其他问题"])
+    return code_to_path.get(code, ["未知问题"])
 
 
 # 各域对应的知识库文件名（除共享的 info.md 外）。
@@ -279,7 +285,7 @@ def load_reference(app_name, domain="function"):
         refs["classification_tree"] = parse_classification_md(md_content)  # 编码→路径字典(用于校验和转换)
         refs["classification"] = md_content  # md原文(用于prompt注入)
     else:
-        refs["classification_tree"] = {"0": ["其他问题"]}
+        refs["classification_tree"] = {"0": ["未知问题"]}
         refs["classification"] = ""
 
     return refs
@@ -293,11 +299,11 @@ def validate_classification(classification, code_to_path):
         code_to_path: 编码→路径字典 (来自 parse_classification_md)
 
     Returns:
-        True if path is valid (or classification is ["其他问题"])
+        True if path is valid (or classification is ["未知问题"])
         False if any path doesn't match any registered code path
     """
-    # 特殊情况: "其他问题"是Prompt规则允许的, 不在字典中但直接放行
-    if not classification or classification[0] == "其他问题":
+    # 特殊情况: "未知问题"是Prompt规则允许的, 不在字典中但直接放行
+    if not classification or classification[0] == "未知问题":
         return True
 
     # 检查名称路径是否与字典中某个编码对应的路径完全匹配
@@ -477,7 +483,7 @@ _TABLE = "report_function"
 
 
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
-    """status: 0=成功, 1=其他问题, 2=失败, 3=描述过长"""
+    """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长"""
     try:
         conn = _get_db_conn(db_path)
         cursor = conn.cursor()
@@ -486,7 +492,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         raw_json = json.dumps({c: str(row[c]) if not pd.isna(row[c]) else "" for c in df.columns}, ensure_ascii=False)
         version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
         t = _TABLE
-        if status == 0 and classification and classification[0] != "其他问题":
+        if status == 0 and classification and classification[0] != "未知问题":
             l1 = classification[0]
             l2 = classification[1] if len(classification) >= 2 else ""
             l3 = classification[2] if len(classification) >= 3 else ""
@@ -498,7 +504,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
                            (num, app_name, problem, status, app_name, l1, l2, l3, l4, l5, fp, reason, raw_json, version))
         elif status == 1:
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "其他问题", "", "", "", "", "其他问题", reason, raw_json, version))
+                           (num, app_name, problem, status, app_name, "未知问题", "", "", "", "", "未知问题", reason, raw_json, version))
         elif status == 3:
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, app_name, "描述过长", "", "", "", "", "描述过长", reason, raw_json, version))
@@ -506,7 +512,7 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
-        status_label = {0: "成功", 1: "其他问题", 2: "失败", 3: "描述过长"}
+        status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
         logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)
@@ -534,11 +540,13 @@ def main():
     if is_agent:
         reason_mode = "agent"
         agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
-        agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "抖音舆情分析").strip()
+        agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
         model = os.environ.get("LLM_AGENT_MODEL") or None
         agent_api_key = os.environ.get("LLM_AGENT_API_KEY", "").strip() or None
         agent_base_url = os.environ.get("LLM_AGENT_BASE_URL", "").strip() or None
         agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
+        # agent 需多轮读 skill 的 reference 文件做逐层分类，30s 默认不够，单独给更长超时
+        agent_timeout = int(os.environ.get("LLM_AGENT_TIMEOUT", "120"))
         if not agent_skill_dir:
             logger.error("LLM_PROVIDER=claude-agent-sdk 需要配置 LLM_AGENT_SKILL_DIR (含 .claude/skills/<skill>/SKILL.md 的项目根目录)"); sys.exit(1)
         skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
@@ -555,7 +563,7 @@ def main():
             "api_key": agent_api_key,
             "base_url": agent_base_url,
             "max_turns": agent_max_turns,
-            "timeout": timeout,
+            "timeout": agent_timeout,
             "max_retries": max_retries,
         }
         logger.info("推理模式: Claude Agent SDK (skill=%s, model=%s, skill_dir=%s, 并发%d)",
@@ -597,7 +605,7 @@ def main():
     parser.add_argument("--domain", required=True, choices=["function", "business"],
                         help="分类域: function=功能域/性能问题, business=业务域")
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
-                        help="重试模式: failed=重试失败数据, unknown=重试其他问题数据")
+                        help="重试模式: failed=重试失败数据, unknown=重试未知问题数据")
     args = parser.parse_args()
 
     app_name = args.app_name
@@ -797,7 +805,7 @@ def main():
         print(f"|------|-----|")
         print(f"| 总数据 | {report['total']} |")
         print(f"| 已分类 | {report['classified']} |")
-        print(f"| 其他问题 | {report['unknown_issue']} |")
+        print(f"| 未知问题 | {report['unknown_issue']} |")
         print(f"| 推理失败 | {report['infer_failed']} |")
     else:
         logger.warning("报告生成失败")
