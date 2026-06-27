@@ -56,6 +56,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SKILL_DIR)))
 
+# 描述长度上限（字符数，clean_desc 清洗后）：超过则跳过分类、直接入库 status=3
+MAX_DESC_LENGTH = 500
+
 _ENV_LOADED = False
 
 
@@ -541,9 +544,12 @@ def main():
         reason_mode = "agent"
         agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
         agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
-        model = os.environ.get("LLM_AGENT_MODEL") or None
-        agent_api_key = os.environ.get("LLM_AGENT_API_KEY", "").strip() or None
-        agent_base_url = os.environ.get("LLM_AGENT_BASE_URL", "").strip() or None
+        # model / api_key / base_url 复用 LLM_*（与 openai 路径同一套，不再单独 LLM_AGENT_*）
+        model = os.environ.get("LLM_MODEL") or None
+        # 多 key 支持：逗号分隔 → 列表，按 task 轮询分配给 worker（与 openai 路径一致）
+        api_key_raw = os.environ.get("LLM_API_KEY", "").strip()
+        api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()] if api_key_raw else []
+        base_url = os.environ.get("LLM_BASE_URL", "").strip() or None
         agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
         # agent 需多轮读 skill 的 reference 文件做逐层分类，30s 默认不够，单独给更长超时
         agent_timeout = int(os.environ.get("LLM_AGENT_TIMEOUT", "120"))
@@ -552,16 +558,14 @@ def main():
         skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
         if not os.path.isfile(skill_md):
             logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
-        # agent 走单一 Anthropic 凭据；未配 API key 时回退到 claude CLI 自身的 OAuth 登录
-        api_keys = []
-        base_url = agent_base_url
-        total_concurrent = max_concurrent
+        # agent 支持多 key 轮询；未配 API key 时回退到 claude CLI 自身的 OAuth 登录
+        total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
         agent_cfg = {
             "skill_dir": agent_skill_dir,
             "skill_name": agent_skill_name,
             "model": model,
-            "api_key": agent_api_key,
-            "base_url": agent_base_url,
+            "api_key": api_keys[0] if api_keys else None,
+            "base_url": base_url,
             "max_turns": agent_max_turns,
             "timeout": agent_timeout,
             "max_retries": max_retries,
@@ -706,18 +710,21 @@ def main():
     failed = 0
     too_long = 0
 
-    # 描述过长(>300字)的项直接入库status=3, 不送LLM
-    too_long_items = [item for item in all_data if len(item["desc"]) > 300]
-    all_data = [item for item in all_data if len(item["desc"]) <= 300]
+    # 描述过长(超过 MAX_DESC_LENGTH 字)的项直接入库status=3, 不送LLM
+    too_long_items = [item for item in all_data if len(item["desc"]) > MAX_DESC_LENGTH]
+    all_data = [item for item in all_data if len(item["desc"]) <= MAX_DESC_LENGTH]
     for item in too_long_items:
         desc_len = len(item["desc"])
-        save_item(item["num"], ["描述过长"], f"清洗后描述长度{desc_len}超过300字限制, 跳过分类", app_name, problem_col, df, db_path, 3, version_col)
+        save_item(item["num"], ["描述过长"], f"清洗后描述长度{desc_len}超过{MAX_DESC_LENGTH}字限制, 跳过分类", app_name, problem_col, df, db_path, 3, version_col)
         too_long += 1
     if too_long_items:
         logger.info("描述过长跳过分类: %d条", len(too_long_items))
 
     if is_agent:
-        logger.info("Agent provider: skill=%s, 并发%d (无多key切分)", agent_cfg["skill_name"], total_concurrent)
+        logger.info("Agent provider: skill=%s, key数%d, 每key并发%d, 总并发%d",
+                    agent_cfg["skill_name"], len(api_keys), max_concurrent, total_concurrent)
+        if len(api_keys) > 1:
+            logger.info("key列表(前缀): %s", ", ".join(k[:8] + "..." for k in api_keys))
     else:
         logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(api_keys), max_concurrent, total_concurrent)
         if len(api_keys) > 1:
@@ -744,8 +751,14 @@ def main():
     def _invoke(task, idx):
         """按 provider 分派单次推理调用，返回 [(num, status)]。"""
         if is_agent:
+            # 多 key 轮询：每个 task 用独立 cfg 副本注入对应 key，避免线程间共享可变状态
+            if api_keys:
+                cfg = dict(agent_cfg)
+                cfg["api_key"] = api_keys[idx % len(api_keys)]
+            else:
+                cfg = agent_cfg
             return run_fn(task, app_name, problem_col, df, refs, db_path,
-                          agent_cfg, len(all_data), version_col, domain)
+                          cfg, len(all_data), version_col, domain)
         assigned_key = api_keys[idx % len(api_keys)]
         return run_fn(task, app_name, problem_col, df, refs, db_path,
                       provider, assigned_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, len(all_data), version_col, domain)
