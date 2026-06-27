@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""claude_agent_client.py - Claude Agent SDK 封装（抖音舆情 skill 调用）
+"""claude_agent_client.py - Claude Agent SDK 流式封装（抖音舆情 skill 调用）
 
 把"调用大模型"这一步从 openai/anthropic 直调改为跑一个 headless Claude Code
-agent，让 agent 加载用户已实现的「抖音舆情分析」skill，对单条问题描述返回
-{"classification": "编码", "reason": "推理过程"} JSON。
+agent，让 agent 加载用户已实现的「抖音舆情分析」skill，对单条问题描述流式返回
+文本（含 {result, reason} JSON）。
 
-与 classify_data.call_llm_sdk 同形契约：入参问题文本，出参文本（供 extract_json 解析）。
+call_agent_sdk 是异步生成器，逐块 yield agent 的文本产出（与 SDK 的 query() 流式
+语义一致），由调用方消费：边收边写日志、拼接全文后 extract_json 解析。
+超时与日志写入由调用方负责（asyncio.wait_for 包裹消费协程 + 边收边写）。
+
 SDK 在函数内懒导入，未安装 claude_agent_sdk 时不会影响 classify_data 模块加载。
 """
 
-import os
-import asyncio
 import logging
 
 logger = logging.getLogger("classify_data")
@@ -25,11 +26,13 @@ def _build_prompt(skill_name, desc):
     )
 
 
-def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url,
-                   max_turns, timeout, log_file=None):
-    """调用 Claude Agent SDK 跑 skill，返回 agent 的最终文本（含 JSON）。
+async def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url, max_turns):
+    """异步生成器：流式 yield agent 的文本块（与 SDK 的 query() 一致，按轮次产出）。
 
-    失败抛异常，由调用方（classify_agent.process_item_agent）捕获并重试。
+    - 遇 AssistantMessage 的 TextBlock 即逐块 yield 其 text。
+    - 遇 ResultMessage 终止：若 is_error 抛 RuntimeError（由调用方捕获重试）；
+      若此前未产出任何文本，用 result 兜底 yield 一次。
+    - 不在此处理超时/日志，交由调用方（asyncio.wait_for 包裹 + 边收边写）。
     """
     from claude_agent_sdk import (
         query,
@@ -53,7 +56,6 @@ def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url,
         skills=[skill_name],
         setting_sources=["project", "user"],
         permission_mode="bypassPermissions",
-        # 只让 skill 做推理，禁掉有副作用的工具，保证 headless 安全/确定性
         disallowed_tools=["Bash", "WebFetch", "WebSearch"],
     )
     if model:
@@ -64,41 +66,32 @@ def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url,
         opts_kwargs["env"] = env
     options = ClaudeAgentOptions(**opts_kwargs)
 
-    async def _run():
-        text_parts = []
-        result_msg = None
-        async for msg in query(prompt=prompt, options=options):
+    gen = query(prompt=prompt, options=options)
+    yielded_any = False
+    try:
+        async for msg in gen:
             if isinstance(msg, AssistantMessage):
                 for block in (getattr(msg, "content", None) or []):
                     if getattr(block, "type", None) == "text":
-                        text_parts.append(getattr(block, "text", ""))
+                        t = getattr(block, "text", "")
+                        if t:
+                            yielded_any = True
+                            yield t
             elif isinstance(msg, ResultMessage):
-                result_msg = msg
-                break
-        # ResultMessage.result 优先（agent 的最终结果文本）；为空则回退到拼接的 assistant 文本
-        final = ""
-        if result_msg is not None:
-            if getattr(result_msg, "is_error", False):
-                errs = getattr(result_msg, "errors", None) or []
-                raise RuntimeError("agent 返回错误: %s" % ("; ".join(errs) if errs else "未知错误"))
-            final = getattr(result_msg, "result", None) or ""
-        if not final:
-            final = "".join(text_parts)
-        return final
-
-    try:
-        text = asyncio.run(asyncio.wait_for(_run(), timeout=timeout)) if timeout else asyncio.run(_run())
-    except asyncio.TimeoutError:
-        raise RuntimeError("agent 调用超时(%ds)" % timeout)
-
-    if log_file:
+                if getattr(msg, "is_error", False):
+                    errs = getattr(msg, "errors", None) or []
+                    raise RuntimeError("agent 返回错误: %s" % ("; ".join(errs) if errs else "未知错误"))
+                # 未流式产出过文本时，用 result 兜底
+                if not yielded_any:
+                    r = getattr(msg, "result", None) or ""
+                    if r:
+                        yield r
+                return
+    finally:
+        # 显式关闭 query 生成器，避免 asyncio 在 loop 收尾时报
+        # "an error occurred during closing of asynchronous generator"（超时/异常退出时常见）。
+        # aclose 自身的异常一律吞掉（属清理噪音，不影响已产出/已抛出的结果）。
         try:
-            os.makedirs(os.path.dirname(log_file), exist_ok=True)
-            with open(log_file, "w", encoding="utf-8") as fh:
-                fh.write("===== Agent 返回内容 =====\n")
-                fh.write(text or "")
-        except Exception as e:
-            logger.warning("写 agent 日志失败 %s: %s", log_file, e)
-
-    logger.info("Agent 响应接收完成(skill=%s, model=%s, 长度%d)", skill_name, model or "default", len(text or ""))
-    return text or ""
+            await gen.aclose()
+        except Exception:
+            pass

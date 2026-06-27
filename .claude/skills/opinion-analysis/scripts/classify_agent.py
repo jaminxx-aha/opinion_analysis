@@ -12,6 +12,7 @@ LLM_PROVIDER=claude-agent-sdk 时由 classify_data.main 分派调用。每条问
 import os
 import re
 import time
+import asyncio
 
 from classify_data import (
     save_item,
@@ -29,20 +30,19 @@ def match_result_to_code(result, code_to_path):
     """校验 skill 返回的 result 是否与编码树一致，并映射到数字编码。
 
     skill 的 result 可能是：
-      - 名称路径 "动效卡顿-滑动卡顿-列表滑动卡顿-视频流上下滑动卡顿"
+      - 名称路径 "动效卡顿-滑动卡顿-页面滑动卡顿-视频流上下滑动卡顿"
       - "未知问题" / "0"（非性能/非鸿蒙/无法分类）
       - 数字编码 "1.1.1.1"（兼容）
       - 兜底一级类 "卡顿"（不在 classification_*.md 中展示，由 parse_classification_md 追加）
-    只有当(整条名称路径 或 其最深有效前缀)能在编码树中定位到节点时才视为一致，
-    返回 (code, classification_path)；否则返回 (None, None)，调用方按失败处理。
+    只有当整条名称路径在编码树中精确命中某节点时才视为一致，返回 (code, path)；
+    否则一律返回 (None, None)，由调用方按「分类结果与编码树不一致」失败重试
+    （不做事前前缀回退，避免静默降级到上级、丢失深层语义）。
 
-    匹配策略（保证落库数据必为编码树中存在的路径）：
+    匹配策略：
       1) 未知问题/0 → ("0", ["未知问题"])
       2) 数字编码直接命中 → (code, path)
       3) 整条名称路径精确命中 → (code, path)
-      4) 最长有效前缀：skill 给了树里不存在的叶子时，回退到最深可匹配的上级
-         （丢弃无法对齐的尾部并记 warning），仍保证返回的是树内路径
-      5) 都不中 → (None, None)
+      4) 都不中 → (None, None)
     """
     if not isinstance(result, str):
         return (None, None)
@@ -66,18 +66,65 @@ def match_result_to_code(result, code_to_path):
     if parts and parts in path_to_code:
         return (path_to_code[parts], code_to_path[path_to_code[parts]])
 
-    # 4) 最长有效前缀（回退到最深可匹配的上级，丢弃对不齐的尾部）
-    if parts:
-        for k in range(len(parts) - 1, 0, -1):
-            prefix = parts[:k]
-            if prefix in path_to_code:
-                code = path_to_code[prefix]
-                logger.warning("结果'%s'尾部与编码树不一致, 回退到上级编码 %s (%s)",
-                               result, code, ".".join(code_to_path[code]))
-                return (code, code_to_path[code])
-
-    # 5) 不一致
+    # 4) 不一致：不做前缀回退，交由调用方重试
     return (None, None)
+
+
+def _consume_agent(desc, agent_cfg, log_file):
+    """同步桥接：运行流式 agent，边收边写日志，返回拼接后的完整文本。
+
+    用 asyncio.wait_for 包裹消费协程实现超时；agent 报错(RuntimeError)与超时
+    都抛 RuntimeError，由调用方按失败重试。日志边收边写，长任务可 tail 实时查看。
+    """
+    timeout = agent_cfg.get("timeout")
+
+    async def _run():
+        chunks = []
+        fh = None
+        if log_file:
+            try:
+                os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                fh = open(log_file, "w", encoding="utf-8")
+                fh.write("===== Agent 流式返回 =====\n")
+            except Exception as e:
+                logger.warning("写 agent 日志失败 %s: %s", log_file, e)
+        agen = call_agent_sdk(
+            desc,
+            skill_dir=agent_cfg["skill_dir"],
+            skill_name=agent_cfg["skill_name"],
+            model=agent_cfg.get("model"),
+            api_key=agent_cfg.get("api_key"),
+            base_url=agent_cfg.get("base_url"),
+            max_turns=agent_cfg.get("max_turns"),
+        )
+        try:
+            async for chunk in agen:
+                chunks.append(chunk)
+                if fh:
+                    try:
+                        fh.write(chunk)
+                        fh.flush()
+                    except Exception:
+                        pass
+        finally:
+            # 显式关闭流式生成器，避免 asyncio 收尾时报 "error during closing of async generator"
+            try:
+                await agen.aclose()
+            except Exception:
+                pass
+            if fh:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+        return "".join(chunks)
+
+    try:
+        if timeout:
+            return asyncio.run(asyncio.wait_for(_run(), timeout))
+        return asyncio.run(_run())
+    except asyncio.TimeoutError:
+        raise RuntimeError("agent 调用超时(%ds)" % timeout)
 
 
 def process_item_agent(item, app_name, problem_col, df, refs, db_path,
@@ -113,17 +160,7 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
     for attempt in range(max_retries):
         try:
             logger.info("行%d agent请求发送, 第%d/%d次", num, attempt + 1, max_retries)
-            text = call_agent_sdk(
-                desc,
-                skill_dir=agent_cfg["skill_dir"],
-                skill_name=agent_cfg["skill_name"],
-                model=agent_cfg.get("model"),
-                api_key=agent_cfg.get("api_key"),
-                base_url=agent_cfg.get("base_url"),
-                max_turns=agent_cfg.get("max_turns"),
-                timeout=agent_cfg.get("timeout"),
-                log_file=_log_file(attempt),
-            )
+            text = _consume_agent(desc, agent_cfg, _log_file(attempt))
             logger.info("行%d agent返回, 文本长度: %d", num, len(text) if text else 0)
         except Exception as e:
             logger.warning("行%d agent调用失败(第%d/%d次): %s", num, attempt + 1, max_retries, e)
