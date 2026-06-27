@@ -57,7 +57,7 @@ python <skill_path>/scripts/classify_data.py \
 
 `--version-index` 可选，0 或不传表示无版本号列。分类完成后自动生成HTML报告。报告读取该目录下**已存在的所有域 DB**，合并成一份双标签页报告（已运行哪个域就显示哪个标签页；两个域都跑过则可在「功能域/业务域」标签间切换）。
 
-`--retry` 可选，当用户需要分析其他问题或推理失败的问题时添加，只作用于当前 `--domain` 对应的 DB。retry_mode=`failed`继续分析推理失败的数据，retry_mode=`unknown`继续分析未知数据
+`--retry` 可选，当用户需要分析未知问题或推理失败的问题时添加，只作用于当前 `--domain` 对应的 DB。retry_mode=`failed`继续分析推理失败的数据，retry_mode=`unknown`继续分析未知数据
 
 **执行时间过长时**：分类脚本会持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志文件 `<output_dir>/report.log` 分析原因（如API超时、连接失败等）。
 

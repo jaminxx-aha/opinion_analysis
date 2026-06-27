@@ -19,9 +19,8 @@ logger = logging.getLogger("classify_data")
 def _build_prompt(skill_name, desc):
     return (
         f"请使用「{skill_name}」skill 对以下抖音用户问题描述进行分类，"
-        "严格按 skill 的分类树逐层推导，最终只返回一个 JSON 对象，"
-        "格式为 {\"classification\": \"编码\", \"reason\": \"推理过程\"}，"
-        "用三个反引号包裹，不要附加任何其它内容。\n\n"
+        "严格按 skill 自身的分类体系与输出约定逐层推导，"
+        "最终返回该 skill 规定的 JSON 对象（用三个反引号包裹），不要附加任何其它内容。\n\n"
         f"问题描述：\n{desc}"
     )
 

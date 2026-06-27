@@ -5,12 +5,12 @@
 但**每次给 LLM 的 prompt 不暴露当前层级**——模板统一，只给一份带编号的候选分类名单
 （无树编码、不说层级），让 LLM 返回一个编号。
 
-- 每层候选都从 1 开始编号（1..N），末行「0 其他问题」；二/三层也各自从 1 开始。
-- LLM 每层返回一个编号；0 表示其他问题，任一层返回 0 即终止下钻。
+- 每层候选都从 1 开始编号（1..N），末行「0 未知问题」；二/三层也各自从 1 开始。
+- LLM 每层返回一个编号；0 表示未知问题，任一层返回 0 即终止下钻。
 - 各层编号拼接成结果编码（因分类树每层子级从 1 连续，拼接编号 == 树编码，如 1.2.3）。
 - 用该编码在 classification_tree（编码→名称路径）中查名称，名称入库（与批量模式一致）。
-- 入库时「其他问题」只第一层有效：L1 返回 0 → 整条记为「其他问题」(status=1)；
-  L2/L3 返回 0 → 停止、保留已确定的上级名称路径，「其他问题」不写入 DB(status=0)。
+- 入库时「未知问题」只第一层有效：L1 返回 0 → 整条记为「未知问题」(status=1)；
+  L2/L3 返回 0 → 停止、保留已确定的上级名称路径，「未知问题」不写入 DB(status=0)。
 
 每条问题最多发起 3 次 LLM 调用（每层一次），故 LLM_BATCH_SIZE 在本模式下不生效。
 
@@ -33,7 +33,7 @@ from classify_data import (
 import logging
 logger = logging.getLogger("classify_data")
 
-OTHER_NUM = 0  # 各层候选名单中「其他问题」的固定编号
+OTHER_NUM = 0  # 各层候选名单中「未知问题」的固定编号
 
 
 def children_codes(code_to_path, parent_code):
@@ -156,8 +156,8 @@ def build_layer_prompt(app_name, desc, refs, domain, level, parent_name):
         children = children_codes(code_to_path, parent_code) if parent_code else []
         parent_ctx = f"\n已确定该问题属于「{parent_name}」。请从下列候选分类中选择最匹配的一个。\n"
 
-    # 候选名单：首行「0 其他问题」，随后每行「编号 名称」按编码从 1 编号。编号每层从 1 开始。
-    cat_lines = "\n".join([f"{OTHER_NUM} 其他问题"] + [f"{i + 1} {name}" for i, (_, name) in enumerate(children)])
+    # 候选名单：首行「0 未知问题」，随后每行「编号 名称」按编码从 1 编号。编号每层从 1 开始。
+    cat_lines = "\n".join([f"{OTHER_NUM} 未知问题"] + [f"{i + 1} {name}" for i, (_, name) in enumerate(children)])
 
     examples = layered_examples.get(level, "")
     err_examples = layered_error_examples.get(level, "")
@@ -212,7 +212,7 @@ def _call_layer(item, level, children, parent_name, app_name, refs, domain,
     """发起某一层的 LLM 调用（含重试），编号驱动。
 
     返回 (num, reason, ok):
-      ok=True  → num 为 0（其他问题）或 1..N（某候选编号）
+      ok=True  → num 为 0（未知问题）或 1..N（某候选编号）
       ok=False → 重试耗尽仍无法得到有效编号
     """
     desc = item["desc"]
@@ -221,7 +221,7 @@ def _call_layer(item, level, children, parent_name, app_name, refs, domain,
     log_base = f"response_{num_row}_L{level}"
 
     n_candidates = len(children)
-    # 合法编号：0(其他问题) .. n_candidates
+    # 合法编号：0(未知问题) .. n_candidates
     valid_nums = set(range(0, n_candidates + 1))
 
     prompt = build_layer_prompt(app_name, desc, refs, domain, level, parent_name)
@@ -264,18 +264,18 @@ def _call_layer(item, level, children, parent_name, app_name, refs, domain,
 
 def process_item_layered(item, app_name, problem_col, df, refs, db_path,
                           provider, api_key, base_url, model, max_tokens, max_retries, timeout, verify_ssl, disable_proxy, temperature, total, version_col=None, domain="function"):
-    """逐层串行推导单条问题，循环下钻至无子级或选「其他问题」为止，支持任意深度。
+    """逐层串行推导单条问题，循环下钻至无子级或选「未知问题」为止，支持任意深度。
 
     每层 LLM 返回编号；编号拼接成树编码，用 classification_tree 查名称路径入库。
-    - L1 选 0(其他问题) → 整条记为其他问题(status=1)；
-    - 任意更深层选 0 或推导失败 → 止于上级、「其他问题」不写入(status=0)；
+    - L1 选 0(未知问题) → 整条记为未知问题(status=1)；
+    - 任意更深层选 0 或推导失败 → 止于上级、「未知问题」不写入(status=0)；
     - 选到无子级的叶节点 → 到末级(status=0)。
     """
     num = item["num"]
     code_to_path = refs.get("classification_tree", {})
 
     if not item["desc"].strip():
-        save_item(num, ["其他问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
+        save_item(num, ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
         incr_progress(1, total, str(num))
         return [(num, 2)]
 
@@ -294,7 +294,7 @@ def process_item_layered(item, app_name, problem_col, df, refs, db_path,
             reasons.append(f"第{level}级推导失败: {reason}")
             if code is None:
                 # L1 失败 → 无任何分类
-                save_item(num, ["其他问题"], reasons[-1], app_name, problem_col, df, db_path, 2, version_col)
+                save_item(num, ["未知问题"], reasons[-1], app_name, problem_col, df, db_path, 2, version_col)
                 logger.info("行%d 一级推导失败 → 失败(status=2)", num)
             else:
                 # 更深层失败 → 止于上级
@@ -304,17 +304,17 @@ def process_item_layered(item, app_name, problem_col, df, refs, db_path,
             return [(num, 2 if code is None else 0)]
 
         if n == OTHER_NUM:
-            # 本层选「其他问题」
+            # 本层选「未知问题」
             reasons.append(reason)
             if code is None:
-                # 仅 L1 有效 → 整条其他问题
-                save_item(num, ["其他问题"], " | ".join(reasons), app_name, problem_col, df, db_path, 1, version_col)
-                logger.info("行%d 逐层推导完成, 一层判其他问题(0) → 其他问题", num)
+                # 仅 L1 有效 → 整条未知问题
+                save_item(num, ["未知问题"], " | ".join(reasons), app_name, problem_col, df, db_path, 1, version_col)
+                logger.info("行%d 逐层推导完成, 一层判未知问题(0) → 未知问题", num)
                 incr_progress(1, total, str(num))
                 return [(num, 1)]
-            # 更深层其他问题 → 止于上级，「其他问题」不写入
+            # 更深层未知问题 → 止于上级，「未知问题」不写入
             save_item(num, code_to_path.get(code, []), " | ".join(reasons), app_name, problem_col, df, db_path, 0, version_col)
-            logger.info("行%d 逐层推导完成, 编码: %s (第%d级判其他问题, 止于上级)", num, code, level)
+            logger.info("行%d 逐层推导完成, 编码: %s (第%d级判未知问题, 止于上级)", num, code, level)
             incr_progress(1, total, str(num))
             return [(num, 0)]
 

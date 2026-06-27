@@ -357,7 +357,7 @@ function buildTrendData() {
           if (trendFilters.level3 && trendFilters.level3 !== cls.level3) return false;
           return true;
         }
-        if (item.status === "unknown_issue" && trendFilters.level1 === "其他问题") return true;
+        if (item.status === "unknown_issue" && trendFilters.level1 === "未知问题") return true;
         return false;
       });
     }
@@ -594,7 +594,7 @@ function countByLevel(list, level) {
       const v = item.classification[level] || "";
       if (v) c[v] = (c[v] || 0) + 1;
     } else if (item.status === "unknown_issue" && level === "level1") {
-      c["其他问题"] = (c["其他问题"] || 0) + 1;
+      c["未知问题"] = (c["未知问题"] || 0) + 1;
     }
   });
   return c;
@@ -832,7 +832,7 @@ function onCmpSelectChange() {
 function renderCmpSummary() {
   const summaryA = comparisonData[cmpNameA].summary;
   const summaryB = comparisonData[cmpNameB].summary;
-  const labels = { total: '总数据', classified: '已分类', unknown_issue: '其他问题', infer_failed: '失败' };
+  const labels = { total: '总数据', classified: '已分类', unknown_issue: '未知问题', infer_failed: '失败' };
   let h = '';
   for (const [k, label] of Object.entries(labels)) {
     const a = summaryA[k] || 0, b = summaryB[k] || 0;
