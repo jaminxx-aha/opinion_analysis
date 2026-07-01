@@ -18,6 +18,11 @@
 import sys
 import os
 import io
+import json
+import argparse
+from datetime import datetime
+from collections import Counter
+from generate_report import read_domain_from_db, render_template
 
 # Windows 下强制 UTF-8 输出
 if sys.platform == 'win32':
@@ -26,19 +31,12 @@ if sys.platform == 'win32':
     if hasattr(sys.stderr, 'buffer') and (not isinstance(sys.stderr, io.TextIOWrapper) or sys.stderr.encoding.lower() != 'utf-8'):
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-import json
-import argparse
-from datetime import datetime
-from collections import Counter
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "compare_period_template.html")
 
 # 导入 generate_report 的 DB 读取和模板渲染函数
 sys.path.insert(0, SCRIPT_DIR)
-from generate_report import read_domain_from_db, render_template
-
 
 def find_xlsx_in_dir(dir_path: str) -> str:
     """查找目录中的 xlsx 文件名"""

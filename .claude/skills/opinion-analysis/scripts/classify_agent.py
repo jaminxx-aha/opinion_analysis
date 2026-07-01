@@ -5,8 +5,8 @@ LLM_PROVIDER=claude-agent-sdk 时由 classify_data.main 分派调用。每条问
 发起一次 agent 调用，skill 一次性返回完整分类编码 {result, reason}，
 因此 batch/layered 两种 reason mode 在本 provider 下退化为"每条一次 agent 调用"。
 
-共享逻辑（save_item / extract_json / code_to_classification / 进度 / 输出目录）
-均在 classify_data 中实现，这里通过懒导入避免循环依赖，与 classify_batch/layered 同级。
+共享逻辑（save_item 在 db_utils；extract_json/get_output_dir/incr_progress 在 runtime）
+通过顶层 import 引入，与 classify_batch/layered 同级。
 """
 
 import os
@@ -14,12 +14,8 @@ import re
 import time
 import asyncio
 
-from classify_data import (
-    save_item,
-    extract_json,
-    get_output_dir,
-    incr_progress,
-)
+from db_utils import save_item
+from runtime import extract_json, get_output_dir, incr_progress
 from claude_agent_client import call_agent_sdk
 
 import logging
