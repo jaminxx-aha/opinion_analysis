@@ -1,0 +1,16 @@
+# 舆情分析工具依赖（覆盖所有脚本 + test.py）
+# 安装: pip install -r requirements.txt
+
+# === 必需（任何脚本路径都要）===
+pandas>=2.0            # classify_data.py, excel_info.py
+python-dotenv>=1.0     # classify_data.py, test.py
+openpyxl>=3.1          # export_db_to_excel.py
+
+# === 按 LLM_PROVIDER 选装其一（默认 openai）===
+anthropic              # LLM_PROVIDER=anthropic       → classify_data.py
+openai                 # LLM_PROVIDER=openai          → classify_data.py, test.py
+claude-agent-sdk       # LLM_PROVIDER=claude-agent-sdk → claude_agent_client.py
+
+# === 条件依赖 ===
+# verify_ssl=false / disable_proxy 时需要（classify_data.py, test.py）
+httpx
