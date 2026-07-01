@@ -8,11 +8,16 @@ agent，让 agent 加载用户已实现的「抖音舆情分析」skill，对单
 call_agent_sdk 是异步生成器，逐块 yield agent 的文本产出（与 SDK 的 query() 流式
 语义一致），由调用方消费：边收边写日志、拼接全文后 extract_json 解析。
 超时与日志写入由调用方负责（asyncio.wait_for 包裹消费协程 + 边收边写）。
-
-SDK 在函数内懒导入，未安装 claude_agent_sdk 时不会影响 classify_data 模块加载。
 """
 
 import logging
+
+from claude_agent_sdk import (
+    query,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    ResultMessage,
+)
 
 logger = logging.getLogger("classify_data")
 
@@ -34,13 +39,6 @@ async def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_ur
       若此前未产出任何文本，用 result 兜底 yield 一次。
     - 不在此处理超时/日志，交由调用方（asyncio.wait_for 包裹 + 边收边写）。
     """
-    from claude_agent_sdk import (
-        query,
-        ClaudeAgentOptions,
-        AssistantMessage,
-        ResultMessage,
-    )
-
     prompt = _build_prompt(skill_name, desc)
 
     env = {}

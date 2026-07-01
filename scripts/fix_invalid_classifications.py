@@ -17,11 +17,12 @@ import argparse
 import logging
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SKILL_DIR = os.path.dirname(SCRIPT_DIR)
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+SKILL_SCRIPTS_DIR = os.path.join(PROJECT_DIR, ".claude", "skills", "opinion-analysis", "scripts")
 
-sys.path.insert(0, SCRIPT_DIR)
+sys.path.insert(0, SKILL_SCRIPTS_DIR)
 from app_list import get_supported_apps, get_app_dir
-from classify_data import validate_classification, parse_classification_md, DOMAIN_FILES
+from args import validate_classification, parse_classification_md, DOMAIN_FILES
 
 logger = logging.getLogger("fix_invalid")
 logger.setLevel(logging.INFO)

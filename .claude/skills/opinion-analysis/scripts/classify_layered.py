@@ -14,27 +14,21 @@
 
 每条问题最多发起 3 次 LLM 调用（每层一次），故 LLM_BATCH_SIZE 在本模式下不生效。
 
-共享逻辑（save_item / call_llm_sdk / extract_json / 进度 / 输出目录）均在 classify_data
-中实现，这里通过懒导入避免循环依赖。
+共享逻辑（save_item 在 db_utils；call_llm_sdk/extract_json/get_output_dir/incr_progress
+在 runtime）通过顶层 import 引入，无循环依赖。
 """
 
 import os
 import re
 import time
-
-from classify_data import (
-    save_item,
-    call_llm_sdk,
-    extract_json,
-    get_output_dir,
-    incr_progress,
-)
-
 import logging
+
+from db_utils import save_item
+from runtime import call_llm_sdk, extract_json, get_output_dir, incr_progress
+
 logger = logging.getLogger("classify_data")
 
 OTHER_NUM = 0  # 各层候选名单中「未知问题」的固定编号
-
 
 def children_codes(code_to_path, parent_code):
     """返回 parent_code 的直接子级 [(code, name), ...]，按编码排序。

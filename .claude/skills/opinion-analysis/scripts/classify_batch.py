@@ -5,8 +5,8 @@
 与 classify_layered.py 的逐层推导互为两种独立推理策略，由 classify_data.main() 按
 LLM_REASON_MODE 分派调用。
 
-共享逻辑（save_item / call_llm_sdk / extract_json / code_to_classification / 进度 /
-输出目录）均在 classify_data 中实现，这里通过懒导入避免循环依赖。
+共享逻辑（save_item 在 db_utils；call_llm_sdk/extract_json/get_output_dir/incr_progress
+在 runtime；code_to_classification 在 args）通过顶层 import 引入，无循环依赖。
 """
 
 import os
@@ -14,14 +14,9 @@ import re
 import time
 import json
 
-from classify_data import (
-    save_item,
-    call_llm_sdk,
-    extract_json,
-    code_to_classification,
-    get_output_dir,
-    incr_progress,
-)
+from db_utils import save_item
+from runtime import call_llm_sdk, extract_json, get_output_dir, incr_progress
+from args import code_to_classification
 
 import logging
 logger = logging.getLogger("classify_data")
