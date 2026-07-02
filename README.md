@@ -110,7 +110,8 @@ python .claude/skills/opinion-analysis/scripts/classify_data.py \
 ├── scripts/                             # 运维脚本（脱离 skill 核心）
 │   ├── export_db_to_excel.py            # DB → Excel，带校准分类与正确率校验
 │   ├── fix_invalid_classifications.py   # 修复 DB 中不在编码表的脏数据
-│   └── print_classifications.py         # 打印 DB 中问题描述与分类（TSV）
+│   ├── print_classifications.py         # 打印 DB 中问题描述与分类（TSV）
+│   └── retry_failed.py                  # 重试 DB 中推理失败(status=2)的数据（给目录即可）
 └── .claude/skills/opinion-analysis/
     ├── SKILL.md                         # 技能定义与工作流
     ├── assets/

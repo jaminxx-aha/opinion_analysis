@@ -149,23 +149,12 @@ def _try_repair_json(text):
     return None
 
 
-def process_item_agent(item, app_name, problem_col, df, refs, db_path,
-                       agent_cfg, total, version_col=None, domain="function"):
-    """单条问题 → 一次 agent(skill) 调用 → 解析 JSON → 入库。
+def classify_one(num, desc, refs, agent_cfg):
+    """对单条问题描述跑 agent 分类（含重试/json_repair/correction 纠偏）。
 
-    agent_cfg: dict，含 skill_dir/skill_name/model/api_key/base_url/
-               max_turns/timeout/max_retries。
-    返回 [(num, status)]，状态码与 batch/layered 一致：0=成功,1=未知问题,2=失败。
+    返回 (status, classification, reason)：0=成功, 1=未知问题, 2=失败。
+    不入库、不打印进度，由调用方负责 save_item / incr_progress。
     """
-    results = []
-    num = item["num"]
-    desc = item["desc"]
-
-    if not desc.strip():
-        save_item(num, ["未知问题"], "空描述,跳过分类", app_name, problem_col, df, db_path, 2, version_col)
-        incr_progress(1, total, str(num))
-        return [(num, 2)]
-
     code_to_path = refs.get("classification_tree", {})
     tree_md = refs.get("classification", "")
     output_dir = get_output_dir()
@@ -177,8 +166,6 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
         return os.path.join(output_dir, "log", f"{base}.log") if output_dir else None
 
     reason = ""
-    code = "0"
-    status = 2
     correction = None  # 上一次失败的原因上下文，带入下一次 agent 调用让其修正
 
     for attempt in range(max_retries):
@@ -191,9 +178,7 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
             if attempt < max_retries - 1:
                 time.sleep(3)
                 continue
-            save_item(num, ["未知问题"], f"agent调用失败: {e}", app_name, problem_col, df, db_path, 2, version_col)
-            incr_progress(1, total, str(num))
-            return [(num, 2)]
+            return 2, ["未知问题"], f"agent调用失败: {e}"
 
         parsed = extract_json(text)
         if not isinstance(parsed, dict):
@@ -214,9 +199,7 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
                 if attempt < max_retries - 1:
                     time.sleep(3)
                     continue
-                save_item(num, ["未知问题"], "JSON解析失败", app_name, problem_col, df, db_path, 2, version_col)
-                incr_progress(1, total, str(num))
-                return [(num, 2)]
+                return 2, ["未知问题"], "JSON解析失败"
 
         # skill 用 result 字段返回名称路径(如 "动效卡顿-滑动卡顿-列表滑动卡顿-视频流上下滑动卡顿")
         # 或 "未知问题"/"0"；也可能是数字编码。统一用 match_result_to_code 校验并映射到编码树。
@@ -232,9 +215,7 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
             if attempt < max_retries - 1:
                 time.sleep(3)
                 continue
-            save_item(num, ["未知问题"], "分类格式错误: result应为字符串", app_name, problem_col, df, db_path, 2, version_col)
-            incr_progress(1, total, str(num))
-            return [(num, 2)]
+            return 2, ["未知问题"], "分类格式错误: result应为字符串"
 
         code, classification = match_result_to_code(result, code_to_path)
         if code is None:
@@ -249,23 +230,29 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
             if attempt < max_retries - 1:
                 time.sleep(3)
                 continue
-            save_item(num, ["未知问题"], f"分类结果不在编码表: {result}", app_name, problem_col, df, db_path, 2, version_col)
-            incr_progress(1, total, str(num))
-            return [(num, 2)]
+            return 2, ["未知问题"], f"分类结果不在编码表: {result}"
 
         if code == "0":
-            save_item(num, ["未知问题"], reason or "未知问题", app_name, problem_col, df, db_path, 1, version_col)
-            incr_progress(1, total, str(num))
-            return [(num, 1)]
+            return 1, ["未知问题"], reason or "未知问题"
 
-        # 校验通过：classification 为编码树内名称路径
-        save_item(num, classification, reason, app_name, problem_col, df, db_path, 0, version_col)
-        status = 0
         logger.info("行%d agent推理成功, 编码: %s, 分类: %s", num, code, ".".join(classification))
-        incr_progress(1, total, str(num))
-        return [(num, status)]
+        return 0, classification, reason
 
     # 重试耗尽（理论上上面分支都已 return，兜底）
-    save_item(num, ["未知问题"], reason or "重试耗尽", app_name, problem_col, df, db_path, 2, version_col)
+    return 2, ["未知问题"], reason or "重试耗尽"
+
+
+def process_item_agent(item, app_name, problem_col, df, refs, db_path,
+                       agent_cfg, total, version_col=None):
+    """单条问题 → agent 分类 → 入库。返回 [(num, status)]。
+    状态码：0=成功, 1=未知问题, 2=失败。
+    """
+    num = item["num"]
+    desc = item["desc"]
+    if not desc.strip():
+        status, classification, reason = 2, ["未知问题"], "空描述,跳过分类"
+    else:
+        status, classification, reason = classify_one(num, desc, refs, agent_cfg)
+    save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col)
     incr_progress(1, total, str(num))
-    return [(num, 2)]
+    return [(num, status)]

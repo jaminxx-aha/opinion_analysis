@@ -128,7 +128,7 @@ def prepare_data(args, config, df, problem_col, version_col):
 
 # ========== Phase 3：执行分派 ==========
 
-def run(config, all_data, app_name, problem_col, df, refs, ctx, version_col, domain):
+def run(config, all_data, app_name, problem_col, df, refs, ctx, version_col):
     """并发执行 agent 分类，每条问题一次 agent 调用，结束后打印期末汇总。
 
     ctx 须含 db_path / table / total_all / max_id / too_long / mode_label。
@@ -147,7 +147,7 @@ def run(config, all_data, app_name, problem_col, df, refs, ctx, version_col, dom
         else:
             cfg = config.agent_cfg
         return run_fn(task, app_name, problem_col, df, refs, db_path,
-                      cfg, len(all_data), version_col, domain)
+                      cfg, len(all_data), version_col)
 
     success = 0
     unknown = 0

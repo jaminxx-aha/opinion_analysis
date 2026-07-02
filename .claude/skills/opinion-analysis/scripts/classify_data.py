@@ -50,7 +50,7 @@ def main():
     all_data, ctx, refs = prepare_data(args, config, df, problem_col, version_col)
 
     # Phase 3：执行任务 + 数据落盘 + 期末汇总（汇总打印在 run 内）
-    run(config, all_data, args.app_name, problem_col, df, refs, ctx, version_col, args.domain)
+    run(config, all_data, args.app_name, problem_col, df, refs, ctx, version_col)
 
     # Phase 4：报告生成（读 output_dir 下所有域 DB 合并双标签页，摘要打印在 generate_report 内）
     report_html_path = os.path.join(args.output_dir, f"{os.path.splitext(os.path.basename(args.excel_path))[0]}_report.html")

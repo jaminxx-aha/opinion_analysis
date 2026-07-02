@@ -162,6 +162,45 @@ def count_rows(db_path, table):
         conn.close()
 
 
+def _levels(classification):
+    """由分类名称列表算出 level1~5 与 full_path（供 save_item / update_item 复用）。"""
+    l1 = classification[0]
+    l2 = classification[1] if len(classification) >= 2 else ""
+    l3 = classification[2] if len(classification) >= 3 else ""
+    l4 = classification[3] if len(classification) >= 4 else ""
+    l5 = classification[4] if len(classification) >= 5 else ""
+    return l1, l2, l3, l4, l5, ".".join(classification)
+
+
+def update_item(num, classification, reason, app_name, db_path, status):
+    """UPDATE 已有行的分类字段（status/cls_app/level1-5/full_path/reasoning），
+    保留 problem/raw_data/version 不变。用于重试场景：行已存在，只需改分类结果。
+    status: 0=成功, 1=未知问题, 2=失败, 3=描述过长
+    """
+    try:
+        conn = _get_db_conn(db_path)
+        cursor = conn.cursor()
+        t = _TABLE
+        if status == 0 and classification and classification[0] != "未知问题":
+            l1, l2, l3, l4, l5, fp = _levels(classification)
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
+                           (status, app_name, l1, l2, l3, l4, l5, fp, reason, num))
+        elif status == 1:
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
+                           (status, app_name, "未知问题", "", "", "", "", "未知问题", reason, num))
+        elif status == 3:
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
+                           (status, app_name, "描述过长", "", "", "", "", "描述过长", reason, num))
+        else:
+            cursor.execute(f"UPDATE {t} SET status=?, reasoning=? WHERE id=?",
+                           (status, reason, num))
+        conn.commit()
+        status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
+        logger.info("行%d 更新成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
+    except Exception as e:
+        logger.error("行%d 更新失败: %s", num, e)
+
+
 def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
     """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长"""
     try:
