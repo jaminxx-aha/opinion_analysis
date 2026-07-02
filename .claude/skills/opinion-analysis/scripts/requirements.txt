@@ -8,3 +8,4 @@ openpyxl>=3.1          # scripts/export_db_to_excel.py
 
 # === Claude Agent SDK 推理路径 ===
 claude-agent-sdk       # claude_agent_client.py（唯一的 LLM 调用方式）
+json_repair            # classify_agent.py：agent 返回的残缺 JSON 修复

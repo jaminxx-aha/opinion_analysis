@@ -21,24 +21,28 @@ from claude_agent_sdk import (
 
 logger = logging.getLogger("classify_data")
 
-def _build_prompt(skill_name, desc):
-    return (
+def _build_prompt(skill_name, desc, correction=None):
+    prompt = (
         f"请使用「{skill_name}」skill 对以下抖音用户问题描述进行分类，"
         "严格按 skill 自身的分类体系与输出约定逐层推导，"
         "最终返回该 skill 规定的 JSON 对象（用三个反引号包裹），不要附加任何其它内容。\n\n"
         f"问题描述：\n{desc}"
     )
+    if correction:
+        prompt += f"\n\n===== 上次返回有误，请按以下修正要求重新返回 =====\n{correction}"
+    return prompt
 
 
-async def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url, max_turns):
+async def call_agent_sdk(desc, *, skill_dir, skill_name, model, api_key, base_url, max_turns, correction=None):
     """异步生成器：流式 yield agent 的文本块（与 SDK 的 query() 一致，按轮次产出）。
 
     - 遇 AssistantMessage 的 TextBlock 即逐块 yield 其 text。
     - 遇 ResultMessage 终止：若 is_error 抛 RuntimeError（由调用方捕获重试）；
       若此前未产出任何文本，用 result 兜底 yield 一次。
     - 不在此处理超时/日志，交由调用方（asyncio.wait_for 包裹 + 边收边写）。
+    - correction 非空时拼入 prompt，把上一次的失败上下文（解析错误/分类树）带给 agent 修正。
     """
-    prompt = _build_prompt(skill_name, desc)
+    prompt = _build_prompt(skill_name, desc, correction)
 
     env = {}
     if api_key:
