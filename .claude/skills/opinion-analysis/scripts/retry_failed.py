@@ -19,11 +19,6 @@ import sqlite3
 import logging
 import concurrent.futures
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
-SKILL_SCRIPTS_DIR = os.path.join(PROJECT_DIR, ".claude", "skills", "opinion-analysis", "scripts")
-
-sys.path.insert(0, SKILL_SCRIPTS_DIR)
 from args import load_config, load_reference, setup_logging
 from db_utils import report_table, set_table, init_db, count_rows, update_item, _close_all_db
 from runtime import set_output_dir, incr_progress

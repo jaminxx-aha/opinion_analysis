@@ -25,7 +25,10 @@ logger = logging.getLogger("classify_data")
 # ========== Phase 2：数据准备 ==========
 
 def prepare_data(args, config, df, problem_col, version_col):
-    """加载分类参考库，初始化输出目录/日志/DB，按 retry/续跑 选型构建待处理列表，过长项直接入库。
+    """加载分类参考库，初始化输出目录/日志/DB，按续跑模式构建待处理列表，过长项直接入库。
+
+    续跑：从该表最大 id 之后继续处理新行（断点续跑，非重试）。
+    重试失败数据(status=2)请用 scripts/retry_failed.py。
 
     返回 (all_data, ctx, refs)：
       all_data: [{num, desc}] 待送 agent 的条目（过长已分离入库）
@@ -53,49 +56,20 @@ def prepare_data(args, config, df, problem_col, version_col):
     filtered = list(range(len(df)))
     logger.info("总行数: %d (无应用名列筛选)", len(df))
 
+    # 续跑模式: 从最大id之后继续
     conn = sqlite3.connect(db_path)
-    if args.retry:
-        # 重试模式: 找出指定状态及缺失的行
-        existing = dict(conn.execute(f"SELECT id, status FROM {table}").fetchall())
-        retry_ids = set()
-        missing_count = 0
-        failed_count = 0
-        unknown_count = 0
-        for i in filtered:
-            row_id = i + 1
-            if row_id not in existing:
-                retry_ids.add(row_id)
-                missing_count += 1
-            elif args.retry == "failed" and existing[row_id] == 2:
-                retry_ids.add(row_id)
-                failed_count += 1
-            elif args.retry == "unknown" and existing[row_id] == 1:
-                retry_ids.add(row_id)
-                unknown_count += 1
-        conn.close()
-
-        all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
-                    for i in filtered if (i + 1) in retry_ids]
-
-        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), skill=%s, model=%s",
-                    args.retry, failed_count, unknown_count, missing_count, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
-
+    max_id = conn.execute(f"SELECT MAX(id) FROM {table}").fetchone()[0]
+    conn.close()
+    if max_id is None:
         max_id = 0
-        mode_label = f"重试-{args.retry}"
-    else:
-        # 续跑模式: 从最大id之后继续
-        max_id = conn.execute(f"SELECT MAX(id) FROM {table}").fetchone()[0]
-        conn.close()
-        if max_id is None:
-            max_id = 0
 
-        all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
-                    for i in filtered if (i + 1) > max_id]
+    all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
+                for i in filtered if (i + 1) > max_id]
 
-        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), skill=%s, model=%s",
-                    len(filtered), max_id, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
+    logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), skill=%s, model=%s",
+                len(filtered), max_id, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
 
-        mode_label = "续跑"
+    mode_label = "续跑"
 
     total_all = len(filtered)
 
