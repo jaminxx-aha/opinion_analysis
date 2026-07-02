@@ -66,11 +66,12 @@ def match_result_to_code(result, code_to_path):
 def _consume_agent(desc, agent_cfg, log_file, correction=None):
     """同步桥接：运行流式 agent，边收边写日志，返回拼接后的完整文本。
 
-    用 asyncio.wait_for 包裹消费协程实现超时；agent 报错(RuntimeError)与超时
-    都抛 RuntimeError，由调用方按失败重试。日志边收边写，长任务可 tail 实时查看。
+    超时由 call_agent_sdk 内部按"空闲超时"实现（idle_timeout 秒内无任何消息才判卡死，
+    流式持续产出/工具往返期间不超时）。agent 报错(RuntimeError)与空闲超时都抛
+    RuntimeError，由调用方按失败重试。日志边收边写，长任务可 tail 实时查看。
     correction 非空时拼入 prompt，把上一次失败上下文带给 agent 修正。
     """
-    timeout = agent_cfg.get("timeout")
+    idle_timeout = agent_cfg.get("timeout")
 
     async def _run():
         chunks = []
@@ -91,6 +92,7 @@ def _consume_agent(desc, agent_cfg, log_file, correction=None):
             base_url=agent_cfg.get("base_url"),
             max_turns=agent_cfg.get("max_turns"),
             correction=correction,
+            idle_timeout=idle_timeout,
         )
         try:
             async for chunk in agen:
@@ -114,12 +116,7 @@ def _consume_agent(desc, agent_cfg, log_file, correction=None):
                     pass
         return "".join(chunks)
 
-    try:
-        if timeout:
-            return asyncio.run(asyncio.wait_for(_run(), timeout))
-        return asyncio.run(_run())
-    except asyncio.TimeoutError:
-        raise RuntimeError("agent 调用超时(%ds)" % timeout)
+    return asyncio.run(_run())
 
 
 def _try_repair_json(text):
