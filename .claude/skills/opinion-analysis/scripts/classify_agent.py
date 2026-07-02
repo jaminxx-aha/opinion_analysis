@@ -12,14 +12,12 @@ import os
 import re
 import time
 import asyncio
-
+import logging
 from db_utils import save_item
 from runtime import extract_json, get_output_dir, incr_progress
 from claude_agent_client import call_agent_sdk
 
-import logging
 logger = logging.getLogger("classify_data")
-
 
 def match_result_to_code(result, code_to_path):
     """校验 skill 返回的 result 是否与编码树一致，并映射到数字编码。

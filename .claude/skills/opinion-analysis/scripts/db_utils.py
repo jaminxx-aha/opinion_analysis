@@ -13,7 +13,6 @@ import sqlite3
 import threading
 import atexit
 import logging
-
 import pandas as pd
 
 logger = logging.getLogger("classify_data")

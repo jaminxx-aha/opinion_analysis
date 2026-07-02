@@ -11,6 +11,12 @@
 import sys
 import os
 import io
+import json
+import argparse
+import sqlite3
+from datetime import datetime
+from generate_report import read_data_from_db, render_template, domain_table, table_exists
+from compare_period import compute_distribution, compute_level2_by_level1, compute_level3_by_level1_level2, find_xlsx_in_dir, get_db_mtime, extract_versions
 
 if sys.platform == 'win32':
     if hasattr(sys.stdout, 'buffer') and (not isinstance(sys.stdout, io.TextIOWrapper) or sys.stdout.encoding.lower() != 'utf-8'):
@@ -18,10 +24,6 @@ if sys.platform == 'win32':
     if hasattr(sys.stderr, 'buffer') and (not isinstance(sys.stderr, io.TextIOWrapper) or sys.stderr.encoding.lower() != 'utf-8'):
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-import json
-import argparse
-import sqlite3
-from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
@@ -29,9 +31,6 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(SKILL_DIR)))
 DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "dashboard_template.html")
 
 sys.path.insert(0, SCRIPT_DIR)
-from generate_report import read_data_from_db, render_template, domain_table, table_exists
-from compare_period import compute_distribution, compute_level2_by_level1, compute_level3_by_level1_level2, find_xlsx_in_dir, get_db_mtime, extract_versions
-
 
 def _resolve_db_path(entry_path: str, domain: str) -> str:
     """返回某报告目录下包含该域数据的 DB 文件路径（空串表示无数据）。

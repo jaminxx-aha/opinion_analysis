@@ -21,7 +21,6 @@ import os
 import io
 import pandas as pd
 import logging
-
 from args import parse_args, load_config, resolve_columns
 from db_utils import _close_all_db
 from processor import prepare_data, run

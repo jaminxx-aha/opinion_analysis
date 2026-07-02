@@ -13,7 +13,6 @@ import argparse
 import logging
 from dataclasses import dataclass, field
 from typing import List
-
 from dotenv import load_dotenv
 from app_list import get_supported_apps, get_app_dir
 
@@ -69,8 +68,8 @@ def parse_args():
                         help="版本号列索引(从0开始, -1表示无版本号)")
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--domain", required=True, choices=["function", "business"],
-                        help="分类域: function=功能域/性能问题, business=业务域")
+    parser.add_argument("--domain", default="function", choices=["function", "business"],
+                        help="分类域: function=功能域/性能问题(默认), business=业务域")
     parser.add_argument("--retry", choices=["failed", "unknown"], default=None,
                         help="重试模式: failed=重试失败数据, unknown=重试未知问题数据")
     return parser.parse_args()

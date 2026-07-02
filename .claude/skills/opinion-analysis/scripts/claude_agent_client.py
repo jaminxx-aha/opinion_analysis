@@ -21,7 +21,6 @@ from claude_agent_sdk import (
 
 logger = logging.getLogger("classify_data")
 
-
 def _build_prompt(skill_name, desc):
     return (
         f"请使用「{skill_name}」skill 对以下抖音用户问题描述进行分类，"
