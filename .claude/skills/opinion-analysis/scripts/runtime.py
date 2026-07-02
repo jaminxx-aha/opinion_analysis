@@ -51,7 +51,7 @@ def extract_json(text):
     except json.JSONDecodeError:
         pass
     for pattern in [r'```json\s*(.*?)\s*```', r'```\s*(.*?)\s*```']:
-        for m in re.findall(pattern, text, re.DOTALL):
+        for m in re.findall(pattern, text, re.DOTALL | re.IGNORECASE):
             try:
                 return json.loads(m)
             except json.JSONDecodeError:

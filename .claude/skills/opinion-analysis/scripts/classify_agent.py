@@ -129,7 +129,7 @@ def _try_repair_json(text):
     # 先取出代码块或花括号内的 JSON 片段，再交给 json_repair
     candidate = None
     for pat in (r'```json\s*(.*?)\s*```', r'```\s*(.*?)\s*```'):
-        m = re.search(pat, text, re.DOTALL)
+        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
         if m:
             candidate = m.group(1)
             break

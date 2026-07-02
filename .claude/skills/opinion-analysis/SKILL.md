@@ -35,7 +35,7 @@ python <skill_path>/scripts/app_list.py
 | app_name | 应用名，从 excel 文件信息中获取，需要映射为应用列表中的值 |
 | problem_index | 问题描述列号 |
 | version_index | 版本号列号（无则不传） |
-| domain | 分类域：`function`=功能域/性能问题（默认），`business`=业务域。由用户选择本次分析哪个域 |
+| domain | 分类域：`function`=功能域/性能问题（默认），`business`=业务域。由用户选择本次分析哪个域，如果用户没有提供，则默认时功能域 |
 
 **注意**：若无法获取应用名和问题描述列号，或应用名无法映射到应用列表中，终止步骤！
 
