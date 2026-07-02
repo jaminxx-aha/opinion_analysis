@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""processor.py - Phase 2 数据准备 + Phase 3 执行分派
+"""processor.py - Phase 2 数据准备 + Phase 3 执行分派（仅 Claude Agent SDK 路径）
 
 依赖图（无循环）：
-  processor → classify_batch / classify_layered / classify_agent（顶部直接 import）
-  各策略 → db_utils / runtime / args / claude_agent_client（叶子，不反向 import processor）
-运行时状态与 LLM 调用已抽到 runtime.py，故 processor 可在顶部直接 import 策略模块。
+  processor → classify_agent → db_utils / runtime / claude_agent_client（叶子，不反向 import processor）
+运行时状态（输出目录/进度）与响应解析在 runtime.py。
 """
 
+import sys
+import os
 import sqlite3
 import concurrent.futures
 import logging
 
 import pandas as pd
 
-from args import setup_logging, MAX_DESC_LENGTH
-from db_utils import save_item, clean_desc, init_db, set_table, init_output_dir
+from args import setup_logging, MAX_DESC_LENGTH, load_reference
+from db_utils import save_item, clean_desc, init_db, set_table, init_output_dir, report_table, count_rows
 from runtime import set_output_dir
-from classify_batch import process_batch
-from classify_layered import process_item_layered
 from classify_agent import process_item_agent
 
 logger = logging.getLogger("classify_data")
@@ -25,16 +24,26 @@ logger = logging.getLogger("classify_data")
 
 # ========== Phase 2：数据准备 ==========
 
-def prepare_data(args, config, refs, df, problem_col, version_col, db_path, table):
-    """初始化输出目录/日志/DB，按 retry/续跑 选型构建待处理列表，过长项直接入库。
+def prepare_data(args, config, df, problem_col, version_col):
+    """加载分类参考库，初始化输出目录/日志/DB，按 retry/续跑 选型构建待处理列表，过长项直接入库。
 
-    返回 (all_data, ctx)：
-      all_data: [{num, desc}] 待送 LLM 的条目（过长已分离入库）
-      ctx: dict，含 total_all / max_id / too_long / mode_label，供 main 期末汇总
+    返回 (all_data, ctx, refs)：
+      all_data: [{num, desc}] 待送 agent 的条目（过长已分离入库）
+      ctx: dict，含 total_all / max_id / too_long / mode_label / db_path / table，供 main 期末汇总与 run
+      refs: 分类参考库（classification_tree 用于结果校验）
     """
     app_name = args.app_name
     output_dir = args.output_dir
 
+    # 加载分类树（agent 返回结果校验用）
+    refs = load_reference(app_name, args.domain)
+    if not refs:
+        logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
+    if not refs.get("classification"):
+        logger.error("无法加载 '%s' 域[%s]的分类知识库(classification文件缺失)", app_name, args.domain); sys.exit(1)
+
+    db_path = os.path.join(output_dir, "report.db")
+    table = report_table(args.domain)
     init_output_dir(args.excel_path, output_dir)
     setup_logging(output_dir)
     init_db(db_path, args.domain)
@@ -68,8 +77,8 @@ def prepare_data(args, config, refs, df, problem_col, version_col, db_path, tabl
         all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                     for i in filtered if (i + 1) in retry_ids]
 
-        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), 推理模式 %s, provider=%s, model=%s, temperature=%.1f",
-                    args.retry, failed_count, unknown_count, missing_count, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.reason_mode, config.provider, config.model, config.temperature)
+        logger.info("重试模式(%s): 失败%d条, 未知%d条, 缺失%d条, 共需重试%d条, 并发 %d (keys=%d, 每key=%d), skill=%s, model=%s",
+                    args.retry, failed_count, unknown_count, missing_count, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
 
         max_id = 0
         mode_label = f"重试-{args.retry}"
@@ -83,14 +92,14 @@ def prepare_data(args, config, refs, df, problem_col, version_col, db_path, tabl
         all_data = [{"num": i + 1, "desc": clean_desc(str(df.iloc[i][problem_col])) if not pd.isna(df.iloc[i][problem_col]) else ""}
                     for i in filtered if (i + 1) > max_id]
 
-        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), 推理模式 %s, provider=%s, model=%s, temperature=%.1f",
-                    len(filtered), max_id, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.reason_mode, config.provider, config.model, config.temperature)
+        logger.info("共 %d条, 已完成 %d条, 待处理 %d条, 并发 %d (keys=%d, 每key=%d), skill=%s, model=%s",
+                    len(filtered), max_id, len(all_data), config.total_concurrent, len(config.api_keys), config.max_concurrent, config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
 
         mode_label = "续跑"
 
     total_all = len(filtered)
 
-    # 描述过长(超过 MAX_DESC_LENGTH 字)的项直接入库status=3, 不送LLM
+    # 描述过长(超过 MAX_DESC_LENGTH 字)的项直接入库status=3, 不送 agent
     too_long = 0
     too_long_items = [item for item in all_data if len(item["desc"]) > MAX_DESC_LENGTH]
     all_data = [item for item in all_data if len(item["desc"]) <= MAX_DESC_LENGTH]
@@ -101,11 +110,8 @@ def prepare_data(args, config, refs, df, problem_col, version_col, db_path, tabl
     if too_long_items:
         logger.info("描述过长跳过分类: %d条", len(too_long_items))
 
-    if config.is_agent:
-        logger.info("Agent provider: skill=%s, key数%d, 每key并发%d, 总并发%d",
-                    config.agent_cfg["skill_name"], len(config.api_keys), config.max_concurrent, config.total_concurrent)
-    else:
-        logger.info("API key配置: %d个key, 每key最大并发%d, 总并发%d", len(config.api_keys), config.max_concurrent, config.total_concurrent)
+    logger.info("Agent: skill=%s, key数%d, 每key并发%d, 总并发%d",
+                config.agent_cfg["skill_name"], len(config.api_keys), config.max_concurrent, config.total_concurrent)
     if len(config.api_keys) > 1:
         logger.info("key列表(前缀): %s", ", ".join(k[:8] + "..." for k in config.api_keys))
 
@@ -114,44 +120,34 @@ def prepare_data(args, config, refs, df, problem_col, version_col, db_path, tabl
         "max_id": max_id,
         "too_long": too_long,
         "mode_label": mode_label,
+        "db_path": db_path,
+        "table": table,
     }
-    return all_data, ctx
+    return all_data, ctx, refs
 
 
 # ========== Phase 3：执行分派 ==========
 
-def run(config, all_data, app_name, problem_col, df, refs, db_path, version_col, domain):
-    """按 provider/reason_mode 分派单次推理调用，并发执行，返回 (success, unknown, failed)。"""
-    if config.is_agent:
-        run_fn = process_item_agent
-        # agent skill 单条→单个JSON，一次性给出完整编码，每条问题一个任务
-        tasks = all_data
-    elif config.reason_mode == "layered":
-        run_fn = process_item_layered
-        # 逐层模式: 每条问题一个独立任务，忽略 batch_size
-        tasks = all_data
-    else:
-        run_fn = process_batch
-        # 批量模式: 按 batch_size 切批
-        tasks = [all_data[i:i + config.batch_size] for i in range(0, len(all_data), config.batch_size)]
+def run(config, all_data, app_name, problem_col, df, refs, ctx, version_col, domain):
+    """并发执行 agent 分类，每条问题一次 agent 调用，结束后打印期末汇总。
+
+    ctx 须含 db_path / table / total_all / max_id / too_long / mode_label。
+    """
+    db_path = ctx["db_path"]
+    run_fn = process_item_agent
+    # agent skill 单条→单个JSON，一次性给出完整编码，每条问题一个任务
+    tasks = all_data
 
     def _invoke(task, idx):
-        """按 provider 分派单次推理调用，返回 [(num, status)]。"""
-        if config.is_agent:
-            # 多 key 轮询：每个 task 用独立 cfg 副本注入对应 key，避免线程间共享可变状态
-            if config.api_keys:
-                cfg = dict(config.agent_cfg)
-                cfg["api_key"] = config.api_keys[idx % len(config.api_keys)]
-            else:
-                cfg = config.agent_cfg
-            return run_fn(task, app_name, problem_col, df, refs, db_path,
-                          cfg, len(all_data), version_col, domain)
-        assigned_key = config.api_keys[idx % len(config.api_keys)]
+        """分派单次 agent 调用，返回 [(num, status)]。"""
+        # 多 key 轮询：每个 task 用独立 cfg 副本注入对应 key，避免线程间共享可变状态
+        if config.api_keys:
+            cfg = dict(config.agent_cfg)
+            cfg["api_key"] = config.api_keys[idx % len(config.api_keys)]
+        else:
+            cfg = config.agent_cfg
         return run_fn(task, app_name, problem_col, df, refs, db_path,
-                      config.provider, assigned_key, config.base_url, config.model,
-                      config.max_tokens, config.max_retries, config.timeout,
-                      config.verify_ssl, config.disable_proxy, config.temperature,
-                      len(all_data), version_col, domain)
+                      cfg, len(all_data), version_col, domain)
 
     success = 0
     unknown = 0
@@ -165,9 +161,6 @@ def run(config, all_data, app_name, problem_col, df, refs, db_path, version_col,
             unknown += 1
         else:
             failed += 1
-
-    # 失败计数的单任务条数：batch 模式按 batch_size 计；agent/layered 每任务1条
-    fail_unit = config.batch_size if (not config.is_agent and config.reason_mode == "batch") else 1
 
     if config.total_concurrent == 1:
         for i, task in enumerate(tasks):
@@ -185,6 +178,13 @@ def run(config, all_data, app_name, problem_col, df, refs, db_path, version_col,
                     for _, st in task_results:
                         _accumulate(st)
                 except Exception:
-                    failed += fail_unit
+                    failed += 1
 
-    return success, unknown, failed
+    # 期末汇总
+    cnt = count_rows(ctx["db_path"], ctx["table"])
+    total_all = ctx["total_all"]
+    db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
+    processed = (ctx["max_id"] if ctx["mode_label"] == "续跑" else 0) + success + unknown + failed + ctx["too_long"]
+    logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d, 过长%d) | %s",
+                ctx["mode_label"], processed, total_all, success, unknown, failed, ctx["too_long"], db_status)
+    print(f"分类完成({ctx['mode_label']}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}, 过长{ctx['too_long']}) | {db_status}")

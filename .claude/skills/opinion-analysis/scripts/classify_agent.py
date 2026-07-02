@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """classify_agent.py - 通过 Claude Agent SDK（抖音舆情 skill）做单条分类推理
 
-LLM_PROVIDER=claude-agent-sdk 时由 classify_data.main 分派调用。每条问题描述
-发起一次 agent 调用，skill 一次性返回完整分类编码 {result, reason}，
-因此 batch/layered 两种 reason mode 在本 provider 下退化为"每条一次 agent 调用"。
+唯一的推理路径：每条问题描述发起一次 agent 调用，skill 一次性返回完整分类编码
+{result, reason}，每条问题一个任务。
 
 共享逻辑（save_item 在 db_utils；extract_json/get_output_dir/incr_progress 在 runtime）
-通过顶层 import 引入，与 classify_batch/layered 同级。
+通过顶层 import 引入。
 """
 
 import os

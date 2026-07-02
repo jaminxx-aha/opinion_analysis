@@ -37,8 +37,8 @@ def load_classification_tree(app_name, domain="function"):
     if not app_dir:
         logger.error("应用 '%s' 不在支持列表中, 无法加载分类字典", app_name)
         return None
-    files = DOMAIN_FILES.get(domain, DOMAIN_FILES["function"])
-    classification_path = os.path.join(app_dir, files["classification"])
+    filename = DOMAIN_FILES.get(domain, DOMAIN_FILES["function"])
+    classification_path = os.path.join(app_dir, filename)
     if not os.path.isfile(classification_path):
         logger.error("分类文件不存在: %s", classification_path)
         return None

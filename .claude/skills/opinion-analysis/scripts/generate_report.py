@@ -11,6 +11,10 @@
 import sys
 import os
 import io
+import json
+import sqlite3
+import re
+from datetime import datetime
 
 # Windows下强制UTF-8输出
 if sys.platform == 'win32':
@@ -18,11 +22,6 @@ if sys.platform == 'win32':
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     if hasattr(sys.stderr, 'buffer') and (not isinstance(sys.stderr, io.TextIOWrapper) or sys.stderr.encoding.lower() != 'utf-8'):
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
-import json
-import sqlite3
-import re
-from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
@@ -388,6 +387,16 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
 
+    # 打印报告摘要（供调用方与命令行直接运行复用）
+    print(f"\n报告已生成: {output_path}")
+    print(f"包含域: {', '.join(domains_data.keys())}")
+    print("| 属性 | 值 |")
+    print("|------|-----|")
+    print(f"| 总数据 | {total} |")
+    print(f"| 已分类 | {classified} |")
+    print(f"| 未知问题 | {unknown_issue} |")
+    print(f"| 推理失败 | {infer_failed} |")
+
     return {
         'path': output_path,
         'domains': list(domains_data.keys()),
@@ -410,7 +419,9 @@ def main():
     template_path = sys.argv[3] if len(sys.argv) > 3 else None
 
     result = generate_report(input_path, output_path, template_path)
-    print(f"报告已生成: {result['path']}")
+    if not result:
+        print("报告生成失败")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

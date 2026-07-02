@@ -22,8 +22,8 @@ import io
 import pandas as pd
 import logging
 
-from args import parse_args, load_config, load_reference, resolve_columns
-from db_utils import init_db, report_table, count_rows, _close_all_db
+from args import parse_args, load_config, resolve_columns
+from db_utils import _close_all_db
 from processor import prepare_data, run
 from generate_report import generate_report
 
@@ -40,50 +40,24 @@ sys.path.insert(0, SCRIPT_DIR)
 logger = logging.getLogger("classify_data")
 
 def main():
-    # Phase 1：参数、环境变量、配置、参考库
+    # Phase 1：参数、环境变量、配置
     args = parse_args()
     config = load_config(args)
-    refs = load_reference(args.app_name, args.domain)
-    if not refs:
-        logger.error("无法加载 '%s' 的知识库", args.app_name); sys.exit(1)
-    if not refs.get("classification"):
-        logger.error("无法加载 '%s' 域[%s]的分类知识库(classification文件缺失)", args.app_name, args.domain); sys.exit(1)
 
+    # Phase 2：初始化 + 数据准备 + 过长入库（含加载分类参考库、建库建表）
     df = pd.read_excel(args.excel_path)
     problem_col, version_col = resolve_columns(args, df)
 
-    db_path = os.path.join(args.output_dir, "report.db")
-    table = report_table(args.domain)
-    init_db(db_path, args.domain)
+    all_data, ctx, refs = prepare_data(args, config, df, problem_col, version_col)
 
-    # Phase 2：初始化 + 数据准备 + 过长入库
-    all_data, ctx = prepare_data(args, config, refs, df, problem_col, version_col, db_path, table)
+    # Phase 3：执行任务 + 数据落盘 + 期末汇总（汇总打印在 run 内）
+    run(config, all_data, args.app_name, problem_col, df, refs, ctx, version_col, args.domain)
 
-    # Phase 3：执行任务 + 数据落盘
-    success, unknown, failed = run(config, all_data, args.app_name, problem_col, df, refs, db_path, version_col, args.domain)
-
-    # 期末汇总
-    cnt = count_rows(db_path, table)
-    total_all = ctx["total_all"]
-    db_status = "验证通过" if cnt == total_all else f"警告: DB {cnt}条, 期望 {total_all}条"
-    processed = (ctx["max_id"] if ctx["mode_label"] == "续跑" else 0) + success + unknown + failed + ctx["too_long"]
-    logger.info("分类完成(%s): %d/%d条 (成功%d, 未知%d, 失败%d, 过长%d) | %s",
-                ctx["mode_label"], processed, total_all, success, unknown, failed, ctx["too_long"], db_status)
-    print(f"分类完成({ctx['mode_label']}): {processed}/{total_all}条 (成功{success}, 未知{unknown}, 失败{failed}, 过长{ctx['too_long']}) | {db_status}")
-
-    # Phase 4：报告生成（读 output_dir 下所有域 DB 合并双标签页）
+    # Phase 4：报告生成（读 output_dir 下所有域 DB 合并双标签页，摘要打印在 generate_report 内）
     report_html_path = os.path.join(args.output_dir, f"{os.path.splitext(os.path.basename(args.excel_path))[0]}_report.html")
     report = generate_report(args.output_dir, report_html_path)
     if report:
         logger.info("报告已生成: %s (包含域: %s)", report['path'], ",".join(report.get('domains', [])))
-        print(f"\n报告已生成: {report['path']}")
-        print(f"包含域: {', '.join(report.get('domains', []))}")
-        print(f"| 属性 | 值 |")
-        print(f"|------|-----|")
-        print(f"| 总数据 | {report['total']} |")
-        print(f"| 已分类 | {report['classified']} |")
-        print(f"| 未知问题 | {report['unknown_issue']} |")
-        print(f"| 推理失败 | {report['infer_failed']} |")
     else:
         logger.warning("报告生成失败")
 

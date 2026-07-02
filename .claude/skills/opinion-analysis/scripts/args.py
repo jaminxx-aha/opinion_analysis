@@ -12,7 +12,7 @@ import re
 import argparse
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 from dotenv import load_dotenv
 from app_list import get_supported_apps, get_app_dir
@@ -97,99 +97,55 @@ def resolve_columns(args, df):
 
 @dataclass
 class Config:
-    """本次运行的完整配置（Phase 1 产出，Phase 2/3 消费）。"""
-    is_agent: bool
-    reason_mode: str
-    provider: str
-    model: Optional[str]
+    """本次运行的完整配置（Phase 1 产出，Phase 2/3 消费）。仅 Claude Agent SDK 一种推理路径。"""
     api_keys: List[str]
-    base_url: Optional[str]
     max_concurrent: int
     total_concurrent: int
-    max_tokens: int
-    batch_size: int
-    max_retries: int
-    timeout: int
-    temperature: float
-    verify_ssl: bool
-    disable_proxy: bool
-    agent_cfg: Optional[dict] = None
+    agent_cfg: dict   # skill_dir/skill_name/model/api_key/base_url/max_turns/timeout/max_retries
 
 
 def load_config(args):
-    """读环境变量、判定 provider/reason_mode、构建 agent_cfg、校验，返回 Config。"""
+    """读环境变量、构建 agent_cfg、校验，返回 Config。仅支持 Claude Agent SDK 路径。"""
     _load_env()
 
-    provider = os.environ.get("LLM_PROVIDER", "openai")
     max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
-    max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
-    batch_size = int(os.environ.get("LLM_BATCH_SIZE", "1"))
     max_retries = int(os.environ.get("LLM_MAX_RETRIES", "3"))
-    timeout = int(os.environ.get("LLM_TIMEOUT", "30"))
-    temperature = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
-    verify_ssl = os.environ.get("LLM_VERIFY_SSL", "true").lower() in ("true", "1", "yes")
-    disable_proxy = os.environ.get("LLM_DISABLE_PROXY", "false").lower() in ("true", "1", "yes")
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # Claude Agent SDK provider: 走 headless agent 加载抖音舆情 skill，单条问题→单个JSON，
-    # skill 一次性返回完整编码，故 batch/layered 两种 reason mode 在此退化为每条一次 agent 调用。
-    is_agent = (provider == "claude-agent-sdk")
-    agent_cfg = None
-    if is_agent:
-        reason_mode = "agent"
-        agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
-        agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
-        # model / api_key / base_url 复用 LLM_*（与 openai 路径同一套，不再单独 LLM_AGENT_*）
-        model = os.environ.get("LLM_MODEL") or None
-        # 多 key 支持：逗号分隔 → 列表，按 task 轮询分配给 worker（与 openai 路径一致）
-        api_key_raw = os.environ.get("LLM_API_KEY", "").strip()
-        api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()] if api_key_raw else []
-        base_url = os.environ.get("LLM_BASE_URL", "").strip() or None
-        agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
-        # agent 需多轮读 skill 的 reference 文件做逐层分类，30s 默认不够，单独给更长超时
-        agent_timeout = int(os.environ.get("LLM_AGENT_TIMEOUT", "120"))
-        if not agent_skill_dir:
-            logger.error("LLM_PROVIDER=claude-agent-sdk 需要配置 LLM_AGENT_SKILL_DIR (含 .claude/skills/<skill>/SKILL.md 的项目根目录)"); sys.exit(1)
-        skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
-        if not os.path.isfile(skill_md):
-            logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
-        # agent 支持多 key 轮询；未配 API key 时回退到 claude CLI 自身的 OAuth 登录
-        total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
-        agent_cfg = {
-            "skill_dir": agent_skill_dir,
-            "skill_name": agent_skill_name,
-            "model": model,
-            "api_key": api_keys[0] if api_keys else None,
-            "base_url": base_url,
-            "max_turns": agent_max_turns,
-            "timeout": agent_timeout,
-            "max_retries": max_retries,
-        }
-        logger.info("推理模式: Claude Agent SDK (skill=%s, model=%s, skill_dir=%s, 并发%d)",
-                    agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
-    else:
-        # 推理模式: batch=批量一次性推导(受 LLM_BATCH_SIZE 控制); layered=逐层串行推导(LLM_BATCH_SIZE 不生效)
-        reason_mode = os.environ.get("LLM_REASON_MODE", "batch").lower()
-        if reason_mode not in ("batch", "layered"):
-            logger.warning("未知 LLM_REASON_MODE=%s, 回退为 batch", reason_mode)
-            reason_mode = "batch"
-        if reason_mode == "layered":
-            logger.info("推理模式: 逐层推导(layered), LLM_BATCH_SIZE 不生效, 每条问题按一级→二级→三级串行推导")
-        else:
-            logger.info("推理模式: 批量推导(batch), 批量大小 %d", batch_size)
+    # 走 headless Claude Code agent 加载抖音舆情 skill，单条问题→单个 JSON，
+    # skill 一次性返回完整分类编码。
+    agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
+    agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
+    model = os.environ.get("LLM_MODEL") or None
+    # 多 key 支持：逗号分隔 → 列表，按 task 轮询分配给 worker
+    api_key_raw = os.environ.get("LLM_API_KEY", "").strip()
+    api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()] if api_key_raw else []
+    base_url = os.environ.get("LLM_BASE_URL", "").strip() or None
+    agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
+    # agent 需多轮读 skill 的 reference 文件做逐层分类，单独给更长超时
+    agent_timeout = int(os.environ.get("LLM_AGENT_TIMEOUT", "120"))
 
-        model = os.environ.get("LLM_MODEL")
-        api_key_raw = os.environ.get("LLM_API_KEY")
-        if not api_key_raw:
-            logger.error("需要 LLM_API_KEY 环境变量"); sys.exit(1)
-        api_keys = [k.strip() for k in api_key_raw.split(",") if k.strip()]
-        if not api_keys:
-            logger.error("需要 LLM_API_KEY 环境变量 (解析后无有效key)"); sys.exit(1)
-        base_url = os.environ.get("LLM_BASE_URL")
-        total_concurrent = len(api_keys) * max_concurrent
-        if not model:
-            logger.error("需要 LLM_MODEL 环境变量"); sys.exit(1)
+    if not agent_skill_dir:
+        logger.error("需要配置 LLM_AGENT_SKILL_DIR (含 .claude/skills/<skill>/SKILL.md 的项目根目录)"); sys.exit(1)
+    skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
+    if not os.path.isfile(skill_md):
+        logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
+
+    # 未配 API key 时回退到 claude CLI 自身的 OAuth 登录
+    total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
+    agent_cfg = {
+        "skill_dir": agent_skill_dir,
+        "skill_name": agent_skill_name,
+        "model": model,
+        "api_key": api_keys[0] if api_keys else None,
+        "base_url": base_url,
+        "max_turns": agent_max_turns,
+        "timeout": agent_timeout,
+        "max_retries": max_retries,
+    }
+    logger.info("推理模式: Claude Agent SDK (skill=%s, model=%s, skill_dir=%s, 并发%d)",
+                agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
 
     # app_name 合法性校验
     if args.app_name not in get_supported_apps():
@@ -198,21 +154,9 @@ def load_config(args):
         sys.exit(1)
 
     return Config(
-        is_agent=is_agent,
-        reason_mode=reason_mode,
-        provider=provider,
-        model=model,
         api_keys=api_keys,
-        base_url=base_url,
         max_concurrent=max_concurrent,
         total_concurrent=total_concurrent,
-        max_tokens=max_tokens,
-        batch_size=batch_size,
-        max_retries=max_retries,
-        timeout=timeout,
-        temperature=temperature,
-        verify_ssl=verify_ssl,
-        disable_proxy=disable_proxy,
         agent_cfg=agent_cfg,
     )
 
@@ -300,49 +244,30 @@ def validate_classification(classification, code_to_path):
     return tuple(classification) in valid_paths
 
 
-# 各域对应的知识库文件名（除共享的 info.md 外）。
-# function/business 域分别使用 *_function.md / *_business.md。
+# 各域对应的分类树文件名。agent 推理由 skill 自带 references 完成，
+# 这里只加载分类树用于对 agent 返回的结果做编码校验（match_result_to_code）。
 DOMAIN_FILES = {
-    "function": {
-        "info": "info.md",
-        "examples": "examples_function.md",
-        "error_examples": "error_examples_function.md",
-        "classification": "classification_function.md",
-        "examples_layered": "examples_layered_function.md",
-        "error_examples_layered": "error_examples_layered_function.md",
-    },
-    "business": {
-        "info": "info.md",
-        "examples": "examples_business.md",
-        "error_examples": "error_examples_business.md",
-        "classification": "classification_business.md",
-        "examples_layered": "examples_layered_business.md",
-        "error_examples_layered": "error_examples_layered_business.md",
-    },
+    "function": "classification_function.md",
+    "business": "classification_business.md",
 }
 
 
 def load_reference(app_name, domain="function"):
+    """加载应用某域的分类树，返回 {classification_tree, classification}。
+    agent 推理由 skill 自带 references 完成，Python 侧只保留分类树做结果校验。
+    """
     app_dir = get_app_dir(app_name)
     if not app_dir:
         return None
-    files = DOMAIN_FILES.get(domain, DOMAIN_FILES["function"])
-    refs = {}
-    # info.md 与 examples_*.md / error_examples_*.md 保持 markdown 原文
-    # 批量模式用 examples/error_examples；逐层模式用 examples_layered/error_examples_layered
-    for key in ("info", "examples", "error_examples", "examples_layered", "error_examples_layered"):
-        fpath = os.path.join(app_dir, files[key])
-        refs[key] = open(fpath, "r", encoding="utf-8").read() if os.path.isfile(fpath) else ""
-
-    # 分类文件: 解析编号大纲生成编码→路径字典
-    classification_path = os.path.join(app_dir, files["classification"])
+    classification_path = os.path.join(app_dir, DOMAIN_FILES.get(domain, DOMAIN_FILES["function"]))
     if os.path.isfile(classification_path):
         with open(classification_path, "r", encoding="utf-8") as f:
             md_content = f.read()
-        refs["classification_tree"] = parse_classification_md(md_content)  # 编码→路径字典(用于校验和转换)
-        refs["classification"] = md_content  # md原文(用于prompt注入)
-    else:
-        refs["classification_tree"] = {"0": ["未知问题"]}
-        refs["classification"] = ""
-
-    return refs
+        return {
+            "classification_tree": parse_classification_md(md_content),  # 编码→路径字典(用于校验)
+            "classification": md_content,
+        }
+    return {
+        "classification_tree": {"0": ["未知问题"]},
+        "classification": "",
+    }
