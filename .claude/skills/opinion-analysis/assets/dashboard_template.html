@@ -23,7 +23,7 @@
   --transition: .18s ease;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+.wrap { max-width: 1500px; margin: 24px auto; padding: 0 24px; }
 
 /* ─── header ─── */
 .hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
@@ -283,17 +283,22 @@ let trendFilters = { level1: "", level2: "", level3: "" };
 let trendVersion = "";
 let trendMode = "count";
 
+// 域感知辅助：功能域用 full_path 切分，业务域用 business_classification 单层
+function clsLevels(item) { const cls = item.classification || {}; if (!cls || !cls.full_path) return []; return cls.full_path.split("-").filter(Boolean); }
+function clsBiz(item) { const cls = item.classification || {}; return (cls && cls.business_classification) || ""; }
+function distKey() { return activeDomain === "business" ? "business_dist" : "level1_dist"; }
 // 从所有报告汇总分类选项
 function getTrendLevel1Options() {
   const keys = {};
   reports.forEach(r => {
     const d = comparisonData[r.name];
-    Object.keys(d.level1_dist).forEach(k => { keys[k] = true; });
+    Object.keys(d[distKey()]).forEach(k => { keys[k] = true; });
   });
   return sortedUnique(Object.keys(keys));
 }
 
 function getTrendLevel2Options(l1) {
+  if (activeDomain === "business") return [];
   const keys = {};
   reports.forEach(r => {
     const d = comparisonData[r.name];
@@ -303,6 +308,7 @@ function getTrendLevel2Options(l1) {
 }
 
 function getTrendLevel3Options(l1, l2) {
+  if (activeDomain === "business") return [];
   const keys = {};
   reports.forEach(r => {
     const d = comparisonData[r.name];
@@ -350,11 +356,14 @@ function buildTrendData() {
     // 分类筛选
     if (trendFilters.level1) {
       list = list.filter(item => {
-        const cls = item.classification || {};
         if (item.status === "classified") {
-          if (trendFilters.level1 !== cls.level1) return false;
-          if (trendFilters.level2 && trendFilters.level2 !== cls.level2) return false;
-          if (trendFilters.level3 && trendFilters.level3 !== cls.level3) return false;
+          if (activeDomain === "business") {
+            return clsBiz(item) === trendFilters.level1;
+          }
+          const lv = clsLevels(item);
+          if (trendFilters.level1 !== (lv[0] || "")) return false;
+          if (trendFilters.level2 && trendFilters.level2 !== (lv[1] || "")) return false;
+          if (trendFilters.level3 && trendFilters.level3 !== (lv[2] || "")) return false;
           return true;
         }
         if (item.status === "unknown_issue" && trendFilters.level1 === "未知问题") return true;
@@ -565,13 +574,17 @@ function initCmpData() {
   cmpDetailsA = dataA.details;
   cmpDetailsB = dataB.details;
   cmpAllVersions = sortedUnique(dataA.versions.concat(dataB.versions));
-  cmpLevel1DataOrig = buildComparison(dataA.level1_dist, dataB.level1_dist, cmpTotalA, cmpTotalB);
-  cmpLevel2DataOrig = buildNestedComparison(dataA.level2_dist, dataB.level2_dist, cmpTotalA, cmpTotalB);
+  const l1dA = activeDomain === "business" ? dataA.business_dist : dataA.level1_dist;
+  const l1dB = activeDomain === "business" ? dataB.business_dist : dataB.level1_dist;
+  cmpLevel1DataOrig = buildComparison(l1dA, l1dB, cmpTotalA, cmpTotalB);
+  cmpLevel2DataOrig = activeDomain === "business" ? {} : buildNestedComparison(dataA.level2_dist, dataB.level2_dist, cmpTotalA, cmpTotalB);
   cmpLevel3DataOrig = {};
-  const l1s3 = sortedUnique(Object.keys(dataA.level3_dist).concat(Object.keys(dataB.level3_dist)));
-  l1s3.forEach(l1 => {
-    cmpLevel3DataOrig[l1] = buildNestedComparison(dataA.level3_dist[l1] || {}, dataB.level3_dist[l1] || {}, cmpTotalA, cmpTotalB);
-  });
+  if (activeDomain !== "business") {
+    const l1s3 = sortedUnique(Object.keys(dataA.level3_dist).concat(Object.keys(dataB.level3_dist)));
+    l1s3.forEach(l1 => {
+      cmpLevel3DataOrig[l1] = buildNestedComparison(dataA.level3_dist[l1] || {}, dataB.level3_dist[l1] || {}, cmpTotalA, cmpTotalB);
+    });
+  }
   cmpLevel1Data = cmpLevel1DataOrig;
   cmpLevel2Data = cmpLevel2DataOrig;
   cmpLevel3Data = cmpLevel3DataOrig;
@@ -589,10 +602,16 @@ function initCmpData() {
 // ─── dynamic recomputation by version ───
 function countByLevel(list, level) {
   const c = {};
+  const depth = level === "level1" ? 1 : level === "level2" ? 2 : 3;
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const v = item.classification[level] || "";
-      if (v) c[v] = (c[v] || 0) + 1;
+    if (activeDomain === "business") {
+      if (level !== "level1") return;
+      if (item.status === "classified") { const v = clsBiz(item); if (v) c[v] = (c[v] || 0) + 1; }
+      return;
+    }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= depth) { c[lv[depth - 1]] = (c[lv[depth - 1]] || 0) + 1; }
     } else if (item.status === "unknown_issue" && level === "level1") {
       c["未知问题"] = (c["未知问题"] || 0) + 1;
     }
@@ -601,22 +620,24 @@ function countByLevel(list, level) {
 }
 
 function countByLevel2(list) {
+  if (activeDomain === "business") return {};
   const c = {};
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "";
-      if (l1 && l2) { if (!c[l1]) c[l1] = {}; c[l1][l2] = (c[l1][l2] || 0) + 1; }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= 2) { const l1 = lv[0], l2 = lv[1]; if (!c[l1]) c[l1] = {}; c[l1][l2] = (c[l1][l2] || 0) + 1; }
     }
   });
   return c;
 }
 
 function countByLevel3(list) {
+  if (activeDomain === "business") return {};
   const c = {};
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "", l3 = item.classification.level3 || "";
-      if (l1 && l2 && l3) { if (!c[l1]) c[l1] = {}; if (!c[l1][l2]) c[l1][l2] = {}; c[l1][l2][l3] = (c[l1][l2][l3] || 0) + 1; }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= 3) { const l1 = lv[0], l2 = lv[1], l3 = lv[2]; if (!c[l1]) c[l1] = {}; if (!c[l1][l2]) c[l1][l2] = {}; c[l1][l2][l3] = (c[l1][l2][l3] || 0) + 1; }
     }
   });
   return c;

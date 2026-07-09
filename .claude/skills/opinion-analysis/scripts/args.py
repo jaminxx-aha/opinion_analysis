@@ -68,8 +68,6 @@ def parse_args():
                         help="版本号列索引(从0开始, -1表示无版本号)")
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--domain", default="function", choices=["function", "business"],
-                        help="分类域: function=功能域/性能问题(默认), business=业务域")
     return parser.parse_args()
 
 
@@ -241,30 +239,67 @@ def validate_classification(classification, code_to_path):
     return tuple(classification) in valid_paths
 
 
-# 各域对应的分类树文件名。agent 推理由 skill 自带 references 完成，
+# 功能域分类树文件名。agent 推理由 skill 自带 references 完成，
 # 这里只加载分类树用于对 agent 返回的结果做编码校验（match_result_to_code）。
-DOMAIN_FILES = {
-    "function": "classification_function.md",
-    "business": "classification_business.md",
-}
+FUNCTION_TREE_FILE = "classification_function.md"
+# 功能域路径(-分隔) → 业务页面标签 的映射文件（list[{key:val}]）。
+FUNCTION_TO_BUSINESS_FILE = "classification_function_to_business.json"
 
 
-def load_reference(app_name, domain="function"):
-    """加载应用某域的分类树，返回 {classification_tree, classification}。
-    agent 推理由 skill 自带 references 完成，Python 侧只保留分类树做结果校验。
+def load_function_to_business(app_name):
+    """加载功能域→业务页面标签映射，返回 {功能路径: 页面标签} dict。文件缺失时返回空 dict。"""
+    app_dir = get_app_dir(app_name)
+    if not app_dir:
+        return {}
+    path = os.path.join(app_dir, FUNCTION_TO_BUSINESS_FILE)
+    if not os.path.isfile(path):
+        logger.warning("未找到功能→业务映射文件 %s，business_classification 将回退为「其它」", path)
+        return {}
+    import json
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    mapping = {}
+    for entry in raw:
+        if isinstance(entry, dict):
+            for k, v in entry.items():
+                mapping[k] = v
+    return mapping
+
+
+def derive_business_classification(classification, status, func_to_business):
+    """由功能域分类结果派生业务页面标签。
+
+    status 0 且非未知 → 按 full_path(-分隔) 查映射，缺失回退「其它」；
+    status 1(未知问题) → 映射中的「未知问题」(= 其它)；
+    status 2/3 → 空串（不参与业务域统计）。
+    """
+    if not func_to_business:
+        return "" if status in (2, 3) else "其它"
+    if status == 0 and classification and classification[0] != "未知问题":
+        return func_to_business.get("-".join(classification), "其它")
+    if status == 1:
+        return func_to_business.get("未知问题", "其它")
+    return ""
+
+
+def load_reference(app_name):
+    """加载应用的功能域分类树 + 功能→业务映射，返回 {classification_tree, classification, func_to_business}。
+    agent 推理由 skill 自带 references 完成，Python 侧只保留分类树做结果校验，并附带映射用于派生业务域。
     """
     app_dir = get_app_dir(app_name)
     if not app_dir:
         return None
-    classification_path = os.path.join(app_dir, DOMAIN_FILES.get(domain, DOMAIN_FILES["function"]))
+    classification_path = os.path.join(app_dir, FUNCTION_TREE_FILE)
     if os.path.isfile(classification_path):
         with open(classification_path, "r", encoding="utf-8") as f:
             md_content = f.read()
         return {
             "classification_tree": parse_classification_md(md_content),  # 编码→路径字典(用于校验)
             "classification": md_content,
+            "func_to_business": load_function_to_business(app_name),
         }
     return {
         "classification_tree": {"0": ["未知问题"]},
         "classification": "",
+        "func_to_business": load_function_to_business(app_name),
     }

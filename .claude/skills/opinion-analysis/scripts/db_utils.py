@@ -18,12 +18,15 @@ import pandas as pd
 logger = logging.getLogger("classify_data")
 
 
-def report_table(domain):
-    """域 → 表名。功能域/业务域分别落 report_function / report_business 表（同一 report.db）。"""
-    return f"report_{domain}"
+REPORT_TABLE = "report"
 
 
-# 建表 SQL 模板（按域生成表名：report_function / report_business）
+def report_table():
+    """统一单表 report（功能域分类 + 映射派生的业务域分类同表存储）。"""
+    return REPORT_TABLE
+
+
+# 建表 SQL：单 report 表。分类只存 full_path（- 分隔，报告按分隔符切分）+ business_classification（映射派生）。
 _DB_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS {table} (
     id INTEGER PRIMARY KEY,
@@ -31,12 +34,8 @@ CREATE TABLE IF NOT EXISTS {table} (
     problem TEXT,
     status INTEGER DEFAULT 1,
     cls_app TEXT,
-    level1 TEXT,
-    level2 TEXT,
-    level3 TEXT,
-    level4 TEXT,
-    level5 TEXT,
     full_path TEXT,
+    business_classification TEXT,
     reasoning TEXT,
     raw_data TEXT,
     version TEXT DEFAULT ''
@@ -44,21 +43,20 @@ CREATE TABLE IF NOT EXISTS {table} (
 """
 
 
-def init_db(db_path, domain):
-    """初始化单库 report.db，为指定域创建 report_<domain> 表。"""
-    table = report_table(domain)
+def init_db(db_path):
+    """初始化单库 report.db，建 report 表；兼容旧库补齐新列。"""
+    table = REPORT_TABLE
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute(_DB_TABLE_SQL.format(table=table))
-    # 兼容旧DB：自动添加缺失的 version 列
+    # 兼容旧DB：自动添加缺失的 full_path / business_classification 列
     cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if 'full_path' not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN full_path TEXT")
+    if 'business_classification' not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN business_classification TEXT")
     if 'version' not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN version TEXT DEFAULT ''")
-    # 兼容旧DB：自动添加缺失的 level4/level5 列（分类树最深 5 级）
-    if 'level4' not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN level4 TEXT")
-    if 'level5' not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN level5 TEXT")
     conn.commit()
     conn.close()
 
@@ -143,8 +141,8 @@ def clean_desc(text):
     return text
 
 
-# 当前域对应的表名（report_function / report_business），由 prepare_data 设置，供 save_item 使用
-_TABLE = "report_function"
+# 当前表名（统一 report），由 prepare_data 设置，供 save_item/update_item 使用
+_TABLE = REPORT_TABLE
 
 
 def set_table(table):
@@ -162,47 +160,45 @@ def count_rows(db_path, table):
         conn.close()
 
 
-def _levels(classification):
-    """由分类名称列表算出 level1~5 与 full_path（供 save_item / update_item 复用）。"""
-    l1 = classification[0]
-    l2 = classification[1] if len(classification) >= 2 else ""
-    l3 = classification[2] if len(classification) >= 3 else ""
-    l4 = classification[3] if len(classification) >= 4 else ""
-    l5 = classification[4] if len(classification) >= 5 else ""
-    return l1, l2, l3, l4, l5, ".".join(classification)
+def _full_path(classification):
+    """由分类名称列表算出 full_path（- 分隔）。供 save_item / update_item 复用。"""
+    return "-".join(classification)
 
 
-def update_item(num, classification, reason, app_name, db_path, status):
-    """UPDATE 已有行的分类字段（status/cls_app/level1-5/full_path/reasoning），
+def update_item(num, classification, reason, app_name, db_path, status, business_classification=""):
+    """UPDATE 已有行的分类字段（status/cls_app/full_path/business_classification/reasoning），
     保留 problem/raw_data/version 不变。用于重试场景：行已存在，只需改分类结果。
     status: 0=成功, 1=未知问题, 2=失败, 3=描述过长
+    business_classification: 功能域→业务域映射派生的页面标签（status 2/3 传空串）
     """
     try:
         conn = _get_db_conn(db_path)
         cursor = conn.cursor()
         t = _TABLE
         if status == 0 and classification and classification[0] != "未知问题":
-            l1, l2, l3, l4, l5, fp = _levels(classification)
-            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
-                           (status, app_name, l1, l2, l3, l4, l5, fp, reason, num))
+            fp = _full_path(classification)
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, full_path=?, business_classification=?, reasoning=? WHERE id=?",
+                           (status, app_name, fp, business_classification, reason, num))
         elif status == 1:
-            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
-                           (status, app_name, "未知问题", "", "", "", "", "未知问题", reason, num))
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, full_path=?, business_classification=?, reasoning=? WHERE id=?",
+                           (status, app_name, "未知问题", business_classification, reason, num))
         elif status == 3:
-            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, level1=?, level2=?, level3=?, level4=?, level5=?, full_path=?, reasoning=? WHERE id=?",
-                           (status, app_name, "描述过长", "", "", "", "", "描述过长", reason, num))
+            cursor.execute(f"UPDATE {t} SET status=?, cls_app=?, full_path=?, business_classification=?, reasoning=? WHERE id=?",
+                           (status, app_name, "描述过长", business_classification, reason, num))
         else:
             cursor.execute(f"UPDATE {t} SET status=?, reasoning=? WHERE id=?",
                            (status, reason, num))
         conn.commit()
         status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
-        logger.info("行%d 更新成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
+        logger.info("行%d 更新成功, 分类: %s, 业务: %s, 推理: %s, 状态: %s", num, "-".join(classification) if classification else "无", business_classification or "-", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 更新失败: %s", num, e)
 
 
-def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None):
-    """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长"""
+def save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col=None, business_classification=""):
+    """status: 0=成功, 1=未知问题, 2=失败, 3=描述过长
+    business_classification: 功能域→业务域映射派生的页面标签（status 2/3 传空串）
+    """
     try:
         conn = _get_db_conn(db_path)
         cursor = conn.cursor()
@@ -212,26 +208,20 @@ def save_item(num, classification, reason, app_name, problem_col, df, db_path, s
         version = str(row[version_col]) if version_col and not pd.isna(row[version_col]) else ""
         t = _TABLE
         if status == 0 and classification and classification[0] != "未知问题":
-            l1 = classification[0]
-            l2 = classification[1] if len(classification) >= 2 else ""
-            l3 = classification[2] if len(classification) >= 3 else ""
-            l4 = classification[3] if len(classification) >= 4 else ""
-            l5 = classification[4] if len(classification) >= 5 else ""
-            # full_path 保留完整深层路径（分类树最深 5 级）；level1~5 列拆分存储各级分类名
-            fp = ".".join(classification)
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, l1, l2, l3, l4, l5, fp, reason, raw_json, version))
+            fp = _full_path(classification)
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,full_path,business_classification,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, fp, business_classification, reason, raw_json, version))
         elif status == 1:
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "未知问题", "", "", "", "", "未知问题", reason, raw_json, version))
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,full_path,business_classification,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "未知问题", business_classification, reason, raw_json, version))
         elif status == 3:
-            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,level1,level2,level3,level4,level5,full_path,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                           (num, app_name, problem, status, app_name, "描述过长", "", "", "", "", "描述过长", reason, raw_json, version))
+            cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,cls_app,full_path,business_classification,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                           (num, app_name, problem, status, app_name, "描述过长", business_classification, reason, raw_json, version))
         else:
             cursor.execute(f"INSERT OR REPLACE INTO {t} (id,app,problem,status,reasoning,raw_data,version) VALUES (?,?,?,?,?,?,?)",
                            (num, app_name, problem, status, reason, raw_json, version))
         conn.commit()
         status_label = {0: "成功", 1: "未知问题", 2: "失败", 3: "描述过长"}
-        logger.info("行%d 入库成功, 分类: %s, 推理: %s, 状态: %s", num, ".".join(classification) if classification else "无", reason, status_label.get(status, str(status)))
+        logger.info("行%d 入库成功, 分类: %s, 业务: %s, 推理: %s, 状态: %s", num, "-".join(classification) if classification else "无", business_classification or "-", reason, status_label.get(status, str(status)))
     except Exception as e:
         logger.error("行%d 入库失败: %s", num, e)

@@ -23,7 +23,7 @@
   --transition: .18s ease;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+.wrap { max-width: 1500px; margin: 24px auto; padding: 0 24px; }
 
 .hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
 .hdr h1 { font-size: 22px; font-weight: 800; letter-spacing: .5px; color: #fff; }
@@ -212,12 +212,28 @@ function renderSummary() {
 }
 
 // ─── dynamic recomputation ───
+// 功能域：full_path 按 - 切分；业务域：business_classification 单层
+function clsLevels(item) {
+  const cls = item.classification || {};
+  if (!cls || !cls.full_path) return [];
+  return cls.full_path.split("-").filter(Boolean);
+}
+function clsBiz(item) {
+  const cls = item.classification || {};
+  return (cls && cls.business_classification) || "";
+}
 function countByLevel(list, level) {
   const c = {};
+  const depth = level === "level1" ? 1 : level === "level2" ? 2 : 3;
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const v = item.classification[level] || "";
-      if (v) c[v] = (c[v] || 0) + 1;
+    if (activeDomain === "business") {
+      if (level !== "level1") return;
+      if (item.status === "classified") { const v = clsBiz(item); if (v) c[v] = (c[v] || 0) + 1; }
+      return;
+    }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= depth) { c[lv[depth - 1]] = (c[lv[depth - 1]] || 0) + 1; }
     } else if (item.status === "unknown_issue" && level === "level1") {
       c["未知问题"] = (c["未知问题"] || 0) + 1;
     }
@@ -226,22 +242,24 @@ function countByLevel(list, level) {
 }
 
 function countByLevel2(list) {
+  if (activeDomain === "business") return {};
   const c = {};
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "";
-      if (l1 && l2) { if (!c[l1]) c[l1] = {}; c[l1][l2] = (c[l1][l2] || 0) + 1; }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= 2) { const l1 = lv[0], l2 = lv[1]; if (!c[l1]) c[l1] = {}; c[l1][l2] = (c[l1][l2] || 0) + 1; }
     }
   });
   return c;
 }
 
 function countByLevel3(list) {
+  if (activeDomain === "business") return {};
   const c = {};
   list.forEach(item => {
-    if (item.status === "classified" && item.classification) {
-      const l1 = item.classification.level1 || "", l2 = item.classification.level2 || "", l3 = item.classification.level3 || "";
-      if (l1 && l2 && l3) { if (!c[l1]) c[l1] = {}; if (!c[l1][l2]) c[l1][l2] = {}; c[l1][l2][l3] = (c[l1][l2][l3] || 0) + 1; }
+    if (item.status === "classified") {
+      const lv = clsLevels(item);
+      if (lv.length >= 3) { const l1 = lv[0], l2 = lv[1], l3 = lv[2]; if (!c[l1]) c[l1] = {}; if (!c[l1][l2]) c[l1][l2] = {}; c[l1][l2][l3] = (c[l1][l2][l3] || 0) + 1; }
     }
   });
   return c;

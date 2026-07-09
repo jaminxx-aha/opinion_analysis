@@ -5,6 +5,10 @@
 扫描 output/ 目录下所有报告数据，汇总趋势和对比信息，
 生成交互式仪表盘 HTML 页面。
 
+功能域：full_path(- 分隔) 1/2/3 级趋势与对比。
+业务域：business_classification 单层页面标签趋势与对比。
+两视图来自同一张 report 表，仪表盘内「功能域/业务域」视图切换。
+
 用法: python generate_dashboard.py [--output-dir DIR]
 """
 
@@ -15,8 +19,10 @@ import json
 import argparse
 import sqlite3
 from datetime import datetime
-from generate_report import read_data_from_db, render_template, domain_table, table_exists
-from compare_period import compute_distribution, compute_level2_by_level1, compute_level3_by_level1_level2, find_xlsx_in_dir, get_db_mtime, extract_versions
+from generate_report import read_report_db, render_template, table_exists, REPORT_TABLE
+from compare_period import (compute_distribution, compute_level2_by_level1,
+                            compute_level3_by_level1_level2, compute_business_distribution,
+                            find_xlsx_in_dir, get_db_mtime, extract_versions)
 
 if sys.platform == 'win32':
     if hasattr(sys.stdout, 'buffer') and (not isinstance(sys.stdout, io.TextIOWrapper) or sys.stdout.encoding.lower() != 'utf-8'):
@@ -32,43 +38,21 @@ DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "dashboard_template.html")
 
 sys.path.insert(0, SCRIPT_DIR)
 
-def _resolve_db_path(entry_path: str, domain: str) -> str:
-    """返回某报告目录下包含该域数据的 DB 文件路径（空串表示无数据）。
 
-    解析顺序：report.db（新，单库双表）→ <domain>_report.db（旧，按域分库）→ function 回退 report.db 的 report 表。
-    """
+def _resolve_db_path(entry_path: str) -> str:
+    """返回报告目录下含 report 表的 DB 路径（空串表示无数据）。"""
     report_db = os.path.join(entry_path, "report.db")
     if os.path.isfile(report_db):
         conn = sqlite3.connect(report_db)
-        has_table = table_exists(conn, domain_table(domain))
-        # function 域：兼容最早的 report 表
-        if not has_table and domain == "function":
-            has_table = table_exists(conn, "report")
+        has = table_exists(conn, REPORT_TABLE)
         conn.close()
-        if has_table:
+        if has:
             return report_db
-    per_domain = os.path.join(entry_path, f"{domain}_report.db")
-    if os.path.isfile(per_domain):
-        return per_domain
     return ""
 
 
-def _read_domain_db(db_path: str, domain: str):
-    """从 db 读取某域数据（单库双表 / 按域分库 / 最早 report 表）。"""
-    conn = sqlite3.connect(db_path)
-    has_new = table_exists(conn, domain_table(domain))
-    has_legacy_report = domain == "function" and table_exists(conn, "report")
-    conn.close()
-    if has_new:
-        return read_data_from_db(db_path, domain_table(domain))
-    if has_legacy_report:
-        return read_data_from_db(db_path, "report")
-    # 按域分库（旧）
-    return read_data_from_db(db_path, "report")
-
-
-def scan_reports(output_dir: str, domain: str = "function") -> list:
-    """扫描 output/ 目录，收集每个报告的元数据和分布数据（按指定域）"""
+def scan_reports(output_dir: str) -> list:
+    """扫描 output/ 目录，收集每个报告的元数据与功能域 1 级分布。"""
     reports = []
     if not os.path.isdir(output_dir):
         return reports
@@ -77,16 +61,16 @@ def scan_reports(output_dir: str, domain: str = "function") -> list:
         entry_path = os.path.join(output_dir, entry)
         if not os.path.isdir(entry_path):
             continue
-        db_path = _resolve_db_path(entry_path, domain)
+        db_path = _resolve_db_path(entry_path)
         if not db_path:
             continue
 
-        data = _read_domain_db(db_path, domain)
+        data = read_report_db(db_path)
         summary = data['summary']
         details = data['details']
         total = summary.get('total', len(details))
 
-        level1_dist = compute_distribution(details, total, 'level1')
+        level1_dist = compute_distribution(details, total, 1)
         xlsx_name = find_xlsx_in_dir(entry_path)
         mtime = get_db_mtime(db_path)
 
@@ -109,31 +93,33 @@ def scan_reports(output_dir: str, domain: str = "function") -> list:
     return reports
 
 
-def build_comparison_data(output_dir: str, reports: list, domain: str = "function") -> dict:
-    """构建客户端对比所需的分布数据（含三级钻取和版本筛选）"""
+def build_comparison_data(output_dir: str, reports: list) -> dict:
+    """构建客户端对比/趋势所需的分布数据（功能域 1/2/3 级 + 业务域单层 + 版本）。"""
     comparison_data = {}
     for r in reports:
-        db_path = _resolve_db_path(os.path.join(output_dir, r['name']), domain)
+        db_path = _resolve_db_path(os.path.join(output_dir, r['name']))
         if not db_path:
             continue
-        data = _read_domain_db(db_path, domain)
+        data = read_report_db(db_path)
         details = data['details']
         total = data['summary']['total']
-
         comparison_data[r['name']] = {
             'summary': data['summary'],
-            'level1_dist': compute_distribution(details, total, 'level1'),
+            'level1_dist': compute_distribution(details, total, 1),
             'level2_dist': compute_level2_by_level1(details),
             'level3_dist': compute_level3_by_level1_level2(details),
+            'business_dist': compute_business_distribution(details),
             'details': details,
             'versions': extract_versions(details),
         }
     return comparison_data
 
 
-def _build_domain_bundle(output_dir: str, domain: str):
-    """为单个域构建仪表盘所需的全部数据。返回 None 表示该域无任何数据。"""
-    reports = scan_reports(output_dir, domain)
+def _build_bundle(output_dir: str, domain: str):
+    """构建某视图的仪表盘数据。domain: function(功能域 1 级) / business(业务域单层)。
+    返回 None 表示无任何报告。
+    """
+    reports = scan_reports(output_dir)
     if not reports:
         return None
 
@@ -143,12 +129,19 @@ def _build_domain_bundle(output_dir: str, domain: str):
     trend_unknown = [r['unknown_issue'] for r in reports]
     trend_failed = [r['infer_failed'] for r in reports]
 
-    all_level1_keys = sorted(set(k for r in reports for k in r['level1_dist']))
-    level1_trend = {}
-    for key in all_level1_keys:
-        level1_trend[key] = [r['level1_dist'].get(key, 0) for r in reports]
+    comparison_data = build_comparison_data(output_dir, reports)
 
-    comparison_data = build_comparison_data(output_dir, reports, domain)
+    # 1 级 keys：功能域取 level1_dist 的键，业务域取 business_dist 的键
+    dist_key = 'level1_dist' if domain == 'function' else 'business_dist'
+    all_keys = sorted(set(k for r in reports for k in comparison_data[r['name']][dist_key]))
+    level1_trend = {}
+    for key in all_keys:
+        level1_trend[key] = [comparison_data[r['name']][dist_key].get(key, 0) for r in reports]
+
+    # scan_reports 的 level1_dist 仅含功能域 1 级；业务域需重算
+    if domain == 'business':
+        for r in reports:
+            r['level1_dist'] = comparison_data[r['name']]['business_dist']
 
     return {
         'reports': reports,
@@ -157,14 +150,14 @@ def _build_domain_bundle(output_dir: str, domain: str):
         'trend_classified': trend_classified,
         'trend_unknown': trend_unknown,
         'trend_failed': trend_failed,
-        'level1_keys': all_level1_keys,
+        'level1_keys': all_keys,
         'level1_trend': level1_trend,
         'comparison_data': comparison_data,
     }
 
 
 def generate_dashboard(output_dir: str = None, template_path: str = None) -> str:
-    """生成报告管理中心仪表盘：功能域与业务域同页双标签页切换"""
+    """生成报告管理中心仪表盘：功能域/业务域同页双视图切换"""
 
     if not template_path:
         template_path = DEFAULT_TEMPLATE
@@ -174,7 +167,7 @@ def generate_dashboard(output_dir: str = None, template_path: str = None) -> str
 
     bundles = {}
     for domain in ("function", "business"):
-        b = _build_domain_bundle(output_dir, domain)
+        b = _build_bundle(output_dir, domain)
         if b is not None:
             bundles[domain] = b
 

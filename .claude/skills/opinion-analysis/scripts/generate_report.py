@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-可视化报告生成脚本（支持JSON和SQLite输入，基于HTML模板）
+可视化报告生成脚本（基于HTML模板）
 
-分类格式：一级分类.二级分类.三级分类
+分类格式：full_path（- 分隔的完整路径，如 动效卡顿-滑动卡顿-页面滑动卡顿-视频流上下滑动卡顿）
+业务域分类：business_classification（由功能域→业务页面标签映射派生，单层，如 视频页）
+同一报告内用「功能域/业务域」视图切换呈现，均来自单张 report 表。
 
 用法: python generate_report.py <分析结果DB或JSON路径> <输出HTML路径> [模板HTML路径]
 输出: HTML 可视化报告
@@ -27,30 +29,28 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 DEFAULT_TEMPLATE = os.path.join(SKILL_DIR, "assets", "report_template.html")
 
-
-def domain_table(domain: str) -> str:
-    """域 → 表名。功能域/业务域分别 report_function / report_business（同一 report.db）。"""
-    return f"report_{domain}"
+REPORT_TABLE = "report"
+PATH_SEP = "-"
 
 
 def table_exists(conn, table: str) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 
 
-def read_data_from_db(db_path: str, table: str = "report") -> dict:
-    """从SQLite数据库读取指定表的分类结果
+def read_data_from_db(db_path: str, table: str = REPORT_TABLE) -> dict:
+    """从SQLite数据库读取 report 表的分类结果。
 
-    table: report_function / report_business / report(旧)
+    每条 classified detail 的 classification 携带 {app, full_path, business_classification}。
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # 兼容旧DB：检查 version 列是否存在
+    # 兼容旧DB：检查新列是否存在
     cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    has_full_path = 'full_path' in cols
+    has_business = 'business_classification' in cols
     has_version = 'version' in cols
-    has_level4 = 'level4' in cols
-    has_level5 = 'level5' in cols
 
     cursor.execute(f"SELECT * FROM {table} ORDER BY id")
     rows = cursor.fetchall()
@@ -67,9 +67,16 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
     details = []
     for r in rows:
         raw_data = json.loads(r['raw_data']) if r['raw_data'] else {}
-        status = r['status']  # 0=成功, 1=未知问题, 2=失败
+        status = r['status']  # 0=成功, 1=未知问题, 2=失败, 3=描述过长
         version = r['version'] if has_version else ''
-        if status == 0 and r['level1'] and r['level1'] != '未知问题':
+        # 旧库(level1-5)兼容：full_path 缺失时按 level1..5 拼回（- 分隔）
+        fp = r['full_path'] if has_full_path else ''
+        biz = r['business_classification'] if has_business else ''
+        if not fp and has_version is False and 'level1' in cols:
+            # 极旧库只有 level1-5：拼 full_path
+            parts = [r[c] for c in ('level1', 'level2', 'level3', 'level4', 'level5') if c in cols and r[c]]
+            fp = PATH_SEP.join(parts) if parts else ''
+        if status == 0 and fp and fp != '未知问题':
             summary["classified"] += 1
             details.append({
                 'row_id': r['id'],
@@ -78,12 +85,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                 'version': version or '',
                 'classification': {
                     'app': r['cls_app'] or r['app'],
-                    'level1': r['level1'],
-                    'level2': r['level2'],
-                    'level3': r['level3'],
-                    'level4': r['level4'] if has_level4 else '',
-                    'level5': r['level5'] if has_level5 else '',
-                    'full_path': r['full_path'],
+                    'full_path': fp,
+                    'business_classification': biz or '',
                 },
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
@@ -97,12 +100,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                 'version': version or '',
                 'classification': {
                     'app': r['app'] or '',
-                    'level1': '未知问题',
-                    'level2': '',
-                    'level3': '',
-                    'level4': '',
-                    'level5': '',
                     'full_path': '未知问题',
+                    'business_classification': biz or '',
                 },
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
@@ -126,12 +125,8 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
                 'version': version or '',
                 'classification': {
                     'app': r['cls_app'] or r['app'],
-                    'level1': '描述过长',
-                    'level2': '',
-                    'level3': '',
-                    'level4': '',
-                    'level5': '',
                     'full_path': '描述过长',
+                    'business_classification': '',
                 },
                 'reasoning': r['reasoning'] or '',
                 'raw_data': raw_data,
@@ -153,123 +148,64 @@ def read_data_from_db(db_path: str, table: str = "report") -> dict:
 
 
 def read_data_from_json(json_path: str) -> dict:
-    """从JSON文件读取分类结果"""
+    """从JSON文件读取分类结果（旧格式兼容）。"""
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     summary = data.get('summary', {})
     raw_details = data.get('details', [])
 
-    # 兼容旧格式
-    if not raw_details:
-        items = data.get('items', [])
-        raw_details = []
-        for item in items:
-            detail = {
-                'input': item.get('problem', item.get('input', '')),
-                'status': item.get('status', 'pending'),
-                'classification': item.get('classification'),
-            }
-            if not detail.get('classification') and detail['status'] == 'pending':
-                detail['output'] = '待分类'
-            raw_details.append(detail)
-
-    # 处理数据，支持新旧两种分类格式
     details = []
     for item in raw_details:
         cls = item.get('classification', {})
-
-        if isinstance(cls, dict) and cls.get('level1'):
-            detail = {
-                'input': item.get('input', item.get('problem', '')),
-                'status': item.get('status', 'success'),
-                'classification': cls,
-            }
-        elif isinstance(cls, dict) and cls.get('module') and cls.get('issue_type'):
-            level1 = cls.get('issue_type', '')
-            level2 = cls.get('module', '')
-            level3 = cls.get('issue_detail', '')
-            if level1 == '性能问题':
-                level1 = '卡顿'
-            detail = {
-                'input': item.get('input', item.get('problem', '')),
-                'status': item.get('status', 'success'),
-                'classification': {
-                    'app': cls.get('app', ''),
-                    'level1': level1,
-                    'level2': level2,
-                    'level3': level3,
-                    'level4': '',
-                    'level5': '',
-                    'full_path': f'{level1}.{level2}.{level3}',
-                },
-            }
-        else:
-            detail = item
-
+        full_path = ''
+        if isinstance(cls, dict):
+            full_path = cls.get('full_path', '')
+            if not full_path:
+                # 旧 level1-5 格式：拼 full_path
+                parts = [cls.get(k, '') for k in ('level1', 'level2', 'level3', 'level4', 'level5')]
+                full_path = PATH_SEP.join(p for p in parts if p)
+            cls = {**cls, 'full_path': full_path, 'business_classification': cls.get('business_classification', '')}
+        detail = {
+            'input': item.get('input', item.get('problem', '')),
+            'status': item.get('status', 'pending'),
+            'classification': cls or {},
+        }
+        if not detail.get('classification') and detail['status'] == 'pending':
+            detail['output'] = '待分类'
         details.append(detail)
 
     total = summary.get('total', len(details))
-    classified = summary.get('classified', sum(1 for d in details if d.get('status') == 'success'))
-    unrecognized = summary.get('unrecognized_app', sum(1 for d in details if d.get('status') == 'unrecognized'))
+    classified = summary.get('classified', sum(1 for d in details if d.get('status') == 'classified'))
 
     return {
         'summary': {
             'total': total,
             'classified': classified,
-            'unrecognized_app': unrecognized,
+            'unknown_issue': summary.get('unknown_issue', 0),
+            'infer_failed': summary.get('infer_failed', 0),
+            'too_long': summary.get('too_long', 0),
         },
         'details': details,
     }
 
 
-def read_domain(output_dir: str, domain: str):
-    """读取某个分类域的数据。
-
-    解析顺序：
-      1. <output_dir>/report.db 的 report_<domain> 表（新布局，单库双表）
-      2. <output_dir>/<domain>_report.db 的 report 表（旧布局，按域分库）
-      3. function 域回退 <output_dir>/report.db 的 report 表（更早的单域库）
-    返回 {summary, details} 或 None（该域数据不存在时）。
-    """
-    output_dir = os.path.abspath(output_dir)
-
-    # 1. 单库 report.db 的 report_<domain> 表
-    report_db = os.path.join(output_dir, "report.db")
-    if os.path.isfile(report_db):
-        conn = sqlite3.connect(report_db)
-        t = domain_table(domain)
-        if table_exists(conn, t):
-            conn.close()
-            return read_data_from_db(report_db, t)
-        conn.close()
-
-    # 2. 按域分库（旧布局）
-    per_domain_db = os.path.join(output_dir, f"{domain}_report.db")
-    if os.path.isfile(per_domain_db):
-        return read_data_from_db(per_domain_db, "report")
-
-    # 3. function 域回退到最早的单域 report.db（表 report）
-    if domain == "function" and os.path.isfile(report_db):
-        conn = sqlite3.connect(report_db)
-        legacy = table_exists(conn, "report")
-        conn.close()
-        if legacy:
-            return read_data_from_db(report_db, "report")
-
+def read_report_db(db_path: str) -> dict:
+    """从指定 DB 读取 report 表数据。report 表不存在时返回 None。"""
+    conn = sqlite3.connect(db_path)
+    has = table_exists(conn, REPORT_TABLE)
+    conn.close()
+    if has:
+        return read_data_from_db(db_path, REPORT_TABLE)
     return None
 
 
-def read_domain_from_db(db_path: str, domain: str):
-    """从指定 DB 文件读取某域数据（report_<domain> 表，回退 report 表）。"""
-    conn = sqlite3.connect(db_path)
-    has_new = table_exists(conn, domain_table(domain))
-    has_legacy = table_exists(conn, "report") if domain == "function" else False
-    conn.close()
-    if has_new:
-        return read_data_from_db(db_path, domain_table(domain))
-    if has_legacy:
-        return read_data_from_db(db_path, "report")
+def read_report(output_dir: str) -> dict:
+    """读取输出目录下的 report.db（report 表）。返回 {summary, details} 或 None。"""
+    output_dir = os.path.abspath(output_dir)
+    report_db = os.path.join(output_dir, "report.db")
+    if os.path.isfile(report_db):
+        return read_report_db(report_db)
     return None
 
 
@@ -298,37 +234,34 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
     """根据分析结果生成可视化 HTML 报告。
 
     input_path 可以是:
-      - 目录：读取该目录下存在的 function / business 两个域 DB，合并成双标签页报告
-      - .db 文件：单库，按文件名推断域（旧 report.db 视作 function）
-      - .json 文件：旧 JSON 格式（按 function 域处理）
+      - 目录：读取该目录下 report.db 的 report 表
+      - .db 文件：读取其 report 表
+      - .json 文件：旧 JSON 格式
     """
     if not template_path:
         template_path = DEFAULT_TEMPLATE
 
-    # 判定输入类型并按域收集数据
-    domains_data = {}  # domain -> {summary, details}
+    # 判定输入类型并读取单表数据
     if os.path.isdir(input_path):
         input_dir = os.path.abspath(input_path)
-        for domain in ("function", "business"):
-            data = read_domain(input_dir, domain)
-            if data is not None:
-                domains_data[domain] = data
+        data = read_report(input_dir)
     elif input_path.endswith('.db'):
         input_dir = os.path.dirname(os.path.abspath(input_path))
-        # 单库 report.db 可能含两域表；按域分库 db 取其域
-        for domain in ("function", "business"):
-            data = read_domain_from_db(input_path, domain)
-            if data is not None:
-                domains_data[domain] = data
+        data = read_report_db(input_path)
     else:
         input_dir = os.path.dirname(os.path.abspath(input_path))
-        domains_data["function"] = read_data_from_json(input_path)
+        data = read_data_from_json(input_path)
 
-    if not domains_data:
+    if not data:
         return None
 
-    # 默认展示首个可用域
-    default_domain = "function" if "function" in domains_data else next(iter(domains_data))
+    summary = data['summary']
+    details = data['details']
+    total = summary.get('total', len(details))
+    classified = summary.get('classified', 0)
+    unknown_issue = summary.get('unknown_issue', 0)
+    infer_failed = summary.get('infer_failed', 0)
+    too_long = summary.get('too_long', 0)
 
     # 查找 Excel 来源文件名（目录内的 .xlsx/.xls）
     excel_filename = ''
@@ -338,30 +271,14 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
                 excel_filename = f
                 break
 
-    # 域摘要，供模板里的 summary 数字使用（默认域）
-    def_data = domains_data[default_domain]
-    def_summary = def_data['summary']
-    def_details = def_data['details']
-    total = def_summary.get('total', len(def_details))
-    classified = def_summary.get('classified', 0)
-    unknown_issue = def_summary.get('unknown_issue', 0)
-    infer_failed = def_summary.get('infer_failed', 0)
-    too_long = def_summary.get('too_long', 0)
-
     variables = {
         'TOTAL': total,
         'CLASSIFIED': classified,
         'UNKNOWN_ISSUE': unknown_issue,
         'INFER_FAILED': infer_failed,
         'TOO_LONG': too_long,
-        # 双域数据，每域 {summary, details}；模板里按 domain 取用
-        'DOMAIN_FUNCTION_JSON': json.dumps(domains_data.get("function"), ensure_ascii=False),
-        'DOMAIN_BUSINESS_JSON': json.dumps(domains_data.get("business"), ensure_ascii=False),
-        'HAS_FUNCTION': "function" in domains_data,
-        'HAS_BUSINESS': "business" in domains_data,
-        'DEFAULT_DOMAIN': default_domain,
-        # 兼容旧模板：DETAILS_JSON 指向默认域
-        'DETAILS_JSON': json.dumps(def_details, ensure_ascii=False),
+        # 单表数据：功能域用 full_path 多级、业务域用 business_classification 单层，模板内视图切换
+        'DATA_JSON': json.dumps(data, ensure_ascii=False),
         'GENERATED_TIME': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'EXCEL_FILENAME': excel_filename,
         'HAS_EXCEL_FILENAME': bool(excel_filename),
@@ -369,10 +286,17 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
     html = render_template(template_path, variables)
 
+    # 内联 Chart.js 到 HTML，避免浏览器 file:// 打开报告时 CDN 脚本加载失败导致图表不渲染
+    chart_js_src = os.path.join(SKILL_DIR, 'assets', 'chart.js')
+    if os.path.isfile(chart_js_src):
+        with open(chart_js_src, 'r', encoding='utf-8') as f:
+            chart_js_content = f.read()
+        html = html.replace('<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>',
+                            '<script>\n' + chart_js_content + '\n</script>')
+
     # 确定输出路径
     if not output_path:
         if os.path.isdir(input_path):
-            # 传入的是目录：用目录名作报告名
             output_path = os.path.join(input_dir, f"{os.path.basename(input_dir)}_report.html")
         else:
             input_basename = os.path.basename(input_path)
@@ -389,7 +313,6 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
     # 打印报告摘要（供调用方与命令行直接运行复用）
     print(f"\n报告已生成: {output_path}")
-    print(f"包含域: {', '.join(domains_data.keys())}")
     print("| 属性 | 值 |")
     print("|------|-----|")
     print(f"| 总数据 | {total} |")
@@ -399,7 +322,6 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 
     return {
         'path': output_path,
-        'domains': list(domains_data.keys()),
         'total': total,
         'classified': classified,
         'unknown_issue': unknown_issue,
@@ -410,7 +332,7 @@ def generate_report(input_path: str, output_path: str = None, template_path: str
 def main():
     if len(sys.argv) < 2:
         print("用法: python generate_report.py <输出目录或分析结果JSON/DB路径> [输出HTML路径] [模板HTML路径]")
-        print("      传目录时读取该目录下 function/business 两域 DB 合并双标签页报告")
+        print("      读 report.db 的 report 表生成报告（功能域/业务域视图切换）")
         print("      未指定输出路径时，结果将保存在输入文件所在目录")
         sys.exit(1)
 

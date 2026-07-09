@@ -16,6 +16,7 @@ import logging
 from db_utils import save_item
 from runtime import extract_json, get_output_dir, incr_progress
 from claude_agent_client import call_agent_sdk
+from args import derive_business_classification
 
 logger = logging.getLogger("classify_data")
 
@@ -250,6 +251,8 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
         status, classification, reason = 2, ["未知问题"], "空描述,跳过分类"
     else:
         status, classification, reason = classify_one(num, desc, refs, agent_cfg)
-    save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col)
+    func_to_business = refs.get("func_to_business", {}) if refs else {}
+    business = derive_business_classification(classification, status, func_to_business)
+    save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col, business)
     incr_progress(1, total, str(num))
     return [(num, status)]

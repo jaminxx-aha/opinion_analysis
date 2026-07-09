@@ -19,7 +19,7 @@ import sqlite3
 import logging
 import concurrent.futures
 
-from args import load_config, load_reference, setup_logging
+from args import load_config, load_reference, setup_logging, derive_business_classification
 from db_utils import report_table, set_table, init_db, count_rows, update_item, _close_all_db
 from runtime import set_output_dir, incr_progress
 from classify_agent import classify_one
@@ -43,8 +43,6 @@ logger.addHandler(_handler)
 def main():
     ap = argparse.ArgumentParser(description="重试 DB 中推理失败(status=2)的数据")
     ap.add_argument("output_dir", help="输出目录（含 report.db）")
-    ap.add_argument("--domain", default="function", choices=["function", "business"],
-                    help="分类域(默认 function)")
     ap.add_argument("--app-name", default=None, help="应用名（不指定则从 DB 推断）")
     args = ap.parse_args()
 
@@ -53,15 +51,14 @@ def main():
     if not os.path.isfile(db_path):
         print(f"错误: 未找到 {db_path}")
         sys.exit(1)
-    domain = args.domain
-    table = report_table(domain)
+    table = report_table()
 
     # 输出目录/日志/DB/表 初始化（与 classify_data 的 prepare_data 对齐）
     os.makedirs(os.path.join(output_dir, "log"), exist_ok=True)
     setup_logging(output_dir)
     set_output_dir(output_dir)
     set_table(table)
-    init_db(db_path, domain)  # 幂等，确保 level4/5/version 列存在
+    init_db(db_path)  # 幂等，确保 full_path/business_classification/version 列存在
 
     # app_name：未指定则从 DB 推断
     app_name = args.app_name
@@ -77,17 +74,18 @@ def main():
 
     # 加载 LLM 配置 + 分类参考库
     config = load_config(args)
-    refs = load_reference(app_name, domain)
+    refs = load_reference(app_name)
     if not refs or not refs.get("classification"):
-        logger.error("无法加载 '%s' 域[%s]的分类知识库", app_name, domain); sys.exit(1)
+        logger.error("无法加载 '%s' 的分类知识库", app_name); sys.exit(1)
+    func_to_business = refs.get("func_to_business", {})
 
     # 读 status=2 的失败行（不含未知问题、不含缺失）
     conn = sqlite3.connect(db_path)
     failed = conn.execute(f"SELECT id, problem FROM {table} WHERE status = 2 ORDER BY id").fetchall()
     conn.close()
     total = len(failed)
-    logger.info("重试开始: 域=%s, 应用=%s, 失败%d条, 并发%d (keys=%d, 每key=%d), skill=%s, model=%s",
-                domain, app_name, total, config.total_concurrent, len(config.api_keys), config.max_concurrent,
+    logger.info("重试开始: 应用=%s, 失败%d条, 并发%d (keys=%d, 每key=%d), skill=%s, model=%s",
+                app_name, total, config.total_concurrent, len(config.api_keys), config.max_concurrent,
                 config.agent_cfg["skill_name"], config.agent_cfg.get("model") or "default")
 
     if total == 0:
@@ -108,7 +106,8 @@ def main():
             else:
                 cfg = config.agent_cfg
             st, cls, reason = classify_one(num, desc, refs, cfg)
-        update_item(num, cls, reason, app_name, db_path, st)
+        business = derive_business_classification(cls, st, func_to_business)
+        update_item(num, cls, reason, app_name, db_path, st, business)
         return st
 
     success = 0

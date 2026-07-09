@@ -22,7 +22,7 @@
   --transition: .18s ease;
 }
 body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
-.wrap { max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+.wrap { max-width: 1500px; margin: 24px auto; padding: 0 24px; }
 
 /* ─── header ─── */
 .hdr { padding: 24px 28px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%); border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; color: #fff; box-shadow: var(--shadow-lg); }
@@ -57,14 +57,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 .tb-path .p { color: var(--primary); cursor: pointer; transition: color var(--transition); }
 .tb-path .p:hover { color: var(--primary-hover); text-decoration: underline; }
 .tb-path .sep { color: var(--text-muted); margin: 0 4px; }
+#filter-levels { display: contents; }
 
 /* ─── charts ─── */
 .charts-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; box-shadow: var(--shadow); }
-/* ─── domain tabs ─── */
-.domain-tabs { display: none; gap: 6px; margin-bottom: 14px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; box-shadow: var(--shadow); }
-.domain-tab { padding: 7px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all var(--transition); user-select: none; }
-.domain-tab:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
-.domain-tab.active { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+/* ─── view tabs ─── */
+.view-tabs { display: flex; gap: 6px; margin-bottom: 14px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: fit-content; box-shadow: var(--shadow); }
+.view-tab { padding: 7px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); border-radius: 6px; cursor: pointer; transition: all var(--transition); user-select: none; }
+.view-tab:hover:not(.active) { background: var(--primary-light); color: var(--primary); }
+.view-tab.active { background: var(--primary); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .charts-hdr { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); }
 .charts-hdr h2 { font-size: 15px; font-weight: 700; }
 .charts-hdr .tog { font-size: 13px; color: var(--primary); cursor: pointer; transition: color var(--transition); }
@@ -150,7 +151,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
   </div>
 </div>
 
-<div class="domain-tabs" id="domain-tabs"></div>
+<div class="view-tabs" id="view-tabs"></div>
 
 <div class="charts-card">
   <div class="summary">
@@ -161,13 +162,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
     <div class="sum-item long" onclick="filterByStatus('too_long')"><div class="sum-num" id="sum-long">{{TOO_LONG}}</div><div class="sum-label">描述过长</div></div>
   </div>
 
-  <div class="toolbar">
-    <span class="tb-label">层级</span><select class="tb-select" id="filter-depth" onchange="onDepthChange()"><option value="">全部</option><option value="1">仅一级</option><option value="2">仅二级</option><option value="3">仅三级</option><option value="4">仅四级</option><option value="5">仅五级</option></select>
-    <span class="tb-label">一级</span><select class="tb-select" id="filter-level1" onchange="onFilterChange('level1')"><option value="">全部</option></select>
-    <span class="tb-label">二级</span><select class="tb-select" id="filter-level2" onchange="onFilterChange('level2')" disabled><option value="">全部</option></select>
-    <span class="tb-label">三级</span><select class="tb-select" id="filter-level3" onchange="onFilterChange('level3')" disabled><option value="">全部</option></select>
-    <span class="tb-label">四级</span><select class="tb-select" id="filter-level4" onchange="onFilterChange('level4')" disabled><option value="">全部</option></select>
-    <span class="tb-label">五级</span><select class="tb-select" id="filter-level5" onchange="onFilterChange('level5')" disabled><option value="">全部</option></select>
+  <div class="toolbar" id="toolbar">
+    <span id="filter-levels"></span>
     <span class="tb-label">版本</span><select class="tb-select" id="filter-version" onchange="onVersionChange()" disabled><option value="">全部</option></select>
     <div class="tb-search"><input type="text" id="search-input" placeholder="搜索..." onkeyup="onSearch()"></div>
     <span id="filter-path" class="tb-path"></span>
@@ -178,8 +174,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
     <span class="tog" onclick="toggleCharts()">收起</span>
   </div>
   <div class="charts-body" id="charts-body">
-    <div><div class="ch-sub" id="bar-title">一级分类分布</div><div class="ch-wrap"><canvas id="level1Chart"></canvas></div></div>
-    <div><div class="ch-sub" id="pie-title">一级分类分布</div><div class="ch-wrap"><canvas id="pieChart"></canvas></div></div>
+    <div><div class="ch-sub" id="bar-title">分布</div><div class="ch-wrap"><canvas id="barChart"></canvas></div></div>
+    <div><div class="ch-sub" id="pie-title">分布</div><div class="ch-wrap"><canvas id="pieChart"></canvas></div></div>
   </div>
 </div>
 
@@ -205,293 +201,294 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 
 </div>
 
-<script id="report-data-function" type="application/json">{{DOMAIN_FUNCTION_JSON}}</script>
-<script id="report-data-business" type="application/json">{{DOMAIN_BUSINESS_JSON}}</script>
+<script id="report-data" type="application/json">{{DATA_JSON}}</script>
 <script>
-// 按域加载数据：每域 {summary, details}
-function _loadDomain(name) {
-  const el = document.getElementById('report-data-' + name);
-  if (!el || !el.textContent.trim()) return null;
-  try {
-    const raw = JSON.parse(el.textContent);
-    return { summary: raw.summary || {}, details: raw.details || [] };
-  } catch (e) { return null; }
-}
-const dataByDomain = { function: _loadDomain("function"), business: _loadDomain("business") };
-let activeDomain = "{{DEFAULT_DOMAIN}}";
-if (!dataByDomain[activeDomain]) activeDomain = dataByDomain.function ? "function" : (dataByDomain.business ? "business" : "function");
-let allData = (dataByDomain[activeDomain] && dataByDomain[activeDomain].details) || [];
-let filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
-let depthFilter = "";
+// 单数据源：{summary, details}。功能域用 full_path 多级、业务域用 business_classification 单层，视图切换。
+const SEP = "-";
+const LEAF = "（无下级）";  // 叶子节点（无更细子级）在图表/筛选中的占位标签
+let rawData = (() => {
+  const el = document.getElementById('report-data');
+  if (!el || !el.textContent.trim()) return { summary: {}, details: [] };
+  try { return JSON.parse(el.textContent); } catch (e) { return { summary: {}, details: [] }; }
+})();
+let allData = rawData.details || [];
+let summary = rawData.summary || {};
+
+let activeView = "function";   // function | business
+let maxDepth = 1;              // 功能域 full_path 最大深度，决定级联筛选级数
+let funcFilters = [];          // 长度 maxDepth，每级选中的值（""=全部）
+let bizFilter = "";            // 业务域单层筛选
+let depthFilter = "";          // 功能域「仅N级」
 let searchText = "";
+let versionFilter = "";
+let statusFilter = "";
 let charts = {};
 let chartsVisible = true;
-let statusFilter = "";
-let versionFilter = "";
 let currentPage = 1;
 const pageSize = 50;
 
-function getAllOptions() {
-  const level1s = {}, level2s = {}, level3s = {}, level4s = {}, level5s = {}, versions = {};
-  let hasEmptyVer = false;
+// ─── 工具：取 item 的功能域 levels 数组 / 业务标签 ───
+function levelsOf(item) {
+  const cls = item.classification || {};
+  if (!cls || !cls.full_path) return [];
+  return cls.full_path.split(SEP).filter(Boolean);
+}
+function bizOf(item) {
+  const cls = item.classification || {};
+  return (cls && cls.business_classification) || "";
+}
+function computeMaxDepth() {
+  let d = 1;
+  allData.forEach(item => { if (item.status === "classified") { const n = levelsOf(item).length; if (n > d) d = n; } });
+  return d;
+}
+
+// ─── 选项计算 ───
+// 功能域：给定深度 depth(1-based) 与前缀选中数组 prefixSel，返回该深度可选值
+function getAvailableLevels(depth, prefixSel) {
+  const s = {};
   allData.forEach(item => {
-    if (item.version) versions[item.version] = true;
-    else hasEmptyVer = true;
-    if (item.status === "unknown_issue") { level1s["未知问题"] = true; return; }
-    if (item.status === "infer_failed") { level1s["推理失败"] = true; return; }
-    if (item.status === "too_long") { level1s["描述过长"] = true; return; }
-    if (item.status === "classified") {
-      const cls = item.classification;
-      level1s[cls.level1] = true; level2s[cls.level2] = true; level3s[cls.level3] = true;
-      level4s[cls.level4] = true; level5s[cls.level5] = true;
+    if (item.status !== "classified") return;
+    const lv = levelsOf(item);
+    if (lv.length < depth) return;
+    // 前缀必须匹配
+    for (let i = 0; i < depth - 1; i++) {
+      if (prefixSel[i] && lv[i] !== prefixSel[i]) return;
     }
+    s[lv[depth - 1]] = true;
   });
-  const verList = Object.keys(versions).sort();
-  if (hasEmptyVer) verList.push("");  // 空版本号作为可选项
-  return { level1s: Object.keys(level1s).sort(), level2s: Object.keys(level2s).sort(), level3s: Object.keys(level3s).sort(), level4s: Object.keys(level4s).sort(), level5s: Object.keys(level5s).sort(), versions: verList };
-}
-
-function getAvailableLevel2(level1) {
-  const s = {};
-  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) s[cls.level2] = true; } });
   return Object.keys(s).sort();
 }
-
-function getAvailableLevel3(level1, level2) {
+// 业务域：可选页面标签
+function getAvailableBiz() {
   const s = {};
-  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) s[cls.level3] = true; } });
+  allData.forEach(item => { if (item.status === "classified") { const b = bizOf(item); if (b) s[b] = true; } });
   return Object.keys(s).sort();
 }
-
-function getAvailableLevel4(level1, level2, level3) {
-  const s = {};
-  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) if (!level3 || cls.level3 === level3) s[cls.level4] = true; } });
-  return Object.keys(s).filter(Boolean).sort();
+function getAllVersions() {
+  const versions = {}; let hasEmpty = false;
+  allData.forEach(item => { if (item.version) versions[item.version] = true; else hasEmpty = true; });
+  const list = Object.keys(versions).sort();
+  if (hasEmpty) list.push("");
+  return list;
 }
 
-function getAvailableLevel5(level1, level2, level3, level4) {
-  const s = {};
-  allData.forEach(item => { if (item.status === "classified") { const cls = item.classification; if (!level1 || cls.level1 === level1) if (!level2 || cls.level2 === level2) if (!level3 || cls.level3 === level3) if (!level4 || cls.level4 === level4) s[cls.level5] = true; } });
-  return Object.keys(s).filter(Boolean).sort();
-}
-
-function fillSelect(id, options) {
-  const sel = document.getElementById(id);
-  const cur = sel.value;
+function fillSelect(sel, options, value) {
+  const cur = value != null ? value : sel.value;
   sel.innerHTML = '<option value="" title="全部">全部</option>';
   options.forEach(o => {
     const e = document.createElement("option");
-    if (id === "filter-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
+    if (sel.id === "filter-version" && o === "") { e.value = "__empty__"; e.textContent = "无版本号"; e.title = "无版本号"; }
     else { e.value = o; e.textContent = o; e.title = o; }
     sel.appendChild(e);
   });
   sel.value = options.includes(cur) ? cur : "";
   updateSelectTitle(sel);
 }
+function updateSelectTitle(sel) { sel.title = sel.selectedIndex >= 0 && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].title : ''; }
+function updateAllSelectTitles() { document.querySelectorAll('.tb-select').forEach(sel => updateSelectTitle(sel)); }
 
-function updateSelectTitle(sel) {
-  sel.title = sel.selectedIndex >= 0 && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].title : '';
+// ─── 渲染级联筛选控件（功能域 N 级 / 业务域 1 级）───
+function renderFilterControls() {
+  const container = document.getElementById("filter-levels");
+  container.innerHTML = "";
+  if (activeView === "function") {
+    // 深度选择
+    const depthWrap = document.createElement("span");
+    depthWrap.innerHTML = '<span class="tb-label">层级</span>';
+    const depthSel = document.createElement("select");
+    depthSel.className = "tb-select"; depthSel.id = "filter-depth";
+    depthSel.onchange = () => { depthFilter = depthSel.value; currentPage = 1; updateAll(); };
+    let dhtml = '<option value="">全部</option>';
+    for (let i = 1; i <= maxDepth; i++) dhtml += `<option value="${i}">仅${CN_NUM[i]}级</option>`;
+    depthSel.innerHTML = dhtml; depthSel.value = depthFilter;
+    depthWrap.appendChild(depthSel);
+    container.appendChild(depthWrap);
+    // 每级级联
+    for (let d = 1; d <= maxDepth; d++) {
+      const w = document.createElement("span");
+      const lbl = document.createElement("span"); lbl.className = "tb-label"; lbl.textContent = `${CN_NUM[d]}级`;
+      const sel = document.createElement("select");
+      sel.className = "tb-select"; sel.id = `filter-level${d}`;
+      sel.onchange = () => onFuncLevelChange(d);
+      const prefix = funcFilters.slice(0, d - 1);
+      const opts = getAvailableLevels(d, prefix);
+      fillSelect(sel, opts, funcFilters[d - 1] || "");
+      sel.disabled = opts.length === 0;
+      w.appendChild(lbl); w.appendChild(sel);
+      container.appendChild(w);
+    }
+  } else {
+    // 业务域单层
+    const w = document.createElement("span");
+    const lbl = document.createElement("span"); lbl.className = "tb-label"; lbl.textContent = "业务页";
+    const sel = document.createElement("select");
+    sel.className = "tb-select"; sel.id = "filter-biz";
+    sel.onchange = () => { bizFilter = sel.value; currentPage = 1; updateAll(); };
+    fillSelect(sel, getAvailableBiz(), bizFilter);
+    w.appendChild(lbl); w.appendChild(sel);
+    container.appendChild(w);
+  }
+  // 版本下拉
+  const verSel = document.getElementById("filter-version");
+  fillSelect(verSel, getAllVersions(), versionFilter);
+  verSel.disabled = getAllVersions().length === 0;
+  updateAllSelectTitles();
 }
 
-function updateAllSelectTitles() {
-  document.querySelectorAll('.tb-select').forEach(sel => updateSelectTitle(sel));
+const CN_NUM = ["", "一", "二", "三", "四", "五", "六", "七", "八"];
+
+function onFuncLevelChange(d) {
+  const sel = document.getElementById(`filter-level${d}`);
+  funcFilters[d - 1] = sel.value;
+  // 清空下级并重填
+  for (let i = d; i < maxDepth; i++) funcFilters[i] = "";
+  // 重填 d+1..maxDepth
+  for (let nd = d + 1; nd <= maxDepth; nd++) {
+    const nsel = document.getElementById(`filter-level${nd}`);
+    if (nsel) { const opts = getAvailableLevels(nd, funcFilters.slice(0, nd - 1)); fillSelect(nsel, opts, ""); nsel.disabled = opts.length === 0; }
+  }
+  currentPage = 1; updateAll();
 }
 
+// ─── 过滤 ───
 function getFilteredData() {
   return allData.filter(item => {
-    if (versionFilter) {
-      const filterVer = versionFilter === "__empty__" ? "" : versionFilter;
-      if (item.version !== filterVer) return false;
-    }
-    if (statusFilter) {
-      if (statusFilter === "classified" && item.status !== "classified") return false;
-      if (statusFilter !== "classified" && item.status !== statusFilter) return false;
-    }
-    if (item.status === "infer_failed") {
-      if (depthFilter) return false;
-      if (filters.level1 === "推理失败") return true;
-      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
-      if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
-      return true;
-    }
-    if (item.status === "too_long") {
-      if (depthFilter) return false;
-      if (filters.level1 === "描述过长") return true;
-      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
-      if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
-      return true;
-    }
-    if (item.status === "unknown_issue") {
-      if (depthFilter) return false;
-      if (filters.level1 === "未知问题") return true;
-      if (filters.level1 || filters.level2 || filters.level3 || filters.level4 || filters.level5) return false;
+    if (versionFilter) { const fv = versionFilter === "__empty__" ? "" : versionFilter; if (item.version !== fv) return false; }
+    if (statusFilter && item.status !== statusFilter && !(statusFilter === "classified" && item.status === "classified")) return false;
+    // 非分类态：功能域/业务域筛选不命中则排除
+    if (item.status === "infer_failed" || item.status === "too_long" || item.status === "unknown_issue" || item.status === "pending") {
+      if (activeView === "function" && (depthFilter || funcFilters.some(f => f))) return false;
+      if (activeView === "business" && bizFilter) return false;
       if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
       return true;
     }
     if (item.status === "classified") {
-      const cls = item.classification;
-      if (depthFilter) {
-        const d = cls.level5 ? 5 : (cls.level4 ? 4 : (cls.level3 ? 3 : (cls.level2 ? 2 : 1)));
-        if (d !== parseInt(depthFilter)) return false;
+      if (activeView === "function") {
+        const lv = levelsOf(item);
+        if (depthFilter && lv.length !== parseInt(depthFilter)) return false;
+        for (let i = 0; i < maxDepth; i++) {
+          const f = funcFilters[i];
+          if (!f) continue;
+          if (f === LEAF) { if (lv.length !== i) return false; }       // 仅留停在本级的叶子
+          else if (lv[i] !== f) return false;
+        }
+      } else {
+        if (bizFilter && bizOf(item) !== bizFilter) return false;
       }
-      if (filters.level1 && cls.level1 !== filters.level1) return false;
-      if (filters.level2 && cls.level2 !== filters.level2) return false;
-      if (filters.level3 && cls.level3 !== filters.level3) return false;
-      if (filters.level4 && cls.level4 !== filters.level4) return false;
-      if (filters.level5 && cls.level5 !== filters.level5) return false;
     }
     if (searchText && !(item.input || "").toLowerCase().includes(searchText.toLowerCase())) return false;
     return true;
   });
 }
 
-function calcStats(data) {
-  const stats = { level1: {}, level2: {}, level3: {}, level4: {}, level5: {} };
+// ─── 统计（图表）───
+// 功能域：展示当前已钻取路径(drilledTo)的「下一级子分类」分布，并额外把「正好停在本级
+//   （无更细子级）」的条目作为单独 bar 展示——其显示名用该分类本身(=父级名)，内部 key 用
+//   LEAF 哨兵以与同名子级区分。该叶子 bar 置于最前且不可点击。标题用实际父级名（根=全部）。
+function calcStats() {
+  const data = getFilteredData();
+  if (activeView === "business") {
+    const c = {};
+    data.forEach(item => { if (item.status === "classified") { const b = bizOf(item); if (b) c[b] = (c[b] || 0) + 1; } });
+    const labels = Object.keys(c), values = Object.values(c);
+    return { title: bizFilter || "业务页面分布", labels, keys: labels, values };
+  }
+  // drilledTo = 已选中的最深层级(1-based，跳过 LEAF)，0 表示未钻取
+  let drilledTo = 0;
+  for (let i = 0; i < maxDepth; i++) if (funcFilters[i] && funcFilters[i] !== LEAF) drilledTo = i + 1;
+  const parentName = drilledTo > 0 ? funcFilters[drilledTo - 1] : "全部";
+  const childC = {};
+  let leafN = 0;
   data.forEach(item => {
-    if (item.status === "unknown_issue") { stats.level1["未知问题"] = (stats.level1["未知问题"] || 0) + 1; return; }
-    if (item.status === "infer_failed") { stats.level1["推理失败"] = (stats.level1["推理失败"] || 0) + 1; return; }
-    if (item.status === "too_long") { stats.level1["描述过长"] = (stats.level1["描述过长"] || 0) + 1; return; }
     if (item.status !== "classified") return;
-    const cls = item.classification;
-    stats.level1[cls.level1] = (stats.level1[cls.level1] || 0) + 1;
-    if (cls.level2) stats.level2[cls.level2] = (stats.level2[cls.level2] || 0) + 1;
-    if (cls.level3) stats.level3[cls.level3] = (stats.level3[cls.level3] || 0) + 1;
-    if (cls.level4) stats.level4[cls.level4] = (stats.level4[cls.level4] || 0) + 1;
-    if (cls.level5) stats.level5[cls.level5] = (stats.level5[cls.level5] || 0) + 1;
+    const lv = levelsOf(item);
+    let ok = true;
+    for (let i = 0; i < drilledTo; i++) { if (funcFilters[i] && lv[i] !== funcFilters[i]) { ok = false; break; } }
+    if (!ok) return;
+    if (lv.length > drilledTo) { const seg = lv[drilledTo]; childC[seg] = (childC[seg] || 0) + 1; }
+    else if (lv.length === drilledTo) leafN++;
   });
-  return stats;
+  const labels = [], keys = [], values = [];
+  if (leafN > 0) { labels.push(parentName); keys.push(LEAF); values.push(leafN); }  // 叶子 bar 置最前
+  for (const k in childC) { labels.push(k); keys.push(k); values.push(childC[k]); }
+  return { title: parentName, labels, keys, values };
 }
 
-function onFilterChange(src) {
-  const s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3"), s4 = document.getElementById("filter-level4"), s5 = document.getElementById("filter-level5");
-  if (src === "level1") {
-    filters.level1 = document.getElementById("filter-level1").value;
-    if (filters.level1) { fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = false; }
-    else { s2.disabled = true; s2.innerHTML = '<option value="">全部</option>'; s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
-    filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
+function updateCharts() {
+  const stats = calcStats();
+  let labels = stats.labels.slice(), values = stats.values.slice();
+  if (labels.length === 0) { labels = ["无数据"]; values = [0]; }
+  document.getElementById("bar-title").textContent = stats.title;
+  document.getElementById("pie-title").textContent = stats.title;
+  charts.bar.data.labels = labels; charts.bar.data.datasets[0].data = values;
+  charts.pie.data.labels = labels; charts.pie.data.datasets[0].data = values;
+  charts.bar.update(); charts.pie.update();
+}
+
+// 图表点击：点击的 bar 属于「当前钻取路径下一级」(索引 drilledTo)。
+//   子级 bar → 钻入该子级；叶子 bar(显示父级名,内部key=LEAF) → 表格筛到「正好停在本级」的条目；
+//   再次点击同一 bar 则取消选中。
+function chartDrillDown(chart, els) {
+  if (!els.length) return;
+  const idx = els[0].index;
+  const v = chart.data.labels[idx];
+  if (v == null || v === "" || v === "无数据") return;
+  if (activeView === "business") { bizFilter = (bizFilter === v) ? "" : v; currentPage = 1; renderFilterControls(); updateAll(); return; }
+  const stats = calcStats();
+  const key = stats.keys[idx];
+  if (key == null || key === LEAF) return;   // 叶子 bar（无下级）不可点击选择
+  let drilledTo = 0;
+  for (let i = 0; i < maxDepth; i++) if (funcFilters[i] && funcFilters[i] !== LEAF) drilledTo = i + 1;
+  if (drilledTo >= maxDepth) return;          // 已到最深层，无更细子级
+  const cur = funcFilters[drilledTo];
+  funcFilters[drilledTo] = (cur === key) ? "" : key;
+  for (let i = drilledTo + 1; i < maxDepth; i++) funcFilters[i] = "";
+  currentPage = 1; renderFilterControls(); updateAll();
+}
+
+const COLORS = ["#3b82f6","#8b5cf6","#ef4444","#10b981","#f59e0b","#0ea5e9","#14b8a6","#f97316","#1f2937","#d97706","#06b6d4","#dc2626","#6b7280","#1d4ed8","#a855f7","#334155"];
+
+function initCharts() {
+  const stats = calcStats();
+  let labels = stats.labels.slice(), values = stats.values.slice();
+  if (labels.length === 0) { labels = ["无数据"]; values = [0]; }
+  charts.bar = new Chart(document.getElementById("barChart"), {
+    type: "bar",
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: COLORS, borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 } } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => chartDrillDown(charts.bar, els) }
+  });
+  charts.pie = new Chart(document.getElementById("pieChart"), {
+    type: "doughnut",
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 }, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + (t ? Math.round(ctx.raw/t*100) : 0) + "%)"; } } } }, onClick: (_, els) => chartDrillDown(charts.pie, els) }
+  });
+}
+
+// ─── 表格 ───
+function clsHtmlFor(item) {
+  if (item.status === "infer_failed") return "<span class='cls'><span class='fail' onclick=\"setStatusFilter('infer_failed')\">推理失败</span></span>";
+  if (item.status === "too_long") return "<span class='cls'><span class='long' onclick=\"setStatusFilter('too_long')\">描述过长</span></span>";
+  if (item.status !== "classified") return "<span class='cls'><span class='unk' onclick=\"setStatusFilter('unknown_issue')\">未知问题</span></span>";
+  if (activeView === "business") {
+    const b = bizOf(item) || "其它";
+    return `<span class='cls'><span class='c' onclick="setBizFilter('${b}')">${b}</span></span>`;
   }
-  if (src === "level2") {
-    filters.level2 = s2.value;
-    if (filters.level2) { fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); s3.disabled = false; }
-    else { s3.disabled = true; s3.innerHTML = '<option value="">全部</option>'; s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
-    filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
-  }
-  if (src === "level3") {
-    filters.level3 = s3.value;
-    if (filters.level3) { fillSelect("filter-level4", getAvailableLevel4(filters.level1, filters.level2, filters.level3)); s4.disabled = false; }
-    else { s4.disabled = true; s4.innerHTML = '<option value="">全部</option>'; s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
-    filters.level4 = ""; filters.level5 = "";
-  }
-  if (src === "level4") {
-    filters.level4 = s4.value;
-    if (filters.level4) { fillSelect("filter-level5", getAvailableLevel5(filters.level1, filters.level2, filters.level3, filters.level4)); s5.disabled = false; }
-    else { s5.disabled = true; s5.innerHTML = '<option value="">全部</option>'; }
-    filters.level5 = "";
-  }
-  if (src === "level5") filters.level5 = s5.value;
-  currentPage = 1; updateAll();
+  const lv = levelsOf(item);
+  const ps = lv.map((name, i) => {
+    const prefix = lv.slice(0, i + 1).map(x => `'${x}'`).join(",");
+    return `<span class='c' onclick="setFuncLevel(${i + 1}, [${prefix}])">${name}</span>`;
+  });
+  return "<span class='cls'>" + ps.join("<span class='dot'>·</span>") + "</span>";
 }
-
-function onSearch() { searchText = document.getElementById("search-input").value; currentPage = 1; updateAll(); }
-
-function onDepthChange() { depthFilter = document.getElementById("filter-depth").value; currentPage = 1; updateAll(); }
-
-function onVersionChange() {
-  const newVer = document.getElementById("filter-version").value;
-  // Reset level1~5 filters when version changes
-  if (newVer !== versionFilter) {
-    filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
-    fillSelect("filter-level1", getAllOptions().level1s);
-    document.getElementById("filter-level1").value = "";
-    document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
-    document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
-    document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
-    document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
-  }
-  versionFilter = newVer; currentPage = 1; updateAll();
+function setFuncLevel(depth, prefix) {
+  // prefix = 点击节点及其祖先各级名称（长度 = depth）
+  funcFilters = new Array(maxDepth).fill("");
+  for (let i = 0; i < depth; i++) funcFilters[i] = prefix[i] || "";
+  currentPage = 1; renderFilterControls(); updateAll();
 }
-
-function filterByStatus(status) {
-  if (status === "all") { statusFilter = ""; } else { statusFilter = status; }
-  filters = { level1: "", level2: "", level3: "", level4: "", level5: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
-  fillSelect("filter-level1", getAllOptions().level1s); document.getElementById("filter-level1").value = "";
-  document.getElementById("filter-depth").value = "";
-  document.getElementById("filter-level2").disabled = true; document.getElementById("filter-level2").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-version").value = "";
-  document.getElementById("search-input").value = "";
-  var label = status === "all" ? "" : status === "classified" ? "已分类" : status === "unknown_issue" ? "未知问题" : status === "infer_failed" ? "推理失败" : status === "too_long" ? "描述过长" : "";
-  document.getElementById("filter-path").innerHTML = label ? '<span class="p">' + label + '</span>' : "";
-  currentPage = 1; updateAll();
-}
-
-function clearFilters() {
-  statusFilter = ""; filters = { level1: "", level2: "", level3: "", level4: "", level5: "" }; depthFilter = ""; searchText = ""; versionFilter = "";
-  fillSelect("filter-level1", getAllOptions().level1s);
-  document.getElementById("filter-level1").value = "";
-  document.getElementById("filter-depth").value = "";
-  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
-  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
-  const s4 = document.getElementById("filter-level4"); s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
-  const s5 = document.getElementById("filter-level5"); s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-version").value = "";
-  document.getElementById("search-input").value = "";
-  document.getElementById("filter-path").innerHTML = "";
-  currentPage = 1; updateAll();
-}
-
-function toggleCharts() {
-  chartsVisible = !chartsVisible;
-  document.getElementById("charts-body").classList.toggle("hide", !chartsVisible);
-  document.querySelector(".tog").textContent = chartsVisible ? "收起" : "展开";
-}
-
-function updateBreadcrumb() {
-  const el = document.getElementById("filter-path");
-  if (!filters.level1 && !filters.level2 && !filters.level3 && !filters.level4 && !filters.level5 && !depthFilter && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
-  const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
-  if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + (statusFilter === "classified" ? "已分类" : statusFilter === "unknown_issue" ? "未知问题" : statusFilter === "infer_failed" ? "推理失败" : statusFilter === "too_long" ? "描述过长" : statusFilter) + "</span>");
-  if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter) + "</span>");
-  if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + ["","一级","二级","三级","四级","五级"][parseInt(depthFilter)] + "分类</span>");
-  if (filters.level1) ps.push("<span class='p' onclick='clearLevel(1)'>" + filters.level1 + "</span>");
-  if (filters.level2) ps.push("<span class='p' onclick='clearLevel(2)'>" + filters.level2 + "</span>");
-  if (filters.level3) ps.push("<span class='p' onclick='clearLevel(3)'>" + filters.level3 + "</span>");
-  if (filters.level4) ps.push("<span class='p' onclick='clearLevel(4)'>" + filters.level4 + "</span>");
-  if (filters.level5) ps.push("<span class='p' onclick='clearLevel(5)'>" + filters.level5 + "</span>");
-  if (searchText) ps.push("<span class='p' onclick='clearFilters()'>搜索:" + searchText + "</span>");
-  el.innerHTML = ps.join("<span class='sep'>›</span>");
-}
-
-function clearVersion() {
-  versionFilter = ""; document.getElementById("filter-version").value = "";
-  currentPage = 1; updateAll();
-}
-
-function clearLevel(n) {
-  const s2 = document.getElementById("filter-level2"), s3 = document.getElementById("filter-level3"), s4 = document.getElementById("filter-level4"), s5 = document.getElementById("filter-level5");
-  if (n === 1) {
-    filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
-    fillSelect("filter-level2", getAvailableLevel2(filters.level1)); s2.disabled = !filters.level1; s2.value = "";
-    s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
-    s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
-    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
-  } else if (n === 2) {
-    filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
-    fillSelect("filter-level3", getAvailableLevel3(filters.level1, filters.level2)); s3.disabled = !filters.level2; s3.value = "";
-    s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
-    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
-  } else if (n === 3) {
-    filters.level4 = ""; filters.level5 = "";
-    fillSelect("filter-level4", getAvailableLevel4(filters.level1, filters.level2, filters.level3)); s4.disabled = !filters.level3; s4.value = "";
-    s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
-  } else if (n === 4) {
-    filters.level5 = "";
-    fillSelect("filter-level5", getAvailableLevel5(filters.level1, filters.level2, filters.level3, filters.level4)); s5.disabled = !filters.level4; s5.value = "";
-  }
-  searchText = ""; document.getElementById("search-input").value = ""; currentPage = 1; updateAll();
-}
+function setBizFilter(b) { bizFilter = b; currentPage = 1; renderFilterControls(); updateAll(); }
+function setStatusFilter(s) { statusFilter = statusFilter === s ? "" : s; resetLevelFilters(); currentPage = 1; renderFilterControls(); updateAll(); }
 
 function updateTable() {
   const tbody = document.getElementById("table-body"), empty = document.getElementById("empty-state"), cnt = document.getElementById("table-count"), pgn = document.getElementById("pagination");
@@ -505,133 +502,66 @@ function updateTable() {
   empty.classList.add("hidden");
   pageData.forEach((item, i) => {
     const gi = start + i, row = document.createElement("tr");
-    let clsHtml = "";
-    const cls = item.classification || {};
-    if (item.status === "classified") {
-      const ps = [];
-      if (cls.level1) ps.push("<span class='c' onclick=\"setF1('" + cls.level1 + "')\">" + cls.level1 + "</span>");
-      if (cls.level2) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF2('" + cls.level1 + "','" + cls.level2 + "')\">" + cls.level2 + "</span>");
-      if (cls.level3) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF3('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "')\">" + cls.level3 + "</span>");
-      if (cls.level4) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF4('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "','" + cls.level4 + "')\">" + cls.level4 + "</span>");
-      if (cls.level5) ps.push("<span class='dot'>·</span><span class='c' onclick=\"setF5('" + cls.level1 + "','" + cls.level2 + "','" + cls.level3 + "','" + cls.level4 + "','" + cls.level5 + "')\">" + cls.level5 + "</span>");
-      clsHtml = "<span class='cls'>" + ps.join("") + "</span>";
-    } else if (item.status === "infer_failed") {
-      clsHtml = "<span class='cls'><span class='fail' onclick=\"setF1('推理失败')\">推理失败</span></span>";
-    } else if (item.status === "too_long") {
-      clsHtml = "<span class='cls'><span class='long' onclick=\"setF1('描述过长')\">描述过长</span></span>";
-    } else {
-      clsHtml = "<span class='cls'><span class='unk' onclick=\"setF1('未知问题')\">未知问题</span></span>";
-    }
     row.innerHTML =
       "<td>" + (gi + 1) + "</td>" +
       "<td>" + (item.version || "") + "</td>" +
-      "<td><span class='prob' onclick='showDetail(" + gi + ")'>" + item.input + "</span></td>" +
-      "<td>" + clsHtml + "</td>" +
+      "<td><span class='prob' onclick='showDetail(" + gi + ")'>" + (item.input || "") + "</span></td>" +
+      "<td>" + clsHtmlFor(item) + "</td>" +
       "<td><span class='rsn'>" + (item.reasoning || "") + "</span></td>";
     tbody.appendChild(row);
   });
   updatePagination(filtered.length, totalPages);
 }
 
-function setF1(val) {
-  filters.level1 = val; filters.level2 = ""; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
-  document.getElementById("filter-level1").value = val;
-  fillSelect("filter-level2", getAvailableLevel2(val)); document.getElementById("filter-level2").disabled = false;
-  document.getElementById("filter-level3").disabled = true; document.getElementById("filter-level3").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
-  currentPage = 1; updateAll();
+// ─── 面包屑 ───
+function resetLevelFilters() {
+  funcFilters = new Array(maxDepth).fill(""); bizFilter = ""; depthFilter = "";
 }
-function setF2(l1, l2) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = ""; filters.level4 = ""; filters.level5 = "";
-  document.getElementById("filter-level1").value = l1;
-  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
-  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = "";
-  document.getElementById("filter-level4").disabled = true; document.getElementById("filter-level4").innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
-  currentPage = 1; updateAll();
-}
-function setF3(l1, l2, l3) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = ""; filters.level5 = "";
-  document.getElementById("filter-level1").value = l1;
-  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
-  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
-  const l4opts = getAvailableLevel4(l1, l2, l3);
-  fillSelect("filter-level4", l4opts); document.getElementById("filter-level4").disabled = l4opts.length === 0; document.getElementById("filter-level4").value = "";
-  document.getElementById("filter-level5").disabled = true; document.getElementById("filter-level5").innerHTML = '<option value="">全部</option>';
-  currentPage = 1; updateAll();
-}
-function setF4(l1, l2, l3, l4) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = l4; filters.level5 = "";
-  document.getElementById("filter-level1").value = l1;
-  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
-  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
-  fillSelect("filter-level4", getAvailableLevel4(l1, l2, l3)); document.getElementById("filter-level4").disabled = false; document.getElementById("filter-level4").value = l4;
-  const l5opts = getAvailableLevel5(l1, l2, l3, l4);
-  fillSelect("filter-level5", l5opts); document.getElementById("filter-level5").disabled = l5opts.length === 0; document.getElementById("filter-level5").value = "";
-  currentPage = 1; updateAll();
-}
-function setF5(l1, l2, l3, l4, l5) {
-  filters.level1 = l1; filters.level2 = l2; filters.level3 = l3; filters.level4 = l4; filters.level5 = l5;
-  document.getElementById("filter-level1").value = l1;
-  fillSelect("filter-level2", getAvailableLevel2(l1)); document.getElementById("filter-level2").disabled = false; document.getElementById("filter-level2").value = l2;
-  fillSelect("filter-level3", getAvailableLevel3(l1, l2)); document.getElementById("filter-level3").disabled = false; document.getElementById("filter-level3").value = l3;
-  fillSelect("filter-level4", getAvailableLevel4(l1, l2, l3)); document.getElementById("filter-level4").disabled = false; document.getElementById("filter-level4").value = l4;
-  fillSelect("filter-level5", getAvailableLevel5(l1, l2, l3, l4)); document.getElementById("filter-level5").disabled = false; document.getElementById("filter-level5").value = l5;
-  currentPage = 1; updateAll();
-}
-
-function updateCharts() {
-  const stats = calcStats(getFilteredData());
-  let lvl, title;
-  if (filters.level1 && filters.level2 && filters.level3 && filters.level4 && Object.keys(stats.level5).length > 0) {
-    lvl = "level5"; title = "五级分类分布";
-  } else if (filters.level1 && filters.level2 && filters.level3 && Object.keys(stats.level4).length > 0) {
-    lvl = "level4"; title = "四级分类分布";
-  } else if (filters.level1 && filters.level2 && Object.keys(stats.level3).length > 0) {
-    lvl = "level3"; title = "三级分类分布";
-  } else if (filters.level1 && Object.keys(stats.level2).length > 0) {
-    lvl = "level2"; title = "二级分类分布";
-  } else if (Object.keys(stats.level1).length > 0) {
-    lvl = "level1"; title = "一级分类分布";
+function updateBreadcrumb() {
+  const el = document.getElementById("filter-path");
+  const hasF = activeView === "function" ? (funcFilters.some(f => f) || depthFilter) : !!bizFilter;
+  if (!hasF && !searchText && !statusFilter && !versionFilter) { el.innerHTML = ""; return; }
+  const ps = ["<span class='p' onclick='clearFilters()'>全部</span>"];
+  if (statusFilter) ps.push("<span class='p' onclick='clearFilters()'>" + statusLabel(statusFilter) + "</span>");
+  if (versionFilter) ps.push("<span class='p' onclick='clearVersion()'>版本:" + (versionFilter === "__empty__" ? "无版本号" : versionFilter) + "</span>");
+  if (activeView === "function") {
+    if (depthFilter) ps.push("<span class='p' onclick='clearFilters()'>仅" + (CN_NUM[parseInt(depthFilter)] || depthFilter) + "级</span>");
+    funcFilters.forEach((v, i) => { if (v && v !== LEAF) ps.push("<span class='p' onclick='clearLevel(" + (i + 1) + ")'>" + v + "</span>"); });
   } else {
-    lvl = "level1"; title = "一级分类分布";
-    stats.level1 = {"无数据": 0};
+    if (bizFilter) ps.push("<span class='p' onclick='clearFilters()'>" + bizFilter + "</span>");
   }
-  document.getElementById("bar-title").textContent = title;
-  document.getElementById("pie-title").textContent = title;
-  const labels = Object.keys(stats[lvl]), values = Object.values(stats[lvl]);
-  charts.bar.data.labels = labels; charts.bar.data.datasets[0].data = values;
-  charts.pie.data.labels = labels; charts.pie.data.datasets[0].data = values;
-  charts.bar.update(); charts.pie.update();
+  if (searchText) ps.push("<span class='p' onclick='clearFilters()'>搜索:" + searchText + "</span>");
+  el.innerHTML = ps.join("<span class='sep'>›</span>");
+}
+function statusLabel(s) { return s === "classified" ? "已分类" : s === "unknown_issue" ? "未知问题" : s === "infer_failed" ? "推理失败" : s === "too_long" ? "描述过长" : s; }
+function clearVersion() { versionFilter = ""; document.getElementById("filter-version").value = ""; currentPage = 1; updateAll(); }
+function clearLevel(n) {
+  if (activeView === "function") { for (let i = n - 1; i < maxDepth; i++) funcFilters[i] = ""; }
+  currentPage = 1; renderFilterControls(); updateAll();
+}
+function clearFilters() {
+  statusFilter = ""; resetLevelFilters(); searchText = ""; versionFilter = "";
+  document.getElementById("search-input").value = "";
+  currentPage = 1; renderFilterControls(); updateAll();
 }
 
-function chartDrillDown(chart, els) {
-  if (!els.length) return;
-  const v = chart.data.labels[els[0].index];
-  if (v == null || v === "") return;
-  const f = filters;
-  if (f.level1 && f.level2 && f.level3 && f.level4) { if (getAvailableLevel5(f.level1, f.level2, f.level3, f.level4).length > 0) setF5(f.level1, f.level2, f.level3, f.level4, v); }
-  else if (f.level1 && f.level2 && f.level3) { if (getAvailableLevel4(f.level1, f.level2, f.level3).length > 0) setF4(f.level1, f.level2, f.level3, v); }
-  else if (f.level1 && f.level2) { if (getAvailableLevel3(f.level1, f.level2).length > 0) setF3(f.level1, f.level2, v); }
-  else if (f.level1) { setF2(f.level1, v); }
-  else setF1(v);
+function onSearch() { searchText = document.getElementById("search-input").value; currentPage = 1; updateAll(); }
+function onVersionChange() {
+  const newVer = document.getElementById("filter-version").value;
+  if (newVer !== versionFilter) { resetLevelFilters(); statusFilter = ""; }
+  versionFilter = newVer; currentPage = 1; renderFilterControls(); updateAll();
+}
+function filterByStatus(status) {
+  statusFilter = statusFilter === status ? "" : status;
+  resetLevelFilters(); searchText = ""; versionFilter = "";
+  document.getElementById("search-input").value = "";
+  currentPage = 1; renderFilterControls(); updateAll();
 }
 
-const COLORS = ["#3b82f6","#8b5cf6","#ef4444","#10b981","#f59e0b","#0ea5e9","#14b8a6","#f97316","#1f2937","#d97706","#06b6d4","#dc2626","#6b7280","#1d4ed8","#a855f7","#334155"];
-
-function initCharts() {
-  const stats = calcStats(allData);
-  charts.bar = new Chart(document.getElementById("level1Chart"), {
-    type: "bar",
-    data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderRadius: 4 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 } } }, scales: { y: { beginAtZero: true, grid: { color: "#f0f0f0" }, ticks: { font: { size: 11 } } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }, onClick: (_, els) => chartDrillDown(charts.bar, els) }
-  });
-  charts.pie = new Chart(document.getElementById("pieChart"), {
-    type: "doughnut",
-    data: { labels: Object.keys(stats.level1), datasets: [{ data: Object.values(stats.level1), backgroundColor: COLORS, borderWidth: 2, borderColor: "#fff" }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: "40%", plugins: { legend: { position: "right", labels: { padding: 10, usePointStyle: true, pointStyle: "circle", font: { size: 11 } } }, tooltip: { backgroundColor: "#1f2937", cornerRadius: 6, padding: 10, titleFont: { size: 13, weight: 700 }, bodyFont: { size: 12 }, callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a,b)=>a+b,0); return ctx.label + ": " + ctx.raw + "条 (" + Math.round(ctx.raw/t*100) + "%)"; } } } }, onClick: (_, els) => chartDrillDown(charts.pie, els) }
-  });
+function toggleCharts() {
+  chartsVisible = !chartsVisible;
+  document.getElementById("charts-body").classList.toggle("hide", !chartsVisible);
+  document.querySelector(".tog").textContent = chartsVisible ? "收起" : "展开";
 }
 
 function updateAll() { updateAllSelectTitles(); updateCharts(); updateBreadcrumb(); updateTable(); }
@@ -648,7 +578,6 @@ function updatePagination(total, tp) {
   h += '<span class="info">第'+currentPage+'/'+tp+'页</span>';
   el.innerHTML = h;
 }
-
 function goToPage(p) {
   const tp = Math.ceil(getFilteredData().length / pageSize);
   if (p<1) p=1; if (p>tp) p=tp; currentPage = p; updateTable();
@@ -657,11 +586,12 @@ function goToPage(p) {
 function showDetail(i) {
   const item = getFilteredData()[i], cls = item.classification || {};
   let cv = "";
-  if (item.status === "classified") cv = (cls.level1||"") + (cls.level2?"."+cls.level2:"") + (cls.level3?"."+cls.level3:"") + (cls.level4?"."+cls.level4:"") + (cls.level5?"."+cls.level5:"");
+  if (item.status === "classified") cv = levelsOf(item).join(SEP);
   else if (item.status === "unknown_issue") cv = "未知问题";
   else if (item.status === "too_long") cv = "描述过长";
   else cv = "推理失败";
-  let h = "<div class='mdl-cls'><div class='l'>分类结果</div><div class='v'>" + cv + "</div></div>";
+  let h = "<div class='mdl-cls'><div class='l'>功能域分类</div><div class='v'>" + cv + "</div></div>";
+  if (item.status === "classified") h += "<div class='mdl-cls' style='background:#f7f9fb;margin-bottom:16px'><div class='l'>业务域分类</div><div class='v' style='color:var(--text);font-size:14px'>" + (bizOf(item) || "—") + "</div></div>";
   if (item.version) h += "<div class='mdl-cls' style='background:#f7f9fb;margin-bottom:0'><div class='l'>版本号</div><div class='v' style='color:var(--text);font-size:14px'>" + item.version + "</div></div>";
   if (item.reasoning) h += "<div class='mdl-rsn'><div class='l'>推理过程</div>" + item.reasoning + "</div>";
   const raw = item.raw_data || {};
@@ -673,62 +603,45 @@ function showDetail(i) {
   document.getElementById("modal-body").innerHTML = h;
   document.getElementById("modal-overlay").classList.remove("hidden");
 }
-
 function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
 
-// ─── 域切换 ───
-function renderDomainTabs() {
-  const el = document.getElementById("domain-tabs");
-  if (!el) return;
-  const tabs = [["function", "功能域"], ["business", "业务域"]];
-  const available = tabs.filter(([d]) => dataByDomain[d]);
-  if (available.length === 0) return;
+// ─── 视图切换 ───
+function renderViewTabs() {
+  const el = document.getElementById("view-tabs");
   el.style.display = "flex";
-  el.innerHTML = available.map(([d, label]) =>
-    `<div class="domain-tab${d === activeDomain ? ' active' : ''}" data-domain="${d}" onclick="switchDomain('${d}')">${label}</div>`
+  const tabs = [["function", "功能域"], ["business", "业务域"]];
+  el.innerHTML = tabs.map(([v, label]) =>
+    `<div class="view-tab${v === activeView ? ' active' : ''}" data-view="${v}" onclick="switchView('${v}')">${label}</div>`
   ).join("");
+}
+function switchView(v) { if (v === activeView) return; applyView(v); }
+function applyView(v) {
+  activeView = v;
+  resetLevelFilters(); statusFilter = ""; searchText = ""; versionFilter = ""; currentPage = 1;
+  document.getElementById("search-input").value = "";
+  if (charts.bar) { try { charts.bar.destroy(); charts.pie.destroy(); } catch (e) {} }
+  charts = {};
+  renderFilterControls();
+  initCharts(); updateAll();
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
 }
 
 function updateSummary() {
-  const d = dataByDomain[activeDomain] || { summary: {}, details: [] };
-  const s = d.summary || {};
-  document.getElementById("sum-total").textContent = (s.total != null ? s.total : d.details.length);
-  document.getElementById("sum-classified").textContent = s.classified || 0;
-  document.getElementById("sum-unknown").textContent = s.unknown_issue || 0;
-  document.getElementById("sum-failed").textContent = s.infer_failed || 0;
-  document.getElementById("sum-long").textContent = s.too_long || 0;
+  document.getElementById("sum-total").textContent = (summary.total != null ? summary.total : allData.length);
+  document.getElementById("sum-classified").textContent = summary.classified || 0;
+  document.getElementById("sum-unknown").textContent = summary.unknown_issue || 0;
+  document.getElementById("sum-failed").textContent = summary.infer_failed || 0;
+  document.getElementById("sum-long").textContent = summary.too_long || 0;
 }
-
-function applyDomain(d) {
-  if (!dataByDomain[d]) return;
-  activeDomain = d;
-  allData = dataByDomain[d].details;
-  // 切域：重置所有筛选与图表
-  filters = { level1: "", level2: "", level3: "", level4: "", level5: "" };
-  depthFilter = ""; searchText = ""; statusFilter = ""; versionFilter = ""; currentPage = 1;
-  if (charts.bar) { try { charts.bar.destroy(); charts.pie.destroy(); } catch (e) {} }
-  charts = {};
-  const opts = getAllOptions();
-  fillSelect("filter-level1", opts.level1s);
-  fillSelect("filter-version", opts.versions);
-  document.getElementById("filter-version").disabled = opts.versions.length === 0;
-  const s2 = document.getElementById("filter-level2"); s2.disabled = true; s2.innerHTML = '<option value="">全部</option>';
-  const s3 = document.getElementById("filter-level3"); s3.disabled = true; s3.innerHTML = '<option value="">全部</option>';
-  const s4 = document.getElementById("filter-level4"); s4.disabled = true; s4.innerHTML = '<option value="">全部</option>';
-  const s5 = document.getElementById("filter-level5"); s5.disabled = true; s5.innerHTML = '<option value="">全部</option>';
-  document.getElementById("filter-depth").value = "";
-  document.getElementById("search-input").value = "";
-  document.getElementById("filter-path").innerHTML = "";
-  updateSummary();
-  initCharts(); updateAll();
-  document.querySelectorAll('.domain-tab').forEach(t => t.classList.toggle('active', t.dataset.domain === d));
-}
-
-function switchDomain(d) { if (d === activeDomain || !dataByDomain[d]) return; applyDomain(d); }
 
 document.addEventListener("DOMContentLoaded", () => {
-  renderDomainTabs();
-  applyDomain(activeDomain);
+  maxDepth = computeMaxDepth();
+  funcFilters = new Array(maxDepth).fill("");
+  updateSummary();
+  renderViewTabs();
+  renderFilterControls();
+  initCharts();
+  updateAll();
 });
 </script>
 </body>

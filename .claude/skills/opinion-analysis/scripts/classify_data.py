@@ -11,7 +11,7 @@
   python classify_data.py \
     --app-name 抖音 --problem-index 5 \
     --excel-path test/douyin_100.xlsx \
-    --output-dir output/douyin_100 --domain function
+    --output-dir output/douyin_100
 
 LLM 配置从项目根目录 .env 自动加载，详见 args.load_config。
 """
@@ -52,11 +52,11 @@ def main():
     # Phase 3：执行任务 + 数据落盘 + 期末汇总（汇总打印在 run 内）
     run(config, all_data, args.app_name, problem_col, df, refs, ctx, version_col)
 
-    # Phase 4：报告生成（读 output_dir 下所有域 DB 合并双标签页，摘要打印在 generate_report 内）
+    # Phase 4：报告生成（读 output_dir 下 report.db 单表，功能域/业务域同报告视图切换）
     report_html_path = os.path.join(args.output_dir, f"{os.path.splitext(os.path.basename(args.excel_path))[0]}_report.html")
     report = generate_report(args.output_dir, report_html_path)
     if report:
-        logger.info("报告已生成: %s (包含域: %s)", report['path'], ",".join(report.get('domains', [])))
+        logger.info("报告已生成: %s (总%d条, 已分类%d条)", report['path'], report.get('total', 0), report.get('classified', 0))
     else:
         logger.warning("报告生成失败")
 

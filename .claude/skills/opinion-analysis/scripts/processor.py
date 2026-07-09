@@ -38,18 +38,18 @@ def prepare_data(args, config, df, problem_col, version_col):
     app_name = args.app_name
     output_dir = args.output_dir
 
-    # 加载分类树（agent 返回结果校验用）
-    refs = load_reference(app_name, args.domain)
+    # 加载分类树（agent 返回结果校验用）+ 功能→业务映射（派生 business_classification 用）
+    refs = load_reference(app_name)
     if not refs:
         logger.error("无法加载 '%s' 的知识库", app_name); sys.exit(1)
     if not refs.get("classification"):
-        logger.error("无法加载 '%s' 域[%s]的分类知识库(classification文件缺失)", app_name, args.domain); sys.exit(1)
+        logger.error("无法加载 '%s' 的分类知识库(classification文件缺失)", app_name); sys.exit(1)
 
     db_path = os.path.join(output_dir, "report.db")
-    table = report_table(args.domain)
+    table = report_table()
     init_output_dir(args.excel_path, output_dir)
     setup_logging(output_dir)
-    init_db(db_path, args.domain)
+    init_db(db_path)
     set_table(table)
     set_output_dir(output_dir)
 
