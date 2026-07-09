@@ -206,6 +206,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica
 // 单数据源：{summary, details}。功能域用 full_path 多级、业务域用 business_classification 单层，视图切换。
 const SEP = "-";
 const LEAF = "（无下级）";  // 叶子节点（无更细子级）在图表/筛选中的占位标签
+const STATUS_ORDER = ["unknown_issue", "infer_failed", "too_long"];  // 非分类态在图表末尾的展示顺序
 let rawData = (() => {
   const el = document.getElementById('report-data');
   if (!el || !el.textContent.trim()) return { summary: {}, details: [] };
@@ -384,15 +385,26 @@ function getFilteredData() {
 
 // ─── 统计（图表）───
 // 功能域：展示当前已钻取路径(drilledTo)的「下一级子分类」分布，并额外把「正好停在本级
-//   （无更细子级）」的条目作为单独 bar 展示——其显示名用该分类本身(=父级名)，内部 key 用
-//   LEAF 哨兵以与同名子级区分。该叶子 bar 置于最前且不可点击。标题用实际父级名（根=全部）。
+//   （无更细子级）」的条目作为单独 bar 展示——显示名用该分类本身(=父级名)，内部 key 用 LEAF
+//   哨兵以与同名子级区分。该叶子 bar 置于最前且不可点击。
+// 两视图在根级(未钻取/未按业务筛选)都会把非分类态(未知问题/推理失败/描述过长)作为可点击
+//   status bar 追加到分布末尾；点击即按该状态筛选。标题用实际父级名（根=全部；按状态筛选时=状态名）。
 function calcStats() {
   const data = getFilteredData();
+  // 非分类态按状态计数（两视图共用；钻取时 getFilteredData 已排除非分类态，故 status bar 仅在根级出现）
+  const statusC = {};
+  data.forEach(item => { if (item.status !== "classified" && STATUS_ORDER.includes(item.status)) statusC[item.status] = (statusC[item.status] || 0) + 1; });
+  const pushStatusBars = (labels, keys, values) => {
+    STATUS_ORDER.forEach(st => { if (statusC[st]) { labels.push(statusLabel(st)); keys.push("STATUS:" + st); values.push(statusC[st]); } });
+  };
   if (activeView === "business") {
     const c = {};
     data.forEach(item => { if (item.status === "classified") { const b = bizOf(item); if (b) c[b] = (c[b] || 0) + 1; } });
-    const labels = Object.keys(c), values = Object.values(c);
-    return { title: bizFilter || "业务页面分布", labels, keys: labels, values };
+    const labels = [], keys = [], values = [];
+    for (const k of Object.keys(c).sort()) { labels.push(k); keys.push(k); values.push(c[k]); }
+    pushStatusBars(labels, keys, values);
+    const title = bizFilter ? bizFilter : (statusFilter ? statusLabel(statusFilter) : "业务页面分布");
+    return { title, labels, keys, values };
   }
   // drilledTo = 已选中的最深层级(1-based，跳过 LEAF)，0 表示未钻取
   let drilledTo = 0;
@@ -412,7 +424,9 @@ function calcStats() {
   const labels = [], keys = [], values = [];
   if (leafN > 0) { labels.push(parentName); keys.push(LEAF); values.push(leafN); }  // 叶子 bar 置最前
   for (const k in childC) { labels.push(k); keys.push(k); values.push(childC[k]); }
-  return { title: parentName, labels, keys, values };
+  pushStatusBars(labels, keys, values);
+  const title = statusFilter ? statusLabel(statusFilter) : parentName;
+  return { title, labels, keys, values };
 }
 
 function updateCharts() {
@@ -434,10 +448,11 @@ function chartDrillDown(chart, els) {
   const idx = els[0].index;
   const v = chart.data.labels[idx];
   if (v == null || v === "" || v === "无数据") return;
-  if (activeView === "business") { bizFilter = (bizFilter === v) ? "" : v; currentPage = 1; renderFilterControls(); updateAll(); return; }
   const stats = calcStats();
   const key = stats.keys[idx];
   if (key == null || key === LEAF) return;   // 叶子 bar（无下级）不可点击选择
+  if (typeof key === "string" && key.indexOf("STATUS:") === 0) { setStatusFilter(key.slice(7)); return; }  // 非分类态：按状态筛选（两视图通用，须在业务域分支之前）
+  if (activeView === "business") { bizFilter = (bizFilter === v) ? "" : v; currentPage = 1; renderFilterControls(); updateAll(); return; }
   let drilledTo = 0;
   for (let i = 0; i < maxDepth; i++) if (funcFilters[i] && funcFilters[i] !== LEAF) drilledTo = i + 1;
   if (drilledTo >= maxDepth) return;          // 已到最深层，无更细子级
