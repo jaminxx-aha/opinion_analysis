@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""processor.py - Phase 2 数据准备 + Phase 3 执行分派（仅 Claude Agent SDK 路径）
+"""processor.py - Phase 2 数据准备 + Phase 3 执行分派（agent 后端路径）
 
 依赖图（无循环）：
-  processor → classify_agent → db_utils / runtime / claude_agent_client（叶子，不反向 import processor）
+  processor → classify_agent → db_utils / runtime / agent_client（叶子，不反向 import processor）
 运行时状态（输出目录/进度）与响应解析在 runtime.py。
 """
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""classify_agent.py - 通过 Claude Agent SDK（抖音舆情 skill）做单条分类推理
+"""classify_agent.py - 通过 agent 后端（抖音舆情 skill）做单条分类推理
 
 唯一的推理路径：每条问题描述发起一次 agent 调用，skill 一次性返回完整分类编码
-{result, reason}，每条问题一个任务。
+{result, reason}，每条问题一个任务。agent 后端由配置选择（agent_client.create_agent），
+本模块只与后端基类打交道，不感知具体后端实现。
 
 共享逻辑（save_item 在 db_utils；extract_json/get_output_dir/incr_progress 在 runtime）
 通过顶层 import 引入。
@@ -15,7 +16,7 @@ import asyncio
 import logging
 from db_utils import save_item
 from runtime import extract_json, get_output_dir, incr_progress
-from claude_agent_client import call_agent_sdk
+from agent_client import create_agent
 from args import derive_business_classification
 
 logger = logging.getLogger("classify_data")
@@ -67,10 +68,11 @@ def match_result_to_code(result, code_to_path):
 def _consume_agent(desc, agent_cfg, log_file, correction=None):
     """同步桥接：运行流式 agent，边收边写日志，返回拼接后的完整文本。
 
-    超时由 call_agent_sdk 内部按"空闲超时"实现（idle_timeout 秒内无任何消息才判卡死，
+    超时由后端按“空闲超时”实现（idle_timeout 秒内无任何消息才判卡死，
     流式持续产出/工具往返期间不超时）。agent 报错(RuntimeError)与空闲超时都抛
     RuntimeError，由调用方按失败重试。日志边收边写，长任务可 tail 实时查看。
     correction 非空时拼入 prompt，把上一次失败上下文带给 agent 修正。
+    后端实例由 agent_client.create_agent(agent_cfg) 按 cfg.backend 分派。
     """
     idle_timeout = agent_cfg.get("timeout")
 
@@ -84,17 +86,8 @@ def _consume_agent(desc, agent_cfg, log_file, correction=None):
                 fh.write("===== Agent 流式返回 =====\n")
             except Exception as e:
                 logger.warning("写 agent 日志失败 %s: %s", log_file, e)
-        agen = call_agent_sdk(
-            desc,
-            skill_dir=agent_cfg["skill_dir"],
-            skill_name=agent_cfg["skill_name"],
-            model=agent_cfg.get("model"),
-            api_key=agent_cfg.get("api_key"),
-            base_url=agent_cfg.get("base_url"),
-            max_turns=agent_cfg.get("max_turns"),
-            correction=correction,
-            idle_timeout=idle_timeout,
-        )
+        agent = create_agent(agent_cfg)
+        agen = agent.stream(desc, correction=correction, idle_timeout=idle_timeout)
         try:
             async for chunk in agen:
                 chunks.append(chunk)

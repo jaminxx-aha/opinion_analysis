@@ -92,15 +92,15 @@ def resolve_columns(args, df):
 
 @dataclass
 class Config:
-    """本次运行的完整配置（Phase 1 产出，Phase 2/3 消费）。仅 Claude Agent SDK 一种推理路径。"""
+    """本次运行的完整配置（Phase 1 产出，Phase 2/3 消费）。推理路径由后端配置决定。"""
     api_keys: List[str]
     max_concurrent: int
     total_concurrent: int
-    agent_cfg: dict   # skill_dir/skill_name/model/api_key/base_url/max_turns/timeout/max_retries
+    agent_cfg: dict   # backend/skill_dir/skill_name/model/api_key/base_url/max_turns/timeout/max_retries
 
 
 def load_config(args):
-    """读环境变量、构建 agent_cfg、校验，返回 Config。仅支持 Claude Agent SDK 路径。"""
+    """读环境变量、构建 agent_cfg、校验，返回 Config。后端由 LLM_AGENT_BACKEND 选择。"""
     _load_env()
 
     max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
@@ -108,8 +108,9 @@ def load_config(args):
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # 走 headless Claude Code agent 加载抖音舆情 skill，单条问题→单个 JSON，
-    # skill 一次性返回完整分类编码。
+    # 走 headless agent 加载抖音舆情 skill，单条问题→单个 JSON，
+    # skill 一次性返回完整分类编码。后端类型由配置选择（agent_client.create_agent）。
+    agent_backend = os.environ.get("LLM_AGENT_BACKEND", "opencode").strip().lower()
     agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
     agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
     model = os.environ.get("LLM_MODEL") or None
@@ -127,9 +128,10 @@ def load_config(args):
     if not os.path.isfile(skill_md):
         logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
 
-    # 未配 API key 时回退到 claude CLI 自身的 OAuth 登录
+    # 未配 API key 时回退到 agent 自身的登录态
     total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
     agent_cfg = {
+        "backend": agent_backend,
         "skill_dir": agent_skill_dir,
         "skill_name": agent_skill_name,
         "model": model,
@@ -139,8 +141,8 @@ def load_config(args):
         "timeout": agent_timeout,
         "max_retries": max_retries,
     }
-    logger.info("推理模式: Claude Agent SDK (skill=%s, model=%s, skill_dir=%s, 并发%d)",
-                agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
+    logger.info("推理模式: Agent (backend=%s, skill=%s, model=%s, skill_dir=%s, 并发%d)",
+                agent_backend, agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
 
     # app_name 合法性校验
     if args.app_name not in get_supported_apps():

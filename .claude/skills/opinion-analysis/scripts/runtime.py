@@ -5,8 +5,8 @@
 get_output_dir/incr_progress/extract_json，而不再 import processor，于是 processor
 可以在文件顶部直接 import 策略模块。
 
-仅 Claude Agent SDK 路径：agent 的 LLM 调用在 claude_agent_client.py（走 SDK 的 query），
-本模块不再持有 openai/anthropic 直调代码。
+仅 agent 后端路径：agent 的 LLM 调用在 agent_client.py（按 cfg.backend 分派具体后端），
+本模块不持有任何具体后端或 openai/anthropic 直调代码。
 """
 
 import json
