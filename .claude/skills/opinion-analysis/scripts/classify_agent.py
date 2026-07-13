@@ -87,7 +87,15 @@ def _consume_agent(desc, agent_cfg, log_file, correction=None):
             except Exception as e:
                 logger.warning("写 agent 日志失败 %s: %s", log_file, e)
         agent = create_agent(agent_cfg)
-        agen = agent.stream(desc, correction=correction, idle_timeout=idle_timeout)
+        def _progress(s):
+            # reasoning 增量 + tool 调用标记：只写日志看进度，不进提取 text
+            if fh:
+                try:
+                    fh.write(s)
+                    fh.flush()
+                except Exception:
+                    pass
+        agen = agent.stream(desc, correction=correction, idle_timeout=idle_timeout, on_progress=_progress)
         try:
             async for chunk in agen:
                 chunks.append(chunk)

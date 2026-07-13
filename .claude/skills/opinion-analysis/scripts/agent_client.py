@@ -31,13 +31,15 @@ class AgentClient:
     def __init__(self, cfg):
         self.cfg = cfg or {}
 
-    async def stream(self, desc, *, correction=None, idle_timeout=None):
-        """异步生成器：逐块 yield 推理文本。
+    async def stream(self, desc, *, correction=None, idle_timeout=None, on_progress=None):
+        """异步生成器：逐块 yield 推理 answer 文本。
 
         - desc：待分类的问题描述。
         - correction：上一次失败的原因上下文，带入本次调用让后端修正（可空）。
         - idle_timeout：空闲超时秒数；后端应在“idle_timeout 秒内无任何产出”时判卡死并
           抛 RuntimeError（持续产出/多轮往返期间不超时），由调用方按失败重试。
+        - on_progress(text)：进度回调（reasoning 增量 / 步骤标记等），由调用方写日志看进度，
+          不计入 yield 的 answer 文本（不进 extract_json 提取）。可空。
         子类必须实现本方法。
         """
         raise NotImplementedError

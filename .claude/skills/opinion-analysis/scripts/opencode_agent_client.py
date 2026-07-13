@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -59,6 +60,37 @@ def _stop_server():
             pass
 
 
+def _resolve_opencode_bin():
+    """返回 opencode 可执行文件路径，绕开 Windows 的 npm 批处理 shim。
+
+    shutil.which("opencode") 在 Windows 上返回 opencode.CMD（批处理 shim），shim 内部再
+    exec node_modules\\opencode-ai\\bin\\opencode.exe。若直接 Popen .CMD，proc 指向的
+    是 cmd.exe 解释器，atexit 的 _stop_server 调 proc.terminate() 只杀掉 cmd.exe，真正
+    的 opencode.exe 成孤儿进程（每次运行残留一个，~500MB）。POSIX 上的 shim 用 exec
+    替换自身，proc 即真正的二进制，不存在此问题。故 Windows 上优先解析出 .CMD 引用的
+    真实 .exe 直接启动，使 proc.terminate() 能命中真正的服务进程。
+    """
+    bin_path = shutil.which("opencode") or "opencode"
+    if sys.platform == "win32" and bin_path.lower().endswith((".cmd", ".bat")):
+        shim_dir = os.path.dirname(bin_path)
+        # opencode.CMD 内: "%dp0%\node_modules\opencode-ai\bin\opencode.exe"
+        cand = os.path.join(shim_dir, "node_modules", "opencode-ai", "bin", "opencode.exe")
+        if os.path.isfile(cand):
+            return cand
+        # 兜底：正则解析 .CMD 里引用的 .exe 路径
+        try:
+            with open(bin_path, "r", encoding="utf-8", errors="ignore") as f:
+                txt = f.read()
+            m = re.search(r'"([^"]+opencode[^"]+\.exe)"', txt, re.IGNORECASE)
+            if m:
+                p = os.path.normpath(m.group(1).replace("%dp0%", shim_dir))
+                if os.path.isfile(p):
+                    return p
+        except Exception:
+            pass
+    return bin_path
+
+
 def _resolve_base_url(skill_dir):
     """返回 opencode 服务地址：优先外部 OPENCODE_BASE_URL；否则从 skill_dir 拉起一个。"""
     ext = os.environ.get("OPENCODE_BASE_URL")
@@ -75,10 +107,11 @@ def _resolve_base_url(skill_dir):
             fh = open(log_path, "w", encoding="utf-8")
         except Exception:
             fh = None
-        # 解析 opencode 可执行文件绝对路径：Windows 上 npm 装的是 opencode.cmd / .ps1 shim，
-        # CreateProcess 不会自动套 PATHEXT，直接传 "opencode" 会 WinError 2；shutil.which 跨平台
-        # 返回带扩展名的真实启动器（Windows→opencode.CMD，POSIX→PATH 中的 opencode）。
-        opencode_bin = shutil.which("opencode") or "opencode"
+        # Windows 上 npm 装的是 opencode.CMD 批处理 shim，直接 Popen 会让 proc 指向 cmd.exe
+        # 解释器，atexit 的 proc.terminate() 杀错进程导致真正的 opencode.exe 泄漏。
+        # _resolve_opencode_bin 解析出 .CMD 引用的真实 .exe 直接启动；POSIX 上 which 返回
+        # 的就是 exec 自身的 shim，proc 即真正的二进制。详见 _resolve_opencode_bin 注释。
+        opencode_bin = _resolve_opencode_bin()
         proc = subprocess.Popen(
             [opencode_bin, "serve", "--port", "0", "--hostname", "127.0.0.1", "--log-level", "WARN"],
             cwd=skill_dir,
@@ -169,13 +202,17 @@ class OpencodeAgentClient(AgentClient):
         if not self.model_id:
             raise RuntimeError("opencode 后端需配置 LLM_AGENT_MODEL_ID 或 LLM_MODEL（opencode 配置中的 model id）")
 
-    async def stream(self, desc, *, correction=None, idle_timeout=None):
-        """异步生成器：逐块 yield 助手文本（SSE 增量），完成后兜底取完整文本。
+    async def stream(self, desc, *, correction=None, idle_timeout=None, on_progress=None):
+        """异步生成器：逐块 yield 助手 answer 文本（SSE 增量），完成后兜底取完整文本。
 
+        - 增量走 message.part.delta（逐 token，一轮数千个）。其中 partID 命中 text-part 的
+          delta 才 yield（进提取 text）；reasoning/tool 的增量经 on_progress 只写日志看进度，
+          不进提取 text——避免思考草稿里的 ```json 或 { 污染 extract_json。
+        - on_progress(text)：进度回调（reasoning 增量 + tool 调用标记），由调用方写日志，不累积。
         - idle_timeout：对 SSE 每行读取套 asyncio.wait_for；idle_timeout 秒内无任何事件才判卡死，
           抛 RuntimeError（持续产出/多轮往返期间不超时），由调用方按失败重试。
         - session.error / chat 返回 error → 抛 RuntimeError。
-        - 若 SSE 全程未拿到文本（如流式异常），用 GET /session/{id}/message 兜底取助手文本。
+        - 若 SSE 全程未拿到 answer 文本（如流式异常），用 GET /session/{id}/message 兜底取助手文本。
         """
         base_url = _resolve_base_url(self.skill_dir)
         system, user_text = _build_messages(self.cfg, desc, correction)
@@ -190,8 +227,12 @@ class OpencodeAgentClient(AgentClient):
 
             async with hc.stream("GET", "/event") as resp:
                 it = resp.aiter_lines()
-                assistant_mid = None
-                last_text = ""
+                # text 类型 part 的 id 集合：answer 文本走 message.part.delta 逐 token 增量，
+                # 按 partID 路由——partID 命中 text_part_ids 的 delta 才 yield 进提取 text；
+                # reasoning/tool 的增量经 on_progress 写日志看进度，不进提取 text（避免
+                # 思考草稿里的 ```json 或 { 污染 extract_json）。tool 调用按 callID 去重打标记。
+                text_part_ids = set()
+                seen_tool_calls = set()
                 while True:
                     try:
                         if idle_timeout:
@@ -218,19 +259,37 @@ class OpencodeAgentClient(AgentClient):
                     if props.get("sessionID") and props.get("sessionID") != sid:
                         continue
                     t = ev.get("type")
-                    if t == "message.updated":
-                        info = props.get("info") or {}
-                        if info.get("role") == "assistant" and not assistant_mid:
-                            assistant_mid = info.get("id")
+                    if t == "message.part.delta":
+                        # 逐 token 增量流（一轮数千个）。field=="text" 的 delta：
+                        # partID 命中 text_part_ids → answer 文本，yield（进提取 text）；
+                        # 否则是 reasoning 等的 text 字段增量 → 只走 on_progress 写日志看进度。
+                        if props.get("field") == "text":
+                            d = props.get("delta")
+                            if d:
+                                if props.get("partID") in text_part_ids:
+                                    streamed_any = True
+                                    yield d
+                                elif on_progress:
+                                    on_progress(d)
                     elif t == "message.part.updated":
                         part = props.get("part") or {}
-                        if part.get("type") == "text" and assistant_mid and part.get("messageID") == assistant_mid:
-                            txt = part.get("text", "")
-                            if txt and txt != last_text:
-                                delta = txt[len(last_text):] if txt.startswith(last_text) else txt
-                                last_text = txt
-                                streamed_any = True
-                                yield delta
+                        ptype = part.get("type")
+                        if ptype == "text" and part.get("id"):
+                            # 记录 answer 文本 part 的 id，供后续 .delta 路由
+                            text_part_ids.add(part.get("id"))
+                        elif ptype == "tool" and on_progress:
+                            # 每个 tool 调用打一次标记，日志里可看出 agent 卡在哪一步（读哪个文件）
+                            cid = part.get("callID")
+                            if cid and cid not in seen_tool_calls:
+                                seen_tool_calls.add(cid)
+                                tn = part.get("tool")
+                                if isinstance(tn, dict):
+                                    nm = tn.get("name") or tn.get("id") or "?"
+                                elif isinstance(tn, str):
+                                    nm = tn
+                                else:
+                                    nm = "?"
+                                on_progress("\n>>> tool: %s\n" % nm)
                     elif t == "session.idle":
                         break
                     elif t == "session.error":
