@@ -1,6 +1,6 @@
 # 舆情分析工具
 
-基于 Claude Agent SDK 的智能舆情数据分析工具：读取 Excel 中的用户反馈数据，通过 headless Claude Code agent 加载「抖音舆情分析」子 skill 对每条问题做分类，生成交互式可视化 HTML 报告。
+基于 opencode agent 的智能舆情数据分析工具：读取 Excel 中的用户反馈数据，通过 opencode 驱动的 headless agent 加载「抖音舆情分析」子 skill 对每条问题做分类，生成交互式可视化 HTML 报告。
 
 ## 功能特性
 
@@ -38,8 +38,8 @@ cp .env.example .env
 ```
 
 ```ini
-LLM_MODEL=glm-5.2             # 模型名称
-LLM_API_KEY=your-api-key      # API 密钥 (多个key用逗号分隔；留空则用 claude CLI 的 OAuth 登录)
+LLM_MODEL=glm-5.2             # opencode model_id 的兜底回退（优先用 LLM_AGENT_MODEL_ID）
+LLM_API_KEY=your-api-key      # API 密钥 (多个key用逗号分隔)
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_AGENT_SKILL_DIR=.         # 含 .claude/skills/<skill>/SKILL.md 的项目根目录（必填）
 ```
@@ -48,7 +48,7 @@ LLM_AGENT_SKILL_DIR=.         # 含 .claude/skills/<skill>/SKILL.md 的项目根
 
 ```bash
 pip install -r .claude/skills/opinion-analysis/scripts/requirements.txt
-# 另需已安装 claude CLI（agent 通过 claude-agent-sdk 调起 headless agent）
+# 另需已安装 opencode CLI（agent 通过 opencode-ai 调起 headless agent）
 ```
 
 ### 3. 运行分析
@@ -112,7 +112,8 @@ python .claude/skills/opinion-analysis/scripts/retry_failed.py output/2025-05-05
         ├── processor.py                 # 数据准备(prepare_data) + 执行分派(run)
         ├── runtime.py                   # 运行时状态(输出目录/进度) + 响应解析
         ├── classify_agent.py            # agent 单条分类推理 + 重试(json_repair/分类树纠偏)
-        ├── claude_agent_client.py       # claude-agent-sdk 流式封装
+        ├── opencode_agent_client.py     # opencode-ai 流式封装（agent_client 子类）
+        ├── agent_client.py              # 后端基类与工厂（按 cfg.backend 分派，便于后续拓展）
         ├── retry_failed.py              # 重试 DB 中推理失败(status=2)的数据
         ├── generate_report.py           # 目录或 DB → 单篇 HTML 报告（自动合并双域）
         ├── generate_dashboard.py        # 扫描 output/ 生成汇总仪表盘（--domain）
@@ -131,18 +132,20 @@ python .claude/skills/opinion-analysis/scripts/retry_failed.py output/2025-05-05
 
 ## 环境变量
 
-推理路径唯一：Claude Agent SDK（headless Claude Code agent 加载「抖音舆情分析」skill 做分类，单条问题→单次 agent 调用）。需 `pip install claude-agent-sdk` + 已安装 `claude` CLI。
+推理后端固定为 opencode（通过 opencode-ai 驱动本地 opencode 服务，headless agent 加载「抖音舆情分析」skill 做分类，单条问题→单次 agent 调用）。需 `pip install opencode-ai` + 已安装 `opencode` CLI。
 
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `LLM_AGENT_SKILL_DIR` | 是 | 含 `.claude/skills/<skill>/SKILL.md` 的项目根目录 |
 | `LLM_AGENT_SKILL_NAME` | 否 | skill 名称，默认 `douyin-performance-problem-classifier` |
-| `LLM_MODEL` | 否 | 模型名称；留空用 claude CLI 默认 |
-| `LLM_API_KEY` | 否 | API 密钥（多个key用逗号分隔）；留空则用 `claude /login` 的 OAuth 凭据 |
+| `LLM_AGENT_PROVIDER` | 是 | opencode 配置中的 provider id |
+| `LLM_AGENT_MODEL_ID` | 否 | opencode 配置中的 model id；留空回退 `LLM_MODEL` |
+| `LLM_MODEL` | 否 | model id 兜底回退 |
+| `LLM_API_KEY` | 否 | API 密钥（多个key用逗号分隔） |
 | `LLM_BASE_URL` | 否 | API 基地址（走代理时填写） |
 | `LLM_MAX_CONCURRENT` | 否 | 每个key的最大并发数（总并发=key数×此值），默认 1 |
 | `LLM_AGENT_MAX_TURNS` | 否 | agent 最大轮次，默认 10 |
-| `LLM_AGENT_TIMEOUT` | 否 | agent 单次调用超时秒数，默认 120（需多轮读 skill 文件） |
+| `LLM_AGENT_TIMEOUT` | 否 | agent 单次调用空闲超时秒数，默认 120（需多轮读 skill 文件） |
 | `LLM_MAX_RETRIES` | 否 | 单条数据最大重试次数，默认 3 |
 | `LLM_LOG_LEVEL` | 否 | 日志级别，默认 DEBUG |
 

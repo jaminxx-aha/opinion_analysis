@@ -1,12 +1,12 @@
 ---
 name: opinion-analysis
 description: 分析Excel舆情数据，自动分类性能问题并生成交互式可视化HTML报告。当用户提供Excel舆情数据文件时触发。
-dependencies: python>=3.8, pandas>=1.5.0, openpyxl, python-dotenv, json_repair, 以及所选 agent 后端的 SDK（见 requirements.txt）
+dependencies: python>=3.8, pandas>=1.5.0, openpyxl, python-dotenv, json_repair, opencode-ai
 ---
 
 # 舆情分析技能
 
-分析 Excel 舆情数据，识别应用名和问题描述列，通过 agent 后端加载「抖音舆情分析」子 skill 对每条问题做分类，生成可视化 HTML 报告。后端类型由 `LLM_AGENT_BACKEND` 配置选择，具体后端实现互不影响、可按需替换。
+分析 Excel 舆情数据，识别应用名和问题描述列，通过 agent 加载「抖音舆情分析」子 skill 对每条问题做分类，生成可视化 HTML 报告。推理后端由 `agent_client` 基类与工厂统一抽象，默认实现为 opencode（`opencode_agent_client`，作为 `agent_client` 子类；基类与工厂保留以便后续拓展其它后端）。
 
 ## 前置条件
 
@@ -76,5 +76,5 @@ python <skill_path>/scripts/retry_failed.py <output_dir> [--app-name <app_name>]
   - [app_list.py](scripts/app_list.py) — 当前支持的应用列表
   - [generate_report.py](scripts/generate_report.py) — DB → HTML 报告（目录或 DB 输入，功能域/业务域同报告视图切换）
   - [retry_failed.py](scripts/retry_failed.py) — 重试 DB 中推理失败(status=2)的数据（给目录即可）
-  - 内部模块：`args.py`（参数/配置/参考库）、`db_utils.py`（DB/入库）、`processor.py`（数据准备+执行分派）、`runtime.py`（运行时状态+响应解析）、`classify_agent.py`（agent 单条分类+重试）、`agent_client.py`（后端基类与工厂，按 `LLM_AGENT_BACKEND` 分派）、`<backend>_agent_client.py`（各后端具体实现，仅选用时才需安装对应 SDK）
+  - 内部模块：`args.py`（参数/配置/参考库）、`db_utils.py`（DB/入库）、`processor.py`（数据准备+执行分派）、`runtime.py`（运行时状态+响应解析）、`classify_agent.py`（agent 单条分类+重试）、`agent_client.py`（后端基类与工厂，按 `cfg.backend` 分派）、`opencode_agent_client.py`（默认 agent 后端实现，作为 `agent_client` 子类）
 

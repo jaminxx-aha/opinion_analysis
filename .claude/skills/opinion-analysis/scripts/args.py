@@ -96,11 +96,15 @@ class Config:
     api_keys: List[str]
     max_concurrent: int
     total_concurrent: int
-    agent_cfg: dict   # backend/skill_dir/skill_name/model/api_key/base_url/max_turns/timeout/max_retries
+    agent_cfg: dict   # skill_dir/skill_name/model/api_key/base_url/max_turns/timeout/max_retries
 
 
 def load_config(args):
-    """读环境变量、构建 agent_cfg、校验，返回 Config。后端由 LLM_AGENT_BACKEND 选择。"""
+    """读环境变量、构建 agent_cfg、校验，返回 Config。
+
+    推理后端固定为 opencode（OpencodeAgentClient）；agent_client 基类与工厂保留，
+    便于后续新增其它后端时按 cfg.backend 动态分派。
+    """
     _load_env()
 
     max_concurrent = int(os.environ.get("LLM_MAX_CONCURRENT", "1"))
@@ -109,8 +113,7 @@ def load_config(args):
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     # 走 headless agent 加载抖音舆情 skill，单条问题→单个 JSON，
-    # skill 一次性返回完整分类编码。后端类型由配置选择（agent_client.create_agent）。
-    agent_backend = os.environ.get("LLM_AGENT_BACKEND", "opencode").strip().lower()
+    # skill 一次性返回完整分类编码。后端固定 opencode（agent_client.create_agent）。
     agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
     agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
     model = os.environ.get("LLM_MODEL") or None
@@ -131,7 +134,7 @@ def load_config(args):
     # 未配 API key 时回退到 agent 自身的登录态
     total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
     agent_cfg = {
-        "backend": agent_backend,
+        "backend": "opencode",
         "skill_dir": agent_skill_dir,
         "skill_name": agent_skill_name,
         "model": model,
@@ -141,8 +144,8 @@ def load_config(args):
         "timeout": agent_timeout,
         "max_retries": max_retries,
     }
-    logger.info("推理模式: Agent (backend=%s, skill=%s, model=%s, skill_dir=%s, 并发%d)",
-                agent_backend, agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
+    logger.info("推理模式: Agent (backend=opencode, skill=%s, model=%s, skill_dir=%s, 并发%d)",
+                agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
 
     # app_name 合法性校验
     if args.app_name not in get_supported_apps():

@@ -6,9 +6,4 @@ pandas>=2.0            # classify_data.py, excel_info.py
 python-dotenv>=1.0     # classify_data.py（加载 .env）
 openpyxl>=3.1          # scripts/export_db_to_excel.py
 json_repair            # classify_agent.py：agent 返回的残缺 JSON 修复
-
-# === agent 后端（二选一，由 LLM_AGENT_BACKEND 选择，默认 opencode）===
-# 默认后端：opencode-ai（预发布版，需 --pre）
 opencode-ai            # opencode_agent_client.py；httpx 由其间接引入
-# 可选备用后端：仅在 LLM_AGENT_BACKEND=claude 时需要
-# claude-agent-sdk      # claude_agent_client.py

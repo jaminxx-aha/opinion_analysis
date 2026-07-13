@@ -9,7 +9,7 @@ agent_client.create_agent 动态 import，故 opencode-ai 仅在选用本后端�
   - opencode 服务以 HTTP 形式提供（opencode serve），SDK 是它的客户端。
   - POST /session 创建会话（id 由服务端生成）；服务端用“启动时的工作目录”作为会话
     工作目录，故本后端在未配置外部服务时，自行从 skill_dir 拉起一个 opencode 服务，
-    使会话工作目录 == skill_dir（与 claude 后端 cwd=skill_dir 对齐）。
+    使会话工作目录 == skill_dir（agent 从 skill_dir 读取 SKILL.md 与 references）。
   - session.chat 阻塞至当轮推理完成；助手文本通过 /event 的 SSE 事件流增量推送
     （message.part.updated，part.type==text 的 text 字段累积），session.idle 表示完成。
   - 因 SDK 的 EventListResponse 联合类型在本 Python 版本下无法实例化、且 SDK 未暴露
@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -74,8 +75,12 @@ def _resolve_base_url(skill_dir):
             fh = open(log_path, "w", encoding="utf-8")
         except Exception:
             fh = None
+        # 解析 opencode 可执行文件绝对路径：Windows 上 npm 装的是 opencode.cmd / .ps1 shim，
+        # CreateProcess 不会自动套 PATHEXT，直接传 "opencode" 会 WinError 2；shutil.which 跨平台
+        # 返回带扩展名的真实启动器（Windows→opencode.CMD，POSIX→PATH 中的 opencode）。
+        opencode_bin = shutil.which("opencode") or "opencode"
         proc = subprocess.Popen(
-            ["opencode", "serve", "--port", "0", "--hostname", "127.0.0.1", "--log-level", "WARN"],
+            [opencode_bin, "serve", "--port", "0", "--hostname", "127.0.0.1", "--log-level", "WARN"],
             cwd=skill_dir,
             stdout=fh if fh else subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
