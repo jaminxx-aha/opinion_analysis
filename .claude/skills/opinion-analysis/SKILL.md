@@ -8,6 +8,11 @@ dependencies: python>=3.8, pandas>=1.5.0, openpyxl, python-dotenv, json_repair, 
 
 分析 Excel 舆情数据，识别应用名和问题描述列，通过 agent 加载「抖音舆情分析」子 skill 对每条问题做分类，生成可视化 HTML 报告。推理后端由 `agent_client` 基类与工厂统一抽象，默认实现为 opencode（`opencode_agent_client`，作为 `agent_client` 子类；基类与工厂保留以便后续拓展其它后端）。
 
+## 重要规则（必须遵守）
+
+- **告知用户**：必须告知用户步骤4中的分类任务的启动命令；
+- **禁止直接启动步骤4中的分类任务**：步骤4中的分类任务耗时很长，必须经过用户确认才能后台启动。
+
 ## 前置条件
 
 - 安装依赖：`pip install -r <skill_path>/scripts/requirements.txt`
@@ -38,7 +43,13 @@ python <skill_path>/scripts/app_list.py
 
 **注意**：若无法获取应用名和问题描述列号，或应用名无法映射到应用列表中，终止步骤！
 
-### 步骤4：分类并生成报告
+### 步骤4：询问是否启动分类任务
+
+明确告知用户分类任务的启动命令（确认好脚本的参数），包括前台执行命令和后台执行命令，然后询问用户是否允许后台启动任务。
+
+**注意**：此步骤**只负责提供启动** `classify_data.py` 任务的命令或后台启动该任务，不会等待任务结束（因为数据量大时可能需要数分钟到数十分钟）。智能体启动任务后即可继续，用户会通过其他途径查看进度。
+
+**前台启动命令**（前台启动命令**必须**由用户执行）：
 
 ```bash
 python <skill_path>/scripts/classify_data.py \
@@ -49,10 +60,41 @@ python <skill_path>/scripts/classify_data.py \
   [--version-index <version_index>]
 ```
 
-- 只对功能域做一次分类推理；业务域分类由「功能域→业务页面标签」映射自动派生，无需二次推理。
-- `--output-dir` 输出路径，用户未指定则用 `./output/<excel_name>`。
-- `--version-index` 可选，`-1` 或不传表示无版本号列。
-- 同一 `--output-dir` 下单个 `report.db`，单张 `report` 表，每行同时存功能域 `full_path`(- 分隔) 与业务域 `business_classification`。
+**后台启动命令**（**必须**经过用户确认后执行，后台运行避免智能体超时）：
+
+> **执行前请先告知用户以下信息并征询确认：**
+> - 将以后台方式启动分类任务
+> - 任务运行期间切勿关闭终端
+> - 可通过日志和 DB 查看进度
+
+```powershell
+# Windows (PowerShell) 后台启动
+Start-Process -FilePath "python" -ArgumentList "<skill_path>\scripts\classify_data.py --app-name <app_name> --problem-index <problem_index> --excel-path <Excel文件路径> --output-dir <output_dir> -WindowStyle Hidden
+```
+
+```bash
+nohup python <skill_path>\scripts\classify_data.py --app-name <app_name> --problem-index <problem_index> --excel-path <Excel文件路径> --output-dir <output_dir> /dev/null 2>&1 &
+```
+
+**命令参数说明**：
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `--app-name` | 是 | 应用名，需要与步骤2应用列表中的名称一致 |
+| `--problem-index` | 是 | 问题描述列号（索引从0开始） |
+| `--excel-path` | 是 | Excel 文件路径 |
+| `--output-dir` | 否 | 输出路径，默认为 `./output/<excel_name>` |
+| `--version-index` | 否 | 版本号列号，`-1`或不传表示无版本号列 |
+
+**查看任务进度**：
+
+| 方式 | 路径 | 说明 |
+|------|------|------|
+| 日志文件 | `<output_dir>/log/report.log` | 记录总体进度（条数、成功率） |
+| 响应日志 | `<output_dir>/log/response_*_agent*.log` | 每条数据的 agent 响应详情 |
+| DB 记录数 | `<output_dir>/report.db` | 查询对应表记录数，可判断已经完成条数 |
+
+**判断任务完成**：日志中出现`分类完成` 相关字样，或 `report.db` 中记录数等于 Excel 总行数。
+
 
 **执行时间过长时**：分类脚本持续运行直到所有数据处理完成。若长时间无进展输出，请检查日志 `<output_dir>/log/report.log` 与 `<output_dir>/log/response_*_agent*.log`。
 

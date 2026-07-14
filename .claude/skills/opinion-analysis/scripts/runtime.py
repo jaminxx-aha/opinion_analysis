@@ -41,6 +41,7 @@ def incr_progress(n, total, label):
         _progress_done += n
         pct = _progress_done * 100 // total if total else 0
         logger.info("[%3d%%] 已完成第%s条 (%d/%d)", pct, label, _progress_done, total)
+        print(f"\r[{'#' * (pct // 5):20s}] {_progress_done}/{total} ({pct}%) - 第{label}条", end="", flush=True)
 
 
 # ========== 响应解析 ==========

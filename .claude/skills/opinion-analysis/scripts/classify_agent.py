@@ -169,8 +169,10 @@ def classify_one(num, desc, refs, agent_cfg):
 
     for attempt in range(max_retries):
         try:
+            print(f"\n正在处理{num}条 (第{attempt + 1}/{max_retries}次尝试)...")
             logger.info("行%d agent请求发送, 第%d/%d次", num, attempt + 1, max_retries)
             text = _consume_agent(desc, agent_cfg, _log_file(attempt), correction=correction)
+            print(f"第{num}条返回，文本长度：{len(text) if text else 0}")
             logger.info("行%d agent返回, 文本长度: %d", num, len(text) if text else 0)
         except Exception as e:
             logger.warning("行%d agent调用失败(第%d/%d次): %s", num, attempt + 1, max_retries, e)
@@ -256,4 +258,10 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
     business = derive_business_classification(classification, status, func_to_business)
     save_item(num, classification, reason, app_name, problem_col, df, db_path, status, version_col, business)
     incr_progress(1, total, str(num))
+    if status == 0:
+        print(f"  => 第{num}条分类成功：{'.'.join(classification)}")
+    elif status == 1:
+        print(f"  => 第{num}条：未知问题")
+    else:
+        print(f"  => 第{num}条分类失败")
     return [(num, status)]
