@@ -50,7 +50,6 @@ python <skill_path>/scripts/app_list.py
 **注意**：此步骤**只负责提供启动** `classify_data.py` 任务的命令或后台启动该任务，不会等待任务结束（因为数据量大时可能需要数分钟到数十分钟）。智能体启动任务后即可继续，用户会通过其他途径查看进度。
 
 **前台启动命令**（前台启动命令**必须**由用户来执行）：
-
 ```bash
 python <skill_path>/scripts/classify_data.py \
   --app-name <app_name> \
@@ -94,7 +93,7 @@ nohup python <skill_path>/scripts/classify_data.py --app-name <app_name> --probl
 | 响应日志 | `<output_dir>/log/response_*_agent*.log` | 每条数据的 agent 响应详情 |
 | DB 记录数 | `<output_dir>/report.db` | 查询对应表记录数，可判断已完成条数 |
 
-**判断任务完成**：日志中出现`分类完成` 相关字样，或 `report.db` 中记录数等于 Excel 总行数。
+**判断任务完成**：日志中出现 `分类完成` 相关字样，或 `report.db` 中记录数等于 Excel 总行数。
 
 ### 步骤5（可选）：单独重试失败数据
 
@@ -109,7 +108,7 @@ python <skill_path>/scripts/retry_failed.py <output_dir> [--app-name <app_name>]
 ## 资源文件
 
 - [references/apps/](references/apps/) — 各应用知识库：功能域分类树 `classification_function.md`（校验 agent 返回的分类路径）+ `classification_function_to_business.json`（功能域路径→业务页面标签映射）。
-- [assets/report_template.html](assets/report_template.html) — HTML 报告模板（功能域/业务域同报告视图切换）
+- [assets/report_template.html](assets/report_template.html) — HTML 报告模板（功能域/业务域双标签页切换）
 - 入口与脚本（`<skill_path>/scripts/`）：
   - [classify_data.py](scripts/classify_data.py) — 分类入口，4 阶段编排（参数配置 → 数据准备 → 执行 → 报告）
   - [excel_info.py](scripts/excel_info.py) — Excel 前几行预览
