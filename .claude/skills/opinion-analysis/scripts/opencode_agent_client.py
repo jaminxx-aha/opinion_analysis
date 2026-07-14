@@ -218,7 +218,20 @@ class OpencodeAgentClient(AgentClient):
         system, user_text = _build_messages(self.cfg, desc, correction)
 
         hc = httpx.AsyncClient(base_url=base_url, timeout=None)
-        sdk = opencode_ai.AsyncOpencode(base_url=base_url)
+        # POST /session/{id}/chat 默认用 SDK 60s 读超时 + 2 次重试（共 3×60s）：长轮次
+        # （多工具往返 + 长推理，如 4 分钟）期间 POST 连接无字节流动，每 60s 触发一次
+        # httpx.TimeoutException，SDK 重试 3 遍后抛 APITimeoutError("Request timed out.")。
+        # 但答案实际由 SSE /event 流交付（hc 上 timeout=None），POST 只用于取最终 error；
+        # 故放宽其读超时为 None（connect 仍 5s）并关闭重试，配合下方「已流式拿到答案则
+        # 忽略 POST 异常」的兜底，避免长轮次被无谓重试 + 答案被丢弃。
+        sdk = opencode_ai.AsyncOpencode(
+            base_url=base_url,
+            # 四参数必须全显式给值（否则 httpx 报「must include a default or set all
+            # four」）；read=None 表示读方向不限时——POST /chat 不再因长轮次触发 60s
+            # 读超时，从而不进入 SDK 的 3× 重试、不抛 APITimeoutError。其余方向保持 5s。
+            timeout=httpx.Timeout(connect=5.0, read=None, write=5.0, pool=5.0),
+            max_retries=0,
+        )
         chat_task = None
         streamed_any = False
         try:
@@ -296,12 +309,21 @@ class OpencodeAgentClient(AgentClient):
                         err = props.get("error") or props
                         raise RuntimeError("后端返回错误: %s" % json.dumps(err, ensure_ascii=False)[:300])
 
-            # 等待 chat 返回（idle 后通常已就绪），取其 error
+            # 等待 chat 返回（idle 后通常已就绪），取其 error。
+            # answer 文本已通过 SSE 流式拿到（streamed_any）时，POST 仅用于核对 error，
+            # 其超时/APITimeoutError 不应让已到手的结果作废——降级为日志；仅当完全没拿到
+            # 流式文本时才上抛触发重试（避免「答案已返回却因 POST 3×60s 超时被丢弃」）。
+            chat_err = None
             if chat_task and not chat_task.done():
                 try:
                     msg = await asyncio.wait_for(chat_task, timeout=idle_timeout or 30)
                 except asyncio.TimeoutError:
-                    raise RuntimeError("agent 调用超时未返回")
+                    chat_err = "agent 调用超时未返回"
+                    msg = None
+                except Exception as e:
+                    # SDK 把 httpx 读超时统一包成 APITimeoutError("Request timed out.")
+                    chat_err = "agent 调用异常: %s" % e
+                    msg = None
             else:
                 msg = chat_task.result() if chat_task and chat_task.done() else None
             if msg is not None and getattr(msg, "error", None):
@@ -311,6 +333,11 @@ class OpencodeAgentClient(AgentClient):
                 except Exception:
                     detail = str(err)
                 raise RuntimeError("后端返回错误: %s" % (detail or "未知错误")[:300])
+            if chat_err:
+                if streamed_any:
+                    logger.warning("已流式拿到答案，忽略 chat 调用异常: %s", chat_err)
+                else:
+                    raise RuntimeError(chat_err)
 
             # 兜底：SSE 未拿到文本时，取会话消息中的助手文本
             if not streamed_any:
