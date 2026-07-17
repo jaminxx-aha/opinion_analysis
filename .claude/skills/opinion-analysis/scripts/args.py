@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List
 from dotenv import load_dotenv
-from app_list import get_supported_apps, get_app_dir
+from app_list import get_supported_apps, get_app_dir, get_classifier_skill_md, CLASSIFIER_SKILL_NAME
 
 # Windows下强制UTF-8输出（与原 classify_data 顶部一致）
 if sys.platform == 'win32':
@@ -112,10 +112,23 @@ def load_config(args):
     log_level = os.environ.get("LLM_LOG_LEVEL", "DEBUG").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # 走 headless agent 加载抖音舆情 skill，单条问题→单个 JSON，
+    # app_name 合法性校验（先于 skill 解析：不支持的应用直接报错）
+    if args.app_name not in get_supported_apps():
+        supported = ", ".join(get_supported_apps())
+        print(f"错误: 应用 '{args.app_name}' 不在支持列表中，当前支持的应用: {supported}")
+        sys.exit(1)
+
+    # 走 headless agent 加载应用舆情 skill，单条问题→单个 JSON，
     # skill 一次性返回完整分类编码。后端固定 opencode（agent_client.create_agent）。
-    agent_skill_dir = os.environ.get("LLM_AGENT_SKILL_DIR", "").strip()
-    agent_skill_name = os.environ.get("LLM_AGENT_SKILL_NAME", "douyin-performance-problem-classifier").strip()
+    # skill 随应用目录收纳：references/apps/<app>/.claude/skills/<CLASSIFIER_SKILL_NAME>/SKILL.md，
+    # 不再经 env 指定 skill_dir/skill_name，直接按 --app-name 解析。
+    agent_skill_name = CLASSIFIER_SKILL_NAME
+    agent_skill_dir = get_app_dir(args.app_name)
+    skill_md = get_classifier_skill_md(args.app_name)
+    if not skill_md:
+        logger.error("未找到应用 '%s' 的 classifier skill: %s",
+                     args.app_name, os.path.join(str(agent_skill_dir), ".claude", "skills", agent_skill_name, "SKILL.md"))
+        sys.exit(1)
     model = os.environ.get("LLM_MODEL") or None
     # 多 key 支持：逗号分隔 → 列表，按 task 轮询分配给 worker
     api_key_raw = os.environ.get("LLM_API_KEY", "").strip()
@@ -124,12 +137,6 @@ def load_config(args):
     agent_max_turns = int(os.environ.get("LLM_AGENT_MAX_TURNS", "10"))
     # agent 需多轮读 skill 的 reference 文件做逐层分类，单独给更长超时
     agent_timeout = int(os.environ.get("LLM_AGENT_TIMEOUT", "120"))
-
-    if not agent_skill_dir:
-        logger.error("需要配置 LLM_AGENT_SKILL_DIR (含 .claude/skills/<skill>/SKILL.md 的项目根目录)"); sys.exit(1)
-    skill_md = os.path.join(agent_skill_dir, ".claude", "skills", agent_skill_name, "SKILL.md")
-    if not os.path.isfile(skill_md):
-        logger.error("未找到 skill: %s (期望 %s)。请确认 LLM_AGENT_SKILL_DIR / LLM_AGENT_SKILL_NAME", agent_skill_name, skill_md); sys.exit(1)
 
     # 未配 API key 时回退到 agent 自身的登录态
     total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
@@ -146,12 +153,6 @@ def load_config(args):
     }
     logger.info("推理模式: Agent (backend=opencode, skill=%s, model=%s, skill_dir=%s, 并发%d)",
                 agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
-
-    # app_name 合法性校验
-    if args.app_name not in get_supported_apps():
-        supported = ", ".join(get_supported_apps())
-        print(f"错误: 应用 '{args.app_name}' 不在支持列表中，当前支持的应用: {supported}")
-        sys.exit(1)
 
     return Config(
         api_keys=api_keys,

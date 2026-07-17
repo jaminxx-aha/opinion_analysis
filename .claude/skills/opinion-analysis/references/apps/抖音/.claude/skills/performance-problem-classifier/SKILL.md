@@ -1,5 +1,5 @@
 ---
-name: douyin-performance-problem-classifier
+name: performance-problem-classifier
 description: 对抖音应用的性能舆情问题进行逐层分类
 ---
 

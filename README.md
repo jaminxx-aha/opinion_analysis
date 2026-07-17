@@ -41,7 +41,7 @@ cp .env.example .env
 LLM_MODEL=glm-5.2             # opencode model_id 的兜底回退（优先用 LLM_AGENT_MODEL_ID）
 LLM_API_KEY=your-api-key      # API 密钥 (多个key用逗号分隔)
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_AGENT_SKILL_DIR=.         # 含 .claude/skills/<skill>/SKILL.md 的项目根目录（必填）
+# classifier skill 随应用目录收纳（references/apps/<app>/.claude/skills/），按 --app-name 自动解析，无需配置 skill 路径
 ```
 
 ### 2. 安装依赖
@@ -130,8 +130,6 @@ python .claude/skills/opinion-analysis/scripts/retry_failed.py output/2025-05-05
 
 | 变量 | 必需 | 说明 |
 |------|------|------|
-| `LLM_AGENT_SKILL_DIR` | 是 | 含 `.claude/skills/<skill>/SKILL.md` 的项目根目录 |
-| `LLM_AGENT_SKILL_NAME` | 否 | skill 名称，默认 `douyin-performance-problem-classifier` |
 | `LLM_AGENT_PROVIDER` | 是 | opencode 配置中的 provider id |
 | `LLM_AGENT_MODEL_ID` | 否 | opencode 配置中的 model id；留空回退 `LLM_MODEL` |
 | `LLM_MODEL` | 否 | model id 兜底回退 |
