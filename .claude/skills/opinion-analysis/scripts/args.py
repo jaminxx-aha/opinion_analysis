@@ -102,8 +102,8 @@ class Config:
 def load_config(args):
     """读环境变量、构建 agent_cfg、校验，返回 Config。
 
-    推理后端固定为 opencode（OpencodeAgentClient）；agent_client 基类与工厂保留，
-    便于后续新增其它后端时按 cfg.backend 动态分派。
+    推理后端由 LLM_AGENT_BACKEND 选择（openai / opencode，默认 opencode）；
+    agent_client.create_agent 按 cfg.backend 动态分派到 <backend>_agent_client.create。
     """
     _load_env()
 
@@ -118,8 +118,14 @@ def load_config(args):
         print(f"错误: 应用 '{args.app_name}' 不在支持列表中，当前支持的应用: {supported}")
         sys.exit(1)
 
+    # 推理后端选择：openai(OpenAI SDK 直连) / opencode(opencode 服务)
+    backend = os.environ.get("LLM_AGENT_BACKEND", "opencode").strip().lower()
+    if backend not in ("opencode", "openai"):
+        logger.warning("未知 LLM_AGENT_BACKEND=%s, 回退为 opencode", backend)
+        backend = "opencode"
+
     # 走 headless agent 加载应用舆情 skill，单条问题→单个 JSON，
-    # skill 一次性返回完整分类编码。后端固定 opencode（agent_client.create_agent）。
+    # skill 一次性返回完整分类编码。后端由 cfg.backend 决定（agent_client.create_agent）。
     # skill 随应用目录收纳：references/apps/<app>/.claude/skills/<CLASSIFIER_SKILL_NAME>/SKILL.md，
     # 不再经 env 指定 skill_dir/skill_name，直接按 --app-name 解析。
     agent_skill_name = CLASSIFIER_SKILL_NAME
@@ -141,9 +147,10 @@ def load_config(args):
     # 未配 API key 时回退到 agent 自身的登录态
     total_concurrent = (len(api_keys) * max_concurrent) if api_keys else max_concurrent
     agent_cfg = {
-        "backend": "opencode",
+        "backend": backend,
         "skill_dir": agent_skill_dir,
         "skill_name": agent_skill_name,
+        "app_name": args.app_name,
         "model": model,
         "api_key": api_keys[0] if api_keys else None,
         "base_url": base_url,
@@ -151,8 +158,8 @@ def load_config(args):
         "timeout": agent_timeout,
         "max_retries": max_retries,
     }
-    logger.info("推理模式: Agent (backend=opencode, skill=%s, model=%s, skill_dir=%s, 并发%d)",
-                agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
+    logger.info("推理模式: Agent (backend=%s, skill=%s, model=%s, skill_dir=%s, 并发%d)",
+                backend, agent_skill_name, model or "default", agent_skill_dir, total_concurrent)
 
     return Config(
         api_keys=api_keys,

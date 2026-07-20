@@ -7,3 +7,4 @@ python-dotenv>=1.0     # classify_data.py（加载 .env）
 openpyxl>=3.1          # scripts/export_db_to_excel.py
 json_repair            # classify_agent.py：agent 返回的残缺 JSON 修复
 opencode-ai            # opencode_agent_client.py；httpx 由其间接引入
+openai                 # openai_agent_client.py（LLM_AGENT_BACKEND=openai 时需要）

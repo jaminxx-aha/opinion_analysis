@@ -28,16 +28,19 @@ def match_result_to_code(result, code_to_path):
       - 名称路径 "动效卡顿-滑动卡顿-页面滑动卡顿-视频流上下滑动卡顿"
       - "未知问题" / "0"（非性能/非鸿蒙/无法分类）
       - 数字编码 "1.1.1.1"（兼容）
+      - 「编码+标签」混合 "1.1.1 滑动卡顿"（openai 后端偶发，标签文本丢弃，只取前导编码）
       - 兜底一级类 "卡顿"（不在 classification_*.md 中展示，由 parse_classification_md 追加）
     只有当整条名称路径在编码树中精确命中某节点时才视为一致，返回 (code, path)；
-    否则一律返回 (None, None)，由调用方按「分类结果与编码树不一致」失败重试
-    （不做事前前缀回退，避免静默降级到上级、丢失深层语义）。
+    否则一律返回 (None, None)，由调用方按「分类结果与编码树不一致」失败重试。
+    对纯编码/纯路径不做前缀回退（避免静默降级到上级、丢失深层语义）；仅对「编码+标签」
+    混合体提取前导编码（复刻删除前 classify_batch.code_to_classification 的容错）。
 
     匹配策略：
       1) 未知问题/0 → ("0", ["未知问题"])
       2) 数字编码直接命中 → (code, path)
       3) 整条名称路径精确命中 → (code, path)
-      4) 都不中 → (None, None)
+      4) 「编码+标签」混合 → 提取前导编码命中 → (code, path)（可能为截断路径）
+      5) 都不中 → (None, None)
     """
     if not isinstance(result, str):
         return (None, None)
@@ -61,7 +64,14 @@ def match_result_to_code(result, code_to_path):
     if parts and parts in path_to_code:
         return (path_to_code[parts], code_to_path[path_to_code[parts]])
 
-    # 4) 不一致：不做前缀回退，交由调用方重试
+    # 4) 「编码+标签」混合形态（如 "1.1.1 滑动卡顿"）：提取前导数字编码再查树，
+    #    标签文本丢弃，只信前导编码定位的节点（可能是截断路径）。名称路径不以
+    #    数字开头，故 opencode 后端（返回名称路径）不会落到此分支。
+    m = re.match(r'^(\d+(?:\.\d+)*)\s', result)
+    if m and m.group(1) in code_to_path:
+        return (m.group(1), code_to_path[m.group(1)])
+
+    # 5) 都不中：交由调用方重试
     return (None, None)
 
 
@@ -182,6 +192,10 @@ def classify_one(num, desc, refs, agent_cfg):
             return 2, ["未知问题"], f"agent调用失败: {e}"
 
         parsed = extract_json(text)
+        # openai 后端返回 1 元素 list [{"classification":...}]（复刻历史 build_batch_prompt
+        # JSON 形状）；opencode 后端返回 dict。list 时取首元素，统一成 dict 再走后续校验。
+        if isinstance(parsed, list):
+            parsed = parsed[0] if (parsed and isinstance(parsed[0], dict)) else None
         if not isinstance(parsed, dict):
             # 1) 先尝试 json_repair 修复；修复成功则直接用，不消耗重试
             repaired = _try_repair_json(text)
@@ -204,7 +218,9 @@ def classify_one(num, desc, refs, agent_cfg):
 
         # skill 用 result 字段返回名称路径(如 "动效卡顿-滑动卡顿-列表滑动卡顿-视频流上下滑动卡顿")
         # 或 "未知问题"/"0"；也可能是数字编码。统一用 match_result_to_code 校验并映射到编码树。
-        result = parsed.get("result", "")
+        # skill(opencode) 用 result 字段返回名称路径；openai 后端用 classification 字段返回
+        # 数字编码（复刻历史 build_batch_prompt）。result 优先保证 opencode 语义不变。
+        result = parsed.get("result") or parsed.get("classification") or ""
         reason = parsed.get("reason", "") or ""
         if not isinstance(result, str):
             logger.warning("行%d 分类格式错误(第%d/%d次): result应为字符串", num, attempt + 1, max_retries)
