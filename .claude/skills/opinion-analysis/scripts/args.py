@@ -67,8 +67,13 @@ def parse_args():
     parser.add_argument("--version-index", type=int, default=-1,
                         help="版本号列索引(从0开始, -1表示无版本号)")
     parser.add_argument("--excel-path", required=True)
-    parser.add_argument("--output-dir", required=True)
-    return parser.parse_args()
+    parser.add_argument("--output-dir", default=None,
+                        help="输出目录（默认为 output/<excel文件名，不含扩展名>）")
+    args = parser.parse_args()
+    if not args.output_dir:
+        excel_base = os.path.splitext(os.path.basename(args.excel_path))[0]
+        args.output_dir = os.path.join(PROJECT_DIR, "output", excel_base)
+    return args
 
 
 def resolve_columns(args, df):
