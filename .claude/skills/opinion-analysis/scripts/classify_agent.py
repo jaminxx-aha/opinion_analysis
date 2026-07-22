@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""classify_agent.py - 通过 agent 后端（抖音舆情 skill）做单条分类推理
+"""classify_agent.py - 通过 agent 后端（应用舆情 skill）做单条分类推理
 
 唯一的推理路径：每条问题描述发起一次 agent 调用，skill 一次性返回完整分类编码
 {result, reason}，每条问题一个任务。agent 后端由配置选择（agent_client.create_agent），
