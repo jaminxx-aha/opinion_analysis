@@ -69,6 +69,9 @@ def parse_args():
     parser.add_argument("--excel-path", required=True)
     parser.add_argument("--output-dir", default=None,
                         help="输出目录（默认为 output/<excel文件名，不含扩展名>）")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="重试模式：重新分析 DB 中 status=2(失败)及缺失的行；"
+                             "已成功/未知/过长的行跳过。不加本开关则为续跑（已存在的行一律跳过）")
     args = parser.parse_args()
     if not args.output_dir:
         excel_base = os.path.splitext(os.path.basename(args.excel_path))[0]

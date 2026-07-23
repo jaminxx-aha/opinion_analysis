@@ -3,7 +3,7 @@
 
 只做 4 个阶段的编排，不再被任何兄弟模块 import（公共逻辑已下沉到 args/db_utils/processor）：
   Phase 1  parse_args + load_config + load_reference      （args.py）
-  Phase 2  prepare_data：初始化 + retry/续跑选型 + 过长入库（processor.py）
+  Phase 2  prepare_data：初始化 + retry/续跑选型（过长判定下沉到 process_item_agent）（processor.py）
   Phase 3  run：分派 batch/layered/agent 并发执行          （processor.py）
   Phase 4  generate_report                                （generate_report.py）
 
@@ -47,7 +47,7 @@ def main():
     df = pd.read_excel(args.excel_path)
     problem_col, version_col = resolve_columns(args, df)
 
-    all_data, ctx, refs = prepare_data(args, config, df, problem_col, version_col)
+    all_data, ctx, refs = prepare_data(args, config, df, problem_col)
 
     # Phase 3：执行任务 + 数据落盘 + 期末汇总（汇总打印在 run 内）
     run(config, all_data, args.app_name, problem_col, df, refs, ctx, version_col)

@@ -14,10 +14,10 @@ import re
 import time
 import asyncio
 import logging
-from db_utils import save_item
+from db_utils import save_item, clean_desc, get_row_status
 from runtime import extract_json, get_output_dir, incr_progress
 from agent_client import create_agent
-from args import derive_business_classification
+from args import derive_business_classification, MAX_DESC_LENGTH
 
 logger = logging.getLogger("classify_data")
 
@@ -260,14 +260,31 @@ def classify_one(num, desc, refs, agent_cfg):
 
 
 def process_item_agent(item, app_name, problem_col, df, refs, db_path,
-                       agent_cfg, total, version_col=None):
-    """单条问题 → agent 分类 → 入库。返回 [(num, status)]。
-    状态码：0=成功, 1=未知问题, 2=失败。
+                       agent_cfg, total, version_col=None, retry_failed=False):
+    """单条问题 → 查 DB 判断是否跳过 → (跳过 / 清洗+过长判定+agent 分类+入库)。
+
+    返回 [(num, status, skipped)]：
+      status: 0=成功, 1=未知, 2=失败, 3=描述过长（沿用既有或本轮新得）
+      skipped: True=该条 DB 已存在且按模式跳过（未重跑 agent、未入库）；False=本轮实跑
+    续跑(默认)：DB 已存在的行跳过；重试(retry_failed)：仅 status=2(失败)及缺失的行重做，其余跳过。
+    清洗与过长判定在处理到该条时才做，过长行按顺序在其前面行处理完后才判定。
     """
     num = item["num"]
-    desc = item["desc"]
+    # 先查 DB：该行是否已存在，按模式决定跳过与否
+    existing = get_row_status(num, db_path)
+    if existing is not None and not (retry_failed and existing == 2):
+        # 已存在且无需重试 → 跳过，沿用既有 status，不重跑 agent、不入库
+        incr_progress(1, total, str(num))
+        print(f"  => 第{num}条: DB已存在(status={existing}),跳过")
+        return [(num, existing, True)]
+
+    # 需处理（缺失行，或重试模式下 status=2 行）：清洗 + 过长判定 + agent 分类
+    raw = item["desc"]
+    desc = clean_desc(raw) if raw else ""
     if not desc.strip():
         status, classification, reason = 2, ["未知问题"], "空描述,跳过分类"
+    elif len(desc) > MAX_DESC_LENGTH:
+        status, classification, reason = 3, ["描述过长"], f"清洗后描述长度{len(desc)}超过{MAX_DESC_LENGTH}字限制, 跳过分类"
     else:
         status, classification, reason = classify_one(num, desc, refs, agent_cfg)
     func_to_business = refs.get("func_to_business", {}) if refs else {}
@@ -278,6 +295,8 @@ def process_item_agent(item, app_name, problem_col, df, refs, db_path,
         print(f"  => 第{num}条分类成功: {'.'.join(classification)}")
     elif status == 1:
         print(f"  => 第{num}条: 未知问题")
+    elif status == 3:
+        print(f"  => 第{num}条: 描述过长(清洗后{len(desc)}字),跳过分类")
     else:
         print(f"  => 第{num}条分类失败")
-    return [(num, status)]
+    return [(num, status, False)]

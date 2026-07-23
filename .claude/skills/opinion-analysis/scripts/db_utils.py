@@ -160,6 +160,18 @@ def count_rows(db_path, table):
         conn.close()
 
 
+def get_row_status(num, db_path):
+    """返回 id=num 行的 status（int），不存在返回 None。
+
+    供续跑/重试按条判断是否跳过：调用方在处理第 num 条前先查 DB，
+    已存在且无需重试则跳过（沿用既有结果），不重新跑 agent。
+    走线程局部连接池（与 save_item 同 conn，避免高频调用反复建连）。
+    """
+    conn = _get_db_conn(db_path)
+    row = conn.execute(f"SELECT status FROM {_TABLE} WHERE id=?", (num,)).fetchone()
+    return row[0] if row else None
+
+
 def _full_path(classification):
     """由分类名称列表算出 full_path（- 分隔）。供 save_item / update_item 复用。"""
     return "-".join(classification)
